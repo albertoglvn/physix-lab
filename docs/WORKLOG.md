@@ -33,7 +33,7 @@ against them.
 | Artifact | Identity | Notes |
 | --- | --- | --- |
 | Dataset | `physix-ds-v1` (`physix-ds-f077ac30049fedfa`) | 2,159 solved cases (train 1,474 · calibration 312 · test 292 · shifted 80), one failed solve, reference mesh preset, scikit-fem 12.0.2 |
-| Ensemble | see [MODEL.md](MODEL.md) | Five seeded members trained in parallel on CPU; held-out evaluation in the bundle manifest |
+| Ensemble | `physix-unet5-2d0d9d4949` | Five seeded members, 40 epochs, trained in parallel on CPU (about 97 min); ONNX parity 3.2e-07; held-out evaluation in [MODEL.md](MODEL.md) |
 
 ## Known limitations
 
