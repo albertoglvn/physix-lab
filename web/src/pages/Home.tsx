@@ -273,7 +273,7 @@ export function Home({ route }: { route: string }) {
               Start with a ready-to-run experiment or build your own from an
               empty scene.
             </p>
-            <Action href="#/lab/blank" variant="glass">
+            <Action href="#/lab?study=motion&template=blank" variant="glass">
               Build an experiment
             </Action>
           </div>
@@ -295,7 +295,7 @@ export function Home({ route }: { route: string }) {
               <a
                 key={experiment.id}
                 className="home-experiment"
-                href={`#/lab/${experiment.id}`}
+                href={`#/lab?study=motion&template=${experiment.id}`}
               >
                 <img src={experiment.image} alt="" loading="lazy" />
                 <span className="home-experiment-caption">
@@ -328,7 +328,7 @@ export function Home({ route }: { route: string }) {
           <nav aria-label="Footer navigation">
             <a href="#/experiments">Experiments</a>
             <a href="#/stress-tools">Stress tools</a>
-            <a href="#/model">Model card</a>
+            <a href="#/lab?study=stress&sheet=model">Model card</a>
           </nav>
         </div>
         <div className="home-stripes home-stripes--mint" aria-hidden="true">

@@ -14,6 +14,9 @@ export type FloatingPanelProps = {
   /** Remembers the collapsed state for this viewer under this key. */
   persistKey?: string;
   defaultCollapsed?: boolean;
+  /** Controlled collapsed state; the panel then reports toggles through the callback. */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
   className?: string;
   children: ReactNode;
 };
@@ -41,15 +44,18 @@ export function FloatingPanel({
   actions,
   persistKey,
   defaultCollapsed = false,
+  collapsed: controlled,
+  onCollapsedChange,
   className,
   children,
 }: FloatingPanelProps) {
   const id = useId();
-  const [collapsed, setCollapsed] = usePreference(
+  const [stored, setStored] = usePreference(
     persistKey && `panel.${persistKey}.collapsed`,
     defaultCollapsed,
     isBoolean,
   );
+  const collapsed = controlled ?? stored;
   const tab = useRef<HTMLButtonElement>(null);
   const collapse = useRef<HTMLButtonElement>(null);
   const toggled = useRef(false);
@@ -63,7 +69,8 @@ export function FloatingPanel({
 
   const toggle = (next: boolean) => {
     toggled.current = true;
-    setCollapsed(next);
+    if (controlled === undefined) setStored(next);
+    onCollapsedChange?.(next);
   };
 
   const anchorClass = `px-anchor-${anchor}`;

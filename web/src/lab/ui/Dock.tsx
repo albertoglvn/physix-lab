@@ -34,6 +34,11 @@ export type DockProps = {
   defaultHeight?: number;
   /** Largest height as a fraction of the window: 0.6 on desktop, 0.45 on tablets. */
   maxFraction?: number;
+  /** Controlled open state; the dock then reports toggles through the callback. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Keeps the content mounted while collapsed, so running work keeps its state. */
+  keepMounted?: boolean;
   children: ReactNode;
 };
 
@@ -48,14 +53,22 @@ export function Dock({
   defaultOpen = false,
   defaultHeight = 280,
   maxFraction = DOCK_MAX_FRACTION,
+  open: controlled,
+  onOpenChange,
+  keepMounted = false,
   children,
 }: DockProps) {
   const id = useId();
-  const [open, setOpen] = usePreference(
+  const [stored, setStored] = usePreference(
     persistKey && `dock.${persistKey}.open`,
     defaultOpen,
     isBoolean,
   );
+  const open = controlled ?? stored;
+  const setOpen = (next: boolean) => {
+    if (controlled === undefined) setStored(next);
+    onOpenChange?.(next);
+  };
   const [height, setHeight] = usePreference(
     persistKey && `dock.${persistKey}.height`,
     defaultHeight,
@@ -125,10 +138,11 @@ export function Dock({
           {open ? `Collapse ${title}` : `Expand ${title}`}
         </span>
       </button>
-      {open ? (
+      {open || keepMounted ? (
         <div
           id={id}
           className="px-dock-body"
+          hidden={!open}
           style={{ height: `min(${height}px, ${maxFraction * 100}vh)` }}
         >
           {children}

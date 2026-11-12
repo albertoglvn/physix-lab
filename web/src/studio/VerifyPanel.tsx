@@ -3,7 +3,7 @@
  * surrogate that is on screen: same grid, same mask, same units, same colour range.
  */
 
-import { useMemo, useState } from "react";
+import { useImperativeHandle, useMemo, useState, type Ref } from "react";
 import {
   api,
   ApiError,
@@ -19,6 +19,9 @@ import { MeshView } from "../ui/MeshView";
 import { fieldRange } from "../ui/colormap";
 import { mm, mpa, ms, newtons, pct, ratio } from "../ui/units";
 
+/** Lets the lab start a check from its top bar. */
+export type VerifyHandle = { start: () => void };
+
 interface Run {
   forCase: string;
   data: VerifyResponse;
@@ -31,12 +34,14 @@ export function VerifyPanel({
   online,
   browser,
   onInvalid,
+  ref,
 }: {
   c: Case;
   pred: SurrogatePrediction | null;
   online: boolean;
   browser: boolean;
   onInvalid: (field: string | null) => void;
+  ref?: Ref<VerifyHandle>;
 }) {
   const [run, setRun] = useState<Run | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,6 +73,12 @@ export function VerifyPanel({
       setBusy(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    start: () => {
+      if (online && !busy) void start();
+    },
+  }));
 
   const fem = run?.data;
   const mask = useMemo(

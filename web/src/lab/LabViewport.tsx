@@ -138,7 +138,7 @@ function disposeTree(object: THREE.Object3D) {
 
 function createView(
   host: HTMLDivElement,
-  onSelect: (id: string) => void,
+  onSelect: (id: string | null) => void,
 ): View {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -241,9 +241,10 @@ function createView(
       while (part && !part.userData.id) part = part.parent;
       if (part) {
         onSelect(part.userData.id as string);
-        break;
+        return;
       }
     }
+    onSelect(null);
   };
   renderer.domElement.addEventListener("pointerdown", down);
   renderer.domElement.addEventListener("pointerup", up);
@@ -373,7 +374,7 @@ export function LabViewport({
   scene: LabScene;
   simulation?: Simulation;
   selected: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   viewRevision: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -410,7 +411,7 @@ export function LabViewport({
       {!available && (
         <p className="lab-viewport-error" role="status">
           The 3D view needs WebGL 2. You can still run the experiment and read
-          its measurements below.
+          its measurements in the data dock.
         </p>
       )}
     </div>

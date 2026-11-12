@@ -16,36 +16,6 @@ export function PhysixMark() {
   );
 }
 
-export function WorkspaceHeader({
-  current,
-}: {
-  current: "mechanics" | "stress";
-}) {
-  return (
-    <header className="workspace-header">
-      <a className="workspace-brand" href="#/">
-        <PhysixMark />
-        <span>Physix</span>
-      </a>
-      <nav aria-label="Workspace navigation">
-        <a href="#/experiments">Experiments</a>
-        <a
-          href="#/lab"
-          aria-current={current === "mechanics" ? "page" : undefined}
-        >
-          Mechanics lab
-        </a>
-        <a
-          href="#/stress"
-          aria-current={current === "stress" ? "page" : undefined}
-        >
-          Stress tools
-        </a>
-      </nav>
-    </header>
-  );
-}
-
 export function Action({
   href,
   children,

@@ -1,22 +1,25 @@
 import { lazy, Suspense } from "react";
 import { Home } from "./pages/Home";
-import { useRoute } from "./routes";
+import {
+  legacyRedirect,
+  parseHash,
+  parseLabQuery,
+  replaceHash,
+  useHashLocation,
+} from "./routes";
 
 const Lab = lazy(() =>
   import("./lab/Lab").then((module) => ({ default: module.Lab })),
 );
-const StressApp = lazy(() =>
-  import("./pages/StressApp").then((module) => ({ default: module.StressApp })),
-);
 
 export function App() {
-  const route = useRoute();
-  if (route === "/lab" || route.startsWith("/lab/")) {
-    const segment = route.split("/")[2];
-    const preset =
-      segment === "friction" || segment === "pulley" || segment === "blank"
-        ? segment
-        : "incline";
+  const current = useHashLocation();
+  const redirect = legacyRedirect(current.path);
+  if (redirect) replaceHash(redirect);
+  const { path, query } = redirect ? parseHash(redirect) : current;
+  const hash = redirect ?? current.hash;
+
+  if (path === "/lab")
     return (
       <Suspense
         fallback={
@@ -25,26 +28,8 @@ export function App() {
           </div>
         }
       >
-        <Lab key={preset} preset={preset} />
+        <Lab key={hash} location={parseLabQuery(query)} />
       </Suspense>
     );
-  }
-  if (
-    route === "/stress" ||
-    route.startsWith("/studio") ||
-    route.startsWith("/model")
-  ) {
-    return (
-      <Suspense
-        fallback={
-          <div className="route-loading" role="status">
-            Opening stress analysis…
-          </div>
-        }
-      >
-        <StressApp route={route} />
-      </Suspense>
-    );
-  }
-  return <Home route={route} />;
+  return <Home route={path} />;
 }

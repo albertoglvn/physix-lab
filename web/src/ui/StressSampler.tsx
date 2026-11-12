@@ -40,9 +40,11 @@ export function StressSampler() {
           element solve of the same part.
         </p>
         <div className="home-stress-actions">
-          <Action href={`#/studio/${family}`}>Open this case</Action>
-          <Action href="#/stress" variant="text">
-            Explore stress tools
+          <Action href={`#/lab?study=stress&example=${family}`}>
+            Open this case
+          </Action>
+          <Action href="#/lab?study=stress&sheet=model" variant="text">
+            Read the model card
           </Action>
         </div>
       </div>

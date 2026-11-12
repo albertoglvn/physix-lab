@@ -1,0 +1,140 @@
+/* The stress study inside the lab shell. Studio widgets keep their global classes. */
+
+.lab-stress {
+  color: var(--text);
+}
+
+/* The field fills the stage between the HUD, the inspector and the collapsed dock. */
+.lab-field {
+  position: absolute;
+  inset: 0;
+  padding: 72px 24px 64px;
+  display: grid;
+  background:
+    linear-gradient(var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px
+      20px,
+    var(--px-stage);
+}
+.lab-frame[data-study="stress"] .lab-field {
+  padding-right: calc(24px + var(--lab-inspector-room, 0px));
+}
+.lab-field-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.lab-field .fieldview {
+  position: absolute;
+  inset: 0;
+}
+.lab-field .fieldview svg {
+  width: 100%;
+  height: 100%;
+}
+.lab-field .stage-overlay {
+  border-radius: var(--px-radius-panel);
+}
+
+.lab-hud.lab-stress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lab-hud-legend {
+  top: auto;
+  bottom: 56px;
+  left: 16px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--px-radius-control);
+  box-shadow: var(--px-shadow-float);
+}
+
+/* Editor in the inspector. */
+.lab-stress .editor-section h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+.lab-stress .hole-row input[type="number"] {
+  appearance: textfield;
+}
+.lab-stress .hole-row input::-webkit-inner-spin-button {
+  appearance: none;
+}
+
+/* Results in the dock and sheets. */
+.lab-stress .tone-accent {
+  background: var(--px-ok-tint);
+  border-color: var(--px-sage-200);
+}
+.lab-stress .panel-intro p {
+  color: var(--text-2);
+}
+.lab-stress .callout {
+  margin-block: 8px;
+}
+.lab-stress table {
+  font-size: 13px;
+}
+.lab-stress .panel-body > .muted.small {
+  margin-block: 7px;
+}
+.stress-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.lab-stress .stat-row {
+  margin-bottom: 12px;
+}
+
+/* The model card reads as a document inside its sheet. */
+.lab-model-card .page.narrow {
+  max-width: none;
+}
+.lab-model-card .page-head {
+  padding-top: 0;
+}
+/* The sheet header already names the card. */
+.lab-model-card .page-head h1 {
+  display: none;
+}
+.lab-model-card .model-identity {
+  margin: 0 0 13px;
+  overflow-wrap: anywhere;
+}
+.lab-model-card .card-section h2 {
+  font: 400 22px/1.1 var(--display);
+}
+.lab-model-card .card-section > p {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 1199px) {
+  .lab-frame[data-study="stress"] .lab-field {
+    padding-right: 24px;
+  }
+}
+@media (max-width: 759px) {
+  .lab-field {
+    padding: 112px 12px 64px;
+  }
+  .lab-hud-legend {
+    left: 12px;
+    right: 12px;
+  }
+  .lab-stress .colorbar {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 3px;
+  }
+  .lab-stress .colorbar-label {
+    grid-row: auto;
+  }
+  .lab-hud .segmented {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}

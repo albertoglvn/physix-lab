@@ -2,6 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clampDockHeight, Dock, DOCK_MIN_HEIGHT } from "./Dock";
 import { FloatingPanel } from "./FloatingPanel";
+import { focusableItems, Menu, nextIndex } from "./Menu";
+import { Rail } from "./Rail";
+import { Sheet } from "./Sheet";
 import {
   isBoolean,
   isFiniteNumber,
@@ -177,6 +180,23 @@ describe("FloatingPanel", () => {
     expect(html).not.toContain("Body");
   });
 
+  it("follows a controlled collapsed value over the stored one", () => {
+    const store = memoryStore();
+    store.setItem("physix.lab.ui.panel.inspector.collapsed", "true");
+    vi.stubGlobal("localStorage", store);
+    const html = renderToStaticMarkup(
+      <FloatingPanel
+        title="Inspector"
+        anchor="right"
+        persistKey="inspector"
+        collapsed={false}
+      >
+        <p>Body</p>
+      </FloatingPanel>,
+    );
+    expect(html).toContain("<p>Body</p>");
+  });
+
   it("restores the collapsed state remembered for its key", () => {
     const store = memoryStore();
     store.setItem("physix.lab.ui.panel.inspector.collapsed", "true");
@@ -226,6 +246,107 @@ describe("Dock", () => {
     expect(html).toContain('tabindex="0"');
     expect(html).toContain("height:min(320px, 60vh)");
     expect(html).toContain("<p>Plot</p>");
+  });
+
+  it("keeps hidden content mounted when asked and follows a controlled open value", () => {
+    const kept = renderToStaticMarkup(
+      <Dock title="Data" summary="Ready" keepMounted>
+        <p>Verify</p>
+      </Dock>,
+    );
+    expect(kept).toContain("<p>Verify</p>");
+    expect(kept).toMatch(/class="px-dock-body"[^>]*hidden/);
+    const open = renderToStaticMarkup(
+      <Dock title="Data" summary="Ready" open>
+        <p>Verify</p>
+      </Dock>,
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("<p>Verify</p>");
+  });
+});
+
+describe("Sheet", () => {
+  it("renders a labelled dialog whose content mounts only while open", () => {
+    const closed = renderToStaticMarkup(
+      <Sheet open={false} title="Model card" onClose={() => {}}>
+        <p>Card</p>
+      </Sheet>,
+    );
+    expect(closed).toContain('<dialog class="px-sheet"');
+    expect(closed).not.toContain("Card");
+    const open = renderToStaticMarkup(
+      <Sheet open title="Model card" onClose={() => {}} wide>
+        <p>Card</p>
+      </Sheet>,
+    );
+    expect(open).toContain("data-wide");
+    expect(open).toMatch(/aria-labelledby="([^"]+)".*<h2 id="\1">Model card/);
+    expect(open).toContain('aria-label="Close Model card"');
+    expect(open).toContain("<p>Card</p>");
+  });
+});
+
+describe("Menu", () => {
+  it("renders a collapsed menu button", () => {
+    const html = renderToStaticMarkup(
+      <Menu
+        label="More"
+        icon="⋯"
+        items={[{ label: "Home", onSelect: () => {} }]}
+      />,
+    );
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('role="menu"');
+  });
+
+  it("moves through items with arrow, Home and End keys and wraps", () => {
+    expect(nextIndex("ArrowDown", -1, 3)).toBe(0);
+    expect(nextIndex("ArrowDown", 2, 3)).toBe(0);
+    expect(nextIndex("ArrowUp", 0, 3)).toBe(2);
+    expect(nextIndex("ArrowUp", -1, 3)).toBe(1);
+    expect(nextIndex("Home", 2, 3)).toBe(0);
+    expect(nextIndex("End", 0, 3)).toBe(2);
+    expect(nextIndex("x", 1, 3)).toBe(1);
+    expect(nextIndex("ArrowDown", 0, 0)).toBe(-1);
+    expect(focusableItems(null)).toEqual([]);
+  });
+});
+
+describe("Rail", () => {
+  const items = [
+    {
+      id: "add",
+      label: "Add part",
+      icon: "+",
+      content: () => <p>Parts</p>,
+    },
+    {
+      id: "templates",
+      label: "Templates",
+      icon: "T",
+      content: () => <p>Incline</p>,
+    },
+  ];
+
+  it("renders one labelled button per item and no flyout by default", () => {
+    const html = renderToStaticMarkup(<Rail label="Parts" items={items} />);
+    expect(html).toContain('<nav class="px-rail" aria-label="Parts"');
+    expect(html.match(/class="px-rail-button"/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Add part"');
+    expect(html).not.toContain("px-flyout");
+  });
+
+  it("opens the initial flyout and marks its button expanded", () => {
+    const html = renderToStaticMarkup(
+      <Rail label="Parts" items={items} initial="templates" />,
+    );
+    expect(html).toContain(
+      'aria-label="Templates" title="Templates" aria-expanded="true"',
+    );
+    expect(html).toContain("<p>Incline</p>");
+    expect(html).not.toContain("<p>Parts</p>");
   });
 });
 
