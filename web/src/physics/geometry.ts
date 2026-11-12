@@ -23,7 +23,14 @@ export type Curve = Segment | Arc;
 
 const isArc = (c: Curve): c is Arc => "r" in c;
 
-function boxSdf(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
+function boxSdf(
+  px: number,
+  py: number,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): number {
   const cx = 0.5 * (x0 + x1);
   const cy = 0.5 * (y0 + y1);
   const hx = 0.5 * (x1 - x0);
@@ -41,7 +48,10 @@ export function outerSdf(c: Case, px: number, py: number): number {
   const a = g.web_width ?? 0;
   const b = g.flange_height ?? 0;
   const rf = g.fillet_radius ?? 0;
-  let d = Math.min(boxSdf(px, py, 0, 0, a, g.height), boxSdf(px, py, 0, 0, g.width, b));
+  let d = Math.min(
+    boxSdf(px, py, 0, 0, a, g.height),
+    boxSdf(px, py, 0, 0, g.width, b),
+  );
   if (rf > 0) {
     const fillet = boxSdf(px, py, a, b, a + rf, b + rf);
     const outsideCircle = rf - Math.hypot(px - (a + rf), py - (b + rf));
@@ -53,7 +63,8 @@ export function outerSdf(c: Case, px: number, py: number): number {
 /** Signed distance to the solid (negative inside), including holes. */
 export function signedDistance(c: Case, px: number, py: number): number {
   let d = outerSdf(c, px, py);
-  for (const h of c.geometry.holes) d = Math.max(d, h.radius - Math.hypot(px - h.x, py - h.y));
+  for (const h of c.geometry.holes)
+    d = Math.max(d, h.radius - Math.hypot(px - h.x, py - h.y));
   return d;
 }
 
@@ -77,7 +88,15 @@ export function outerCurves(c: Case): Curve[] {
     { x0: w, y0: 0, x1: w, y1: b, tag: "load" },
     { x0: w, y0: b, x1: a + rf, y1: b, tag: "free" },
   ];
-  if (rf > 0) curves.push({ cx: a + rf, cy: b + rf, r: rf, t0: 1.5 * Math.PI, t1: Math.PI, tag: "fillet" });
+  if (rf > 0)
+    curves.push({
+      cx: a + rf,
+      cy: b + rf,
+      r: rf,
+      t0: 1.5 * Math.PI,
+      t1: Math.PI,
+      tag: "fillet",
+    });
   curves.push(
     { x0: a, y0: b + rf, x1: a, y1: h, tag: "free" },
     { x0: a, y0: h, x1: 0, y1: h, tag: "support" },
@@ -98,7 +117,10 @@ export function distanceToSegment(s: Segment, px: number, py: number): number {
   const vx = s.x1 - s.x0;
   const vy = s.y1 - s.y0;
   const l2 = vx * vx + vy * vy;
-  const t = Math.min(1, Math.max(0, ((px - s.x0) * vx + (py - s.y0) * vy) / l2));
+  const t = Math.min(
+    1,
+    Math.max(0, ((px - s.x0) * vx + (py - s.y0) * vy) / l2),
+  );
   return Math.hypot(px - (s.x0 + t * vx), py - (s.y0 + t * vy));
 }
 
@@ -106,7 +128,11 @@ const TAU = 2 * Math.PI;
 const mod = (a: number, m: number) => ((a % m) + m) % m;
 
 /** Exact Euclidean distance to the outer outline. */
-export function distanceToOuterBoundary(c: Case, px: number, py: number): number {
+export function distanceToOuterBoundary(
+  c: Case,
+  px: number,
+  py: number,
+): number {
   let d = Infinity;
   for (const curve of outerCurves(c)) {
     if (!isArc(curve)) {
@@ -126,7 +152,10 @@ export function distanceToOuterBoundary(c: Case, px: number, py: number): number
     const e0y = curve.cy + curve.r * Math.sin(curve.t0);
     const e1x = curve.cx + curve.r * Math.cos(curve.t1);
     const e1y = curve.cy + curve.r * Math.sin(curve.t1);
-    const endD = Math.min(Math.hypot(px - e0x, py - e0y), Math.hypot(px - e1x, py - e1y));
+    const endD = Math.min(
+      Math.hypot(px - e0x, py - e0y),
+      Math.hypot(px - e1x, py - e1y),
+    );
     d = Math.min(d, onArc ? radial : endD);
   }
   return d;
@@ -160,22 +189,45 @@ export function geometryIssues(c: Case): GeometryIssue[] {
   const g = c.geometry;
   const issues: GeometryIssue[] = [];
   const w = g.width;
-  if (!(w > 0) || !(g.height > 0)) issues.push({ field: "geometry", message: "Width and height must be positive." });
-  if (!(c.thickness > 0)) issues.push({ field: "thickness", message: "Thickness must be positive." });
+  if (!(w > 0) || !(g.height > 0))
+    issues.push({
+      field: "geometry",
+      message: "Width and height must be positive.",
+    });
+  if (!(c.thickness > 0))
+    issues.push({ field: "thickness", message: "Thickness must be positive." });
   if (c.family === "bracket") {
     const a = g.web_width ?? 0;
     const b = g.flange_height ?? 0;
     const rf = g.fillet_radius ?? 0;
-    if (!(a > 0 && a + rf < w)) issues.push({ field: "geometry.web_width", message: "Web must be narrower than the bracket." });
-    if (!(b > 0 && b + rf < g.height)) issues.push({ field: "geometry.flange_height", message: "Flange must be lower than the bracket." });
+    if (!(a > 0 && a + rf < w))
+      issues.push({
+        field: "geometry.web_width",
+        message: "Web must be narrower than the bracket.",
+      });
+    if (!(b > 0 && b + rf < g.height))
+      issues.push({
+        field: "geometry.flange_height",
+        message: "Flange must be lower than the bracket.",
+      });
   }
   g.holes.forEach((h, i) => {
-    if (!(h.radius > 0)) issues.push({ field: `geometry.holes[${i}]`, message: `Hole ${i + 1} needs a positive radius.` });
+    if (!(h.radius > 0))
+      issues.push({
+        field: `geometry.holes[${i}]`,
+        message: `Hole ${i + 1} needs a positive radius.`,
+      });
     else if (outerSdf(c, h.x, h.y) > -(h.radius + 0.01 * w))
-      issues.push({ field: `geometry.holes[${i}]`, message: `Hole ${i + 1} is too close to or outside the outline.` });
+      issues.push({
+        field: `geometry.holes[${i}]`,
+        message: `Hole ${i + 1} is too close to or outside the outline.`,
+      });
     g.holes.slice(0, i).forEach((o, j) => {
       if (Math.hypot(h.x - o.x, h.y - o.y) < h.radius + o.radius + 0.01 * w)
-        issues.push({ field: `geometry.holes[${i}]`, message: `Holes ${j + 1} and ${i + 1} overlap.` });
+        issues.push({
+          field: `geometry.holes[${i}]`,
+          message: `Holes ${j + 1} and ${i + 1} overlap.`,
+        });
     });
   });
   return issues;

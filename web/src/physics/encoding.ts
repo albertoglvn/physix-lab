@@ -7,14 +7,34 @@
  */
 
 import type { Case } from "./case";
-import { distanceToSegment, loadSegment, signedDistance, supportSegment } from "./geometry";
+import {
+  distanceToSegment,
+  loadSegment,
+  signedDistance,
+  supportSegment,
+} from "./geometry";
 
 export const RASTER_SCHEMA = "physix.raster/1";
 export const ROWS = 64;
 export const COLS = 128;
 export const PIXELS = ROWS * COLS;
-export const FEATURE_CHANNELS = ["mask", "sdf", "x", "y", "support", "load", "poisson"] as const;
-export const TARGET_CHANNELS = ["sxx_x", "syy_x", "txy_x", "sxx_y", "syy_y", "txy_y"] as const;
+export const FEATURE_CHANNELS = [
+  "mask",
+  "sdf",
+  "x",
+  "y",
+  "support",
+  "load",
+  "poisson",
+] as const;
+export const TARGET_CHANNELS = [
+  "sxx_x",
+  "syy_x",
+  "txy_x",
+  "sxx_y",
+  "syy_y",
+  "txy_y",
+] as const;
 const PROXIMITY_LENGTH_REL = 0.1;
 const SDF_SCALE = 10;
 
@@ -60,7 +80,8 @@ export function solidMask(c: Case): Uint8Array {
   const m = new Uint8Array(PIXELS);
   for (let i = 0; i < ROWS; i++) {
     const py = (ROWS - i - 0.5) * dx;
-    for (let j = 0; j < COLS; j++) m[i * COLS + j] = signedDistance(c, (j + 0.5) * dx, py) < 0 ? 1 : 0;
+    for (let j = 0; j < COLS; j++)
+      m[i * COLS + j] = signedDistance(c, (j + 0.5) * dx, py) < 0 ? 1 : 0;
   }
   return m;
 }
@@ -73,7 +94,9 @@ export function supportBandMask(c: Case, bandRel = 0.05): Uint8Array {
   const m = new Uint8Array(PIXELS);
   for (let i = 0; i < ROWS; i++) {
     const py = (ROWS - i - 0.5) * dx;
-    for (let j = 0; j < COLS; j++) m[i * COLS + j] = distanceToSegment(seg, (j + 0.5) * dx, py) < lim ? 1 : 0;
+    for (let j = 0; j < COLS; j++)
+      m[i * COLS + j] =
+        distanceToSegment(seg, (j + 0.5) * dx, py) < lim ? 1 : 0;
   }
   return m;
 }

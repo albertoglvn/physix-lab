@@ -43,8 +43,17 @@ export interface Case {
   load: Load;
 }
 
-export const MATERIALS: Record<string, Material & { label: string; yield: number }> = {
-  steel: { name: "steel", label: "Structural steel", young: 210e9, poisson: 0.3, yield: 250e6 },
+export const MATERIALS: Record<
+  string,
+  Material & { label: string; yield: number }
+> = {
+  steel: {
+    name: "steel",
+    label: "Structural steel",
+    young: 210e9,
+    poisson: 0.3,
+    yield: 250e6,
+  },
   stainless_304: {
     name: "stainless_304",
     label: "Stainless 304",
@@ -66,14 +75,24 @@ export const MATERIALS: Record<string, Material & { label: string; yield: number
     poisson: 0.342,
     yield: 880e6,
   },
-  pmma: { name: "pmma", label: "PMMA (acrylic)", young: 3.2e9, poisson: 0.37, yield: 70e6 },
+  pmma: {
+    name: "pmma",
+    label: "PMMA (acrylic)",
+    young: 3.2e9,
+    poisson: 0.37,
+    yield: 70e6,
+  },
 };
 
 export function examplePlate(): Case {
   return {
     schema: "physix.case/1",
     family: "plate",
-    geometry: { width: 0.2, height: 0.08, holes: [{ x: 0.1, y: 0.04, radius: 0.012 }] },
+    geometry: {
+      width: 0.2,
+      height: 0.08,
+      holes: [{ x: 0.1, y: 0.04, radius: 0.012 }],
+    },
     thickness: 0.005,
     material: { name: "steel", young: 210e9, poisson: 0.3 },
     support: "clamped",
@@ -101,7 +120,9 @@ export function exampleBracket(): Case {
 }
 
 export function loadEdgeLength(c: Case): number {
-  return c.family === "plate" ? c.geometry.height : (c.geometry.flange_height ?? 0);
+  return c.family === "plate"
+    ? c.geometry.height
+    : (c.geometry.flange_height ?? 0);
 }
 
 /** Equivalent uniform traction (Pa) on the load edge. */
