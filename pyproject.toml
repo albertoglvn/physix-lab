@@ -1,0 +1,49 @@
+[project]
+name = "physix"
+version = "0.1.0"
+description = "Solver-backed 2D linear-elastic stress prediction"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "mcp==1.30.0",
+    "numpy==2.4.6",
+    "scikit-fem==12.0.2",
+    "scipy==1.17.1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit==4.5.1",
+    "pytest==9.0.2",
+    "ruff==0.15.4",
+]
+ml = [
+    "onnx==1.20.1",
+    "onnxruntime==1.26.0",
+    "onnxscript==0.6.2",
+    "torch==2.11.0",
+]
+
+[tool.uv]
+package = false
+required-version = "==0.13.5"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = [".", "mcp"]
+addopts = "--strict-config --strict-markers -ra"

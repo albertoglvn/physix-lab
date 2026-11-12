@@ -1,0 +1,29 @@
+# Python and local tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+/work-*/
+.coverage
+htmlcov/
+
+# Web
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Generated Physix artifacts
+/data/generated/
+/model/checkpoints/
+/model/exports/
+/web/public/models/
+
+# Local configuration and OS files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

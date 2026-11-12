@@ -1,0 +1,8 @@
+packages:
+  - web
+
+# Vite/Vitest use the platform-specific esbuild binary. protobufjs (via onnxruntime-web)
+# only runs an optional version-check script, so its build step stays disabled.
+allowBuilds:
+  esbuild: true
+  protobufjs: false

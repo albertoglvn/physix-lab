@@ -1,0 +1,20 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: Ruff lint
+        entry: uv run --no-sync ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: Ruff format check
+        entry: uv run --no-sync ruff format --check
+        language: system
+        types: [python]
+      - id: web-lint
+        name: Web lint and format check
+        entry: pnpm --filter @physix/web run lint
+        language: system
+        files: ^(web/|package\.json$|pnpm-(workspace|lock)\.yaml$)
+        exclude: ^web/public/models/
+        pass_filenames: false
