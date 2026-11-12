@@ -1,21 +1,4 @@
 .stress-shell {
-  --bg: #f0f5ed;
-  --bg-2: #f8faf6;
-  --panel: #fefffc;
-  --panel-2: #edf3eb;
-  --line: #dce5da;
-  --line-2: #bacaba;
-  --text: #263229;
-  --text-2: #45594c;
-  --muted: #596d60;
-  --accent: #32664e;
-  --accent-2: #a25624;
-  --ok: #357448;
-  --warn: #875c15;
-  --bad: #a13e36;
-  --ref: #6c408a;
-  --radius: 16px;
-  --shadow: 0 2px 6px #344b3412;
   color: var(--text);
 }
 .stress-navigation {
@@ -26,7 +9,7 @@
   gap: 7px 18px;
   min-height: 51px;
   padding: 7px clamp(16px, 4vw, 64px);
-  background: #f3f7f1;
+  background: var(--px-wash);
   border-bottom: 1px solid var(--line);
 }
 .stress-navigation nav {
@@ -37,15 +20,15 @@
 .stress-navigation nav a {
   padding: 6px 9px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--px-radius-control);
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
 }
 .stress-navigation nav a[aria-current="page"] {
-  background: #e5eee3;
-  border-color: #d8e5d8;
-  color: #284f3c;
+  background: var(--px-selected);
+  border-color: var(--px-edge-control);
+  color: var(--px-accent-ink);
 }
 .stress-status {
   display: flex;
@@ -83,7 +66,7 @@
 }
 .stress-shell .hero-demo {
   padding: 14px;
-  border-radius: 20px;
+  border-radius: var(--px-radius-panel);
 }
 .stress-shell .section {
   padding-block: clamp(44px, 7vw, 96px);
@@ -155,47 +138,9 @@
   letter-spacing: 0;
   font-size: 13px;
 }
-.stress-shell .field-stage,
-.stress-shell .hero-stage {
-  background:
-    linear-gradient(#d7e2d580 1px, transparent 1px) 0 0 / 20px 20px,
-    linear-gradient(90deg, #d7e2d580 1px, transparent 1px) 0 0 / 20px 20px,
-    #eef4eb;
-}
-.stress-shell .stage-overlay {
-  background: #f8fbf4d6;
-}
-.stress-shell .stage-banner {
-  background: #fbf6e5f0;
-}
-.stress-shell .btn-primary {
-  color: #fff;
-  border-color: #282834;
-  background: linear-gradient(90deg, transparent, #ffffff1f), #1f1f29;
-}
-.stress-shell .btn-primary:hover {
-  background: #393b45;
-}
 .stress-shell .tone-accent {
-  background: #eaf2e8;
-  border-color: #cbdcc9;
-}
-.stress-shell .code {
-  color: #31483b;
-  background: #eef4ec;
-}
-.stress-shell .fv-shadow {
-  fill: #c7d7c9;
-}
-.stress-shell .fv-outline {
-  stroke: #5b7465;
-}
-.stress-shell .fv-hole circle {
-  stroke: #71867a;
-}
-.stress-shell .fv-tag,
-.stress-shell .fv-readout {
-  background: #fefffcf5;
+  background: var(--px-ok-tint);
+  border-color: var(--px-sage-200);
 }
 .stress-shell .field-foot p,
 .stress-shell .panel-intro p {
@@ -210,10 +155,6 @@
 }
 .stress-shell .panel-body > .muted.small {
   margin-block: 7px;
-}
-.stress-shell .fv-marker.is-ref circle,
-.stress-shell .fv-marker.is-ref line {
-  stroke: #e9c9ff;
 }
 
 @media (max-width: 900px) {

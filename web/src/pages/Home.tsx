@@ -64,11 +64,15 @@ function Schematic({ step }: { step: number }) {
           height="20"
           patternUnits="userSpaceOnUse"
         >
-          <path d="M20 0H0V20" fill="none" stroke="#e9ede8" />
+          <path
+            d="M20 0H0V20"
+            fill="none"
+            style={{ stroke: "var(--px-home-schematic-grid)" }}
+          />
         </pattern>
       </defs>
       <path d="M40 33h460v240H40z" fill="url(#schematic-grid)" opacity=".72" />
-      <g stroke="#8a9a8d" strokeWidth="1.15">
+      <g style={{ stroke: "var(--px-home-schematic-ink)" }} strokeWidth="1.15">
         {step === 0 ? (
           <>
             <circle cx="270" cy="153" r="91" strokeDasharray="2 6" />
@@ -117,7 +121,13 @@ function Schematic({ step }: { step: number }) {
               [371, 97],
               [413, 72],
             ].map(([x, y]) => (
-              <circle key={x} cx={x} cy={y} r="5" fill="#fefffc" />
+              <circle
+                key={x}
+                cx={x}
+                cy={y}
+                r="5"
+                style={{ fill: "var(--px-daylight)" }}
+              />
             ))}
           </>
         )}

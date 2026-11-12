@@ -171,9 +171,9 @@ export function Logo({ size = 22 }: { size?: number }) {
     >
       <defs>
         <linearGradient id="logo-g" x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0" stopColor="#1f6fd1" />
-          <stop offset="0.55" stopColor="#3cc0a0" />
-          <stop offset="1" stopColor="#f2c14e" />
+          <stop offset="0" style={{ stopColor: "var(--px-logo-low)" }} />
+          <stop offset="0.55" style={{ stopColor: "var(--px-logo-mid)" }} />
+          <stop offset="1" style={{ stopColor: "var(--px-logo-high)" }} />
         </linearGradient>
       </defs>
       <rect x="2" y="7" width="28" height="18" rx="3" fill="url(#logo-g)" />

@@ -58,7 +58,9 @@ export function MeshView({
       const span = range.max - range.min || 1;
       const { pts, tris, vm } = data;
       ctx.lineWidth = 0.5;
-      ctx.strokeStyle = "rgba(10, 14, 22, 0.45)";
+      ctx.strokeStyle = getComputedStyle(document.documentElement)
+        .getPropertyValue("--px-mesh-line")
+        .trim();
       for (let t = 0; t < tris.length; t += 3) {
         const a = tris[t];
         const b = tris[t + 1];

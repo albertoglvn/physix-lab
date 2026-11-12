@@ -1,32 +1,4 @@
-/* Physix web theme: dark engineering UI. Units and colours are shared through CSS variables. */
-
-:root {
-  --bg: #0a0e1a;
-  --bg-2: #0e1424;
-  --panel: #121a2d;
-  --panel-2: #172036;
-  --line: #24304a;
-  --line-2: #33415f;
-  --text: #e6ebf5;
-  --text-2: #a9b4cb;
-  --muted: #7d89a3;
-  --accent: #22d3ee;
-  --accent-2: #f59e0b;
-  --ok: #34d399;
-  --warn: #fbbf24;
-  --bad: #f87171;
-  --ref: #c084fc;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  --font:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --mono:
-    ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas,
-    "Liberation Mono", monospace;
-  color-scheme: dark;
-}
+/* Physix base styles. Tokens live in tokens.css; see docs/DESIGN.md. */
 
 * {
   box-sizing: border-box;
@@ -44,18 +16,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(
-      1200px 600px at 85% -10%,
-      rgba(34, 211, 238, 0.09),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 500px at -10% 10%,
-      rgba(245, 158, 11, 0.06),
-      transparent 60%
-    ),
-    var(--bg);
+  background: var(--bg);
   min-height: 100vh;
 }
 
@@ -75,8 +36,8 @@ code,
 }
 
 code {
-  background: rgba(148, 163, 184, 0.12);
-  border-radius: 4px;
+  background: var(--px-wash-strong);
+  border-radius: var(--px-radius-chip);
   padding: 0.05em 0.35em;
 }
 
@@ -141,7 +102,7 @@ ul {
   align-items: center;
   gap: 1.5rem;
   padding: 0.7rem 1.5rem;
-  background: rgba(10, 14, 26, 0.82);
+  background: var(--px-glass);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
@@ -292,14 +253,16 @@ ul {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
-  border-color: transparent;
-  color: #031018;
+  background:
+    linear-gradient(90deg, transparent, var(--px-primary-sheen)),
+    var(--px-primary);
+  border-color: var(--px-primary-edge);
+  color: var(--px-on-primary);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #22d3ee, #06b6d4);
-  border-color: transparent;
+  background: var(--px-primary-hover);
+  border-color: var(--px-primary-edge);
 }
 
 .btn-secondary {
@@ -325,7 +288,7 @@ ul {
   border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
-  border-radius: 6px;
+  border-radius: var(--px-radius-chip);
   width: 28px;
   height: 28px;
   cursor: pointer;
@@ -348,32 +311,32 @@ ul {
   font-weight: 600;
   border: 1px solid var(--line-2);
   color: var(--text-2);
-  background: rgba(148, 163, 184, 0.08);
+  background: var(--px-wash);
   white-space: nowrap;
 }
 
 .badge.tone-ok {
   color: var(--ok);
-  border-color: rgba(52, 211, 153, 0.4);
-  background: rgba(52, 211, 153, 0.1);
+  border-color: color-mix(in srgb, var(--px-ok) 35%, transparent);
+  background: var(--px-ok-tint);
 }
 
 .badge.tone-warn {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.1);
+  border-color: color-mix(in srgb, var(--px-warn) 35%, transparent);
+  background: var(--px-warn-tint);
 }
 
 .badge.tone-bad {
   color: var(--bad);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.1);
+  border-color: var(--px-bad-edge);
+  background: var(--px-bad-tint);
 }
 
 .badge.tone-accent {
   color: var(--accent);
-  border-color: rgba(34, 211, 238, 0.4);
-  background: rgba(34, 211, 238, 0.08);
+  border-color: var(--px-sage-200);
+  background: var(--px-ok-tint);
 }
 
 .callout {
@@ -392,12 +355,12 @@ ul {
 }
 
 .callout.tone-warn {
-  border-color: rgba(251, 191, 36, 0.45);
+  border-color: color-mix(in srgb, var(--px-warn) 40%, transparent);
   border-left-color: var(--warn);
 }
 
 .callout.tone-bad {
-  border-color: rgba(248, 113, 113, 0.45);
+  border-color: var(--px-bad-edge);
   border-left-color: var(--bad);
 }
 
@@ -704,11 +667,10 @@ ul {
   position: relative;
   border-radius: var(--radius-sm);
   background:
-    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px) 0 0 / 24px
-      24px,
-    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px) 0 0 /
-      24px 24px,
-    var(--bg);
+    linear-gradient(var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px
+      20px,
+    var(--px-stage);
   border: 1px solid var(--line);
   overflow: hidden;
 }
@@ -721,7 +683,7 @@ ul {
   place-items: center;
   padding: 1rem;
   text-align: center;
-  background: rgba(10, 14, 26, 0.72);
+  background: var(--px-overlay);
   backdrop-filter: blur(2px);
 }
 
@@ -734,8 +696,8 @@ ul {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(18, 26, 45, 0.92);
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: var(--px-warn-tint);
+  border: 1px solid color-mix(in srgb, var(--px-warn) 40%, transparent);
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.7rem;
   font-size: 0.85rem;
@@ -914,7 +876,7 @@ ul {
 }
 
 .table tr.is-selected td {
-  background: rgba(52, 211, 153, 0.08);
+  background: var(--px-ok-tint);
   color: var(--text);
 }
 
@@ -1007,7 +969,7 @@ ul {
 }
 
 .design-card.tone-ok {
-  border-color: rgba(52, 211, 153, 0.45);
+  border-color: color-mix(in srgb, var(--px-ok) 40%, transparent);
 }
 
 .design-card h4 {
@@ -1066,14 +1028,14 @@ ul {
 
 .code {
   margin: 0;
-  background: #070a13;
+  background: var(--px-wash-strong);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 0.8rem 0.9rem;
   font-family: var(--mono);
   font-size: 0.8rem;
   line-height: 1.55;
-  color: #cfe3ff;
+  color: var(--px-ink);
   overflow: auto;
   max-height: 360px;
   white-space: pre;
@@ -1095,7 +1057,7 @@ ul {
 }
 
 .fv-shadow {
-  fill: #1a2338;
+  fill: var(--px-specimen-shadow);
 }
 
 .fv-raster {
@@ -1104,7 +1066,7 @@ ul {
 
 .fv-outline {
   fill: none;
-  stroke: #dbe4f3;
+  stroke: var(--px-ink-icon);
   stroke-width: 1.4;
 }
 
@@ -1140,7 +1102,7 @@ ul {
 
 .fv-hole circle {
   fill: transparent;
-  stroke: #dbe4f3;
+  stroke: var(--px-sage-500);
   stroke-width: 1.4;
 }
 
@@ -1152,7 +1114,7 @@ ul {
 .fv-hole.is-active > circle:first-child {
   stroke: var(--accent);
   stroke-width: 2;
-  fill: rgba(34, 211, 238, 0.08);
+  fill: color-mix(in srgb, var(--px-accent) 8%, transparent);
 }
 
 .fv-hole .fv-handle {
@@ -1171,27 +1133,27 @@ ul {
 
 .fv-marker circle {
   fill: none;
-  stroke: #fff;
+  stroke: var(--px-white);
   stroke-width: 2;
 }
 
 .fv-marker line {
-  stroke: #fff;
+  stroke: var(--px-white);
   stroke-width: 2;
 }
 
 .fv-marker.is-ref circle,
 .fv-marker.is-ref line {
-  stroke: var(--ref);
+  stroke: var(--px-ref-light);
   stroke-dasharray: 2 2;
 }
 
 .fv-tag {
   position: absolute;
   transform: translate(-50%, calc(-100% - 14px));
-  background: rgba(7, 10, 19, 0.88);
+  background: var(--px-glass);
   border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border-radius: var(--px-radius-chip);
   padding: 0.1rem 0.45rem;
   font-size: 0.74rem;
   font-family: var(--mono);
@@ -1208,9 +1170,9 @@ ul {
 .fv-readout {
   position: absolute;
   transform: translate(12px, 12px);
-  background: rgba(7, 10, 19, 0.92);
+  background: var(--px-glass);
   border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border-radius: var(--px-radius-chip);
   padding: 0.3rem 0.5rem;
   font-size: 0.78rem;
   pointer-events: none;
@@ -1263,7 +1225,7 @@ ul {
   width: 100%;
   height: auto;
   aspect-ratio: 2 / 1;
-  border-radius: 6px;
+  border-radius: var(--px-radius-chip);
 }
 
 /* ---------- landing ---------- */
@@ -1286,7 +1248,7 @@ ul {
   background: linear-gradient(
     90deg,
     var(--accent),
-    #a5f3fc 45%,
+    var(--px-sage-200) 45%,
     var(--accent-2)
   );
   -webkit-background-clip: text;
@@ -1394,7 +1356,7 @@ ul {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(34, 211, 238, 0.12);
+  background: var(--px-ok-tint);
   color: var(--accent);
   font-weight: 700;
   font-size: 0.85rem;

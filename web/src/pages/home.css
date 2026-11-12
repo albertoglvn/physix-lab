@@ -4,15 +4,6 @@
 @import "@fontsource/instrument-serif/latin-400.css";
 
 .pastoral {
-  --daylight: #fefffc;
-  --editorial-ink: #2c2c2c;
-  --warm-ink: #444141;
-  --prose: #646464;
-  --rule: #dee2de;
-  --sky: #0081c0;
-  --display: "Instrument Serif", Georgia, serif;
-  --wordmark: "Bricolage Grotesque", Inter, Arial, sans-serif;
-  --copy: Inter, Arial, sans-serif;
   color-scheme: light;
   min-height: 100vh;
   background: var(--daylight);
@@ -25,7 +16,7 @@
   color: inherit;
 }
 .pastoral :focus-visible {
-  outline: 2px solid #167961;
+  outline: 2px solid var(--px-focus);
   outline-offset: 3px;
 }
 .pastoral p {
@@ -49,10 +40,12 @@
 }
 a.pastoral-action--primary {
   padding: 0 12px 0 16px;
-  border: 1px solid #282834;
-  border-radius: 8px;
-  color: #fff;
-  background: linear-gradient(90deg, transparent, #ffffff1f), #1f1f29;
+  border: 1px solid var(--px-primary-edge);
+  border-radius: var(--px-radius-control);
+  color: var(--px-white);
+  background:
+    linear-gradient(90deg, transparent, var(--px-primary-sheen)),
+    var(--px-primary);
 }
 .pastoral-action--text > span:first-child {
   text-decoration: underline;
@@ -60,10 +53,10 @@ a.pastoral-action--primary {
 }
 a.pastoral-action--glass {
   padding-inline: 16px;
-  border: 1px solid #71bde2;
-  border-radius: 8px;
-  background: #ffffff23;
-  color: white;
+  border: 1px solid var(--px-sky-edge);
+  border-radius: var(--px-radius-control);
+  background: color-mix(in srgb, var(--px-white) 14%, transparent);
+  color: var(--px-white);
 }
 .pastoral-keycap {
   display: grid;
@@ -73,7 +66,11 @@ a.pastoral-action--glass {
   place-items: center;
   border-radius: 51px;
   border: 1px solid currentColor;
-  background: linear-gradient(0deg, #ffffff29, #ffffff14);
+  background: linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--px-white) 16%, transparent),
+    color-mix(in srgb, var(--px-white) 8%, transparent)
+  );
 }
 .pastoral-keycap svg {
   transform: translateX(0.2px);
@@ -98,20 +95,24 @@ a.pastoral-action--glass {
   height: 54px;
   max-width: calc(100% - 24px);
   padding: 0 8px 0 15px;
-  border: 1px solid #ffffffbf;
+  border: 1px solid color-mix(in srgb, var(--px-white) 75%, transparent);
   border-radius: 12px;
-  background: #fefffce8;
+  background: color-mix(in srgb, var(--px-daylight) 91%, transparent);
   backdrop-filter: blur(9px);
-  box-shadow: 0 2px 6px #00000026;
+  box-shadow: var(--px-shadow-photo);
   transition:
     background 0.25s ease,
     color 0.25s ease,
     border-color 0.25s ease;
 }
 .home-nav.is-landscape {
-  color: #fff;
-  border-color: #ffffff4f;
-  background: linear-gradient(90deg, #243f5459, #31556b54);
+  color: var(--px-white);
+  border-color: color-mix(in srgb, var(--px-white) 31%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--px-home-slate) 35%, transparent),
+    color-mix(in srgb, var(--px-home-slate-2) 33%, transparent)
+  );
 }
 .home-nav-mark {
   display: grid;
@@ -136,8 +137,8 @@ a.pastoral-action--glass {
   min-height: 750px;
   height: min(1000px, max(100svh, 58vw));
   overflow: hidden;
-  color: white;
-  background: #2679a2;
+  color: var(--px-white);
+  background: var(--px-home-hero);
 }
 .home-hero-art,
 .home-invitation > img,
@@ -160,10 +161,10 @@ a.pastoral-action--glass {
   z-index: 0;
   background: linear-gradient(
     180deg,
-    #0c2d4140,
+    color-mix(in srgb, var(--px-home-night) 25%, transparent),
     transparent 27%,
     transparent 56%,
-    #16271934
+    color-mix(in srgb, var(--px-home-forest) 20%, transparent)
   );
   pointer-events: none;
 }
@@ -177,7 +178,8 @@ a.pastoral-action--glass {
   font: 600 29px/1.15 var(--wordmark);
   letter-spacing: -0.04em;
   font-variant-ligatures: none;
-  text-shadow: 0 1px 7px #16374fbd;
+  text-shadow: 0 1px 7px
+    color-mix(in srgb, var(--px-home-sky-ink) 74%, transparent);
 }
 .home-hero-identity span {
   display: block;
@@ -194,11 +196,15 @@ a.pastoral-action--glass {
   justify-items: start;
   gap: 16px;
   padding: 32px 24px 32px 32px;
-  border: 1px solid #ffffff45;
-  border-radius: 16px;
-  background: linear-gradient(105deg, #171c146b, #262b2260);
+  border: 1px solid color-mix(in srgb, var(--px-white) 27%, transparent);
+  border-radius: var(--px-radius-panel);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--px-home-umber) 42%, transparent),
+    color-mix(in srgb, var(--px-home-umber-2) 38%, transparent)
+  );
   backdrop-filter: blur(15px);
-  box-shadow: 0 2px 6px #00000026;
+  box-shadow: var(--px-shadow-photo);
 }
 .home-hero-panel h1 {
   font-size: 40px;
@@ -207,40 +213,40 @@ a.pastoral-action--glass {
 }
 .home-hero-panel p {
   max-width: 350px;
-  color: #fff;
+  color: var(--px-white);
 }
 
 .home-stripes {
   display: grid;
   gap: 2px;
-  background: white;
+  background: var(--px-white);
 }
 .home-stripes i {
   height: 6px;
 }
 .home-stripes--dusk i:nth-child(1) {
-  background: #334444;
+  background: var(--px-home-dusk-1);
 }
 .home-stripes--dusk i:nth-child(2) {
-  background: #576a6a;
+  background: var(--px-home-dusk-2);
 }
 .home-stripes--dusk i:nth-child(3) {
-  background: #728383;
+  background: var(--px-home-dusk-3);
 }
 .home-stripes--dusk i:nth-child(4) {
-  background: #a5afaf;
+  background: var(--px-home-dusk-4);
 }
 .home-stripes--dusk i:nth-child(5) {
-  background: #cfd3cf;
+  background: var(--px-home-dusk-5);
 }
 .home-stripes--mint i:nth-child(1) {
-  background: #e7f5f3;
+  background: var(--px-home-mint-1);
 }
 .home-stripes--mint i:nth-child(2) {
-  background: #d0ebe8;
+  background: var(--px-home-mint-2);
 }
 .home-stripes--mint i:nth-child(3) {
-  background: #a0d7d1;
+  background: var(--px-home-mint-3);
 }
 
 .home-editorial {
@@ -273,10 +279,10 @@ a.pastoral-action--glass {
   max-width: 680px;
 }
 .home-method > h2 em {
-  color: #68736b;
+  color: var(--px-home-sage-ink);
   font-style: normal;
   text-decoration: underline;
-  text-decoration-color: #c5cdc2;
+  text-decoration-color: var(--px-home-sage-rule);
   text-decoration-thickness: 1px;
   text-underline-offset: 6px;
 }
@@ -301,18 +307,18 @@ a.pastoral-action--glass {
 }
 .home-method-tabs button {
   border: 0;
-  border-top: 2px solid #d9dfd7;
+  border-top: 2px solid var(--px-home-tab-rule);
   border-radius: 0;
   background: transparent;
   padding: 8px 8px 4px 0;
-  color: #606a62;
+  color: var(--px-ink-muted);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
 }
 .home-method-tabs button[aria-pressed="true"] {
-  border-color: #3f6954;
-  color: #244f3a;
+  border-color: var(--px-accent);
+  color: var(--px-accent-ink);
 }
 .home-method-description {
   min-height: 88px;
@@ -323,20 +329,18 @@ a.pastoral-action--glass {
   padding: 16px;
   border-radius: 24px;
   border: 1px solid var(--rule);
-  background: #dee2de29;
+  background: color-mix(in srgb, var(--px-editorial-rule) 16%, transparent);
 }
 .home-diagram {
   display: block;
   width: 100%;
   border-radius: 12px;
   background: var(--daylight);
-  box-shadow:
-    0 1px 1px #00000014,
-    0 4px 5px #00000014;
+  box-shadow: var(--px-shadow-paper);
 }
 .home-method figcaption {
   margin: 10px 4px 0;
-  color: #616d63;
+  color: var(--px-ink-muted);
   font-size: 13px;
   text-align: right;
 }
@@ -348,11 +352,11 @@ a.pastoral-action--glass {
   margin: 0 24px;
   overflow: hidden;
   border-radius: 24px;
-  color: #fff;
+  color: var(--px-white);
   background: var(--sky);
   box-shadow:
-    0 2px 2px #0000000f,
-    0 0 0 5px #0000000a;
+    0 2px 2px color-mix(in srgb, var(--px-black) 6%, transparent),
+    0 0 0 5px color-mix(in srgb, var(--px-black) 4%, transparent);
 }
 .home-invitation > img {
   object-position: 63% center;
@@ -364,8 +368,8 @@ a.pastoral-action--glass {
   inset: 0;
   background: linear-gradient(
     110deg,
-    #003d6187 1%,
-    #00476b42 38%,
+    color-mix(in srgb, var(--px-home-sky-deep) 53%, transparent) 1%,
+    color-mix(in srgb, var(--px-home-sky-mid) 26%, transparent) 38%,
     transparent 61%
   );
 }
@@ -408,8 +412,8 @@ a.pastoral-action--glass {
   overflow: hidden;
   aspect-ratio: 8 / 7;
   min-width: 0;
-  border-radius: 16px;
-  background: #719c65;
+  border-radius: var(--px-radius-panel);
+  background: var(--px-home-meadow);
 }
 .home-experiment img {
   object-position: center 42%;
@@ -428,7 +432,7 @@ a.pastoral-action--glass {
   margin: 0 clamp(14px, 2.7vw, 40px) 24px;
   padding: 18px 12px;
   border-radius: 12px;
-  background: #ffffffde;
+  background: color-mix(in srgb, var(--px-white) 87%, transparent);
   backdrop-filter: blur(10px);
   text-align: center;
 }
@@ -438,12 +442,12 @@ a.pastoral-action--glass {
 }
 .home-experiment-caption > span {
   font-size: 13px;
-  color: #535f56;
+  color: var(--px-ink-muted);
 }
 
 .home-footer {
-  background: #fff;
-  border-top: 1px solid #edf0eb;
+  background: var(--px-white);
+  border-top: 1px solid var(--px-editorial-rule-soft);
 }
 .home-footer-intro {
   padding: 80px 20px;
@@ -453,7 +457,7 @@ a.pastoral-action--glass {
   gap: 22px;
 }
 .home-footer-intro > svg {
-  color: #526b59;
+  color: var(--px-ink-icon);
 }
 .home-utilities {
   display: flex;
@@ -479,7 +483,7 @@ a.pastoral-action--glass {
   height: 500px;
   position: relative;
   overflow: hidden;
-  background: #304d49;
+  background: var(--px-home-horizon);
 }
 .home-horizon img {
   object-position: center 55%;
@@ -488,7 +492,10 @@ a.pastoral-action--glass {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(transparent 75%, #0008);
+  background: linear-gradient(
+    transparent 75%,
+    color-mix(in srgb, var(--px-black) 53%, transparent)
+  );
 }
 
 @media (max-width: 850px) {
@@ -590,8 +597,8 @@ a.pastoral-action--glass {
   .home-invitation::after {
     background: linear-gradient(
       155deg,
-      #003a61a8 1%,
-      #003a6129 55%,
+      color-mix(in srgb, var(--px-home-sky-deep) 66%, transparent) 1%,
+      color-mix(in srgb, var(--px-home-sky-deep) 16%, transparent) 55%,
       transparent
     );
   }
@@ -634,7 +641,7 @@ a.pastoral-action--glass {
   gap: 16px;
   min-height: 65px;
   padding: 12px clamp(16px, 4vw, 64px);
-  border-bottom: 1px solid #dce4da;
+  border-bottom: 1px solid var(--px-edge);
   background: var(--daylight);
 }
 .workspace-brand {
@@ -652,13 +659,13 @@ a.pastoral-action--glass {
   gap: clamp(10px, 2vw, 25px);
   align-items: center;
   font-size: 13px;
-  color: #59695d;
+  color: var(--px-ink-muted);
 }
 .workspace-header nav a {
   white-space: nowrap;
 }
 .workspace-header nav a[aria-current="page"] {
-  color: #315a46;
+  color: var(--px-accent-ink);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 5px;
@@ -691,9 +698,7 @@ a.pastoral-action--glass {
   overflow: hidden;
   border-radius: 12px;
   background: var(--daylight);
-  box-shadow:
-    0 1px 1px #00000014,
-    0 4px 5px #00000014;
+  box-shadow: var(--px-shadow-paper);
 }
 .home-stress-switch {
   display: flex;
@@ -704,16 +709,16 @@ a.pastoral-action--glass {
   flex: 1 1 auto;
   padding: 7px 5px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--px-radius-chip);
   background: transparent;
-  color: #56655b;
+  color: var(--px-ink-muted);
   font: 500 12px/1.3 var(--copy);
   cursor: pointer;
 }
 .home-stress-switch button[aria-pressed="true"] {
-  background: #e9f0e6;
-  border-color: #dce7d9;
-  color: #254a37;
+  background: var(--px-wash-strong);
+  border-color: var(--px-edge);
+  color: var(--px-accent-ink);
 }
 .home-stress-stage {
   display: grid;
@@ -721,9 +726,17 @@ a.pastoral-action--glass {
   height: clamp(156px, 19vw, 242px);
   padding: 14px;
   background:
-    repeating-linear-gradient(0deg, transparent 0 19px, #dce5da80 19px 20px),
-    repeating-linear-gradient(90deg, transparent 0 19px, #dce5da80 19px 20px),
-    #f1f5ef;
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 19px,
+      color-mix(in srgb, var(--px-edge) 50%, transparent) 19px 20px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 19px,
+      color-mix(in srgb, var(--px-edge) 50%, transparent) 19px 20px
+    ),
+    var(--px-wash);
 }
 .home-stress-stage img {
   display: block;
@@ -739,7 +752,7 @@ a.pastoral-action--glass {
   grid-template-columns: auto 1fr auto;
   gap: 8px;
   padding: 10px 12px;
-  color: #56655b;
+  color: var(--px-ink-muted);
   font-size: 11px;
 }
 .home-stress-scale i {

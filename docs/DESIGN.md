@@ -25,21 +25,39 @@ instrument, not a dashboard.
 
 ## 2. Colour tokens
 
-All colours live in `web/src/tokens.css` as custom properties on `.pastoral`. Components use
-tokens only. Literal colours are allowed only in colour-map stop tables and in SVG
-illustrations under `assets/`.
+All colours live in `web/src/tokens.css` as custom properties on `:root`. Components use
+tokens only. Literal colours are allowed only in `tokens.css` and in the colour-map stop
+tables in `web/src/ui/colormap.ts`, and a Vitest guard (`web/src/tokens.test.ts`) enforces
+this. Alpha variants are written as `color-mix(in srgb, var(--px-…) N%, transparent)`.
+Canvas and three.js code read tokens through `getComputedStyle`; see
+`web/src/lab/viewportPalette.ts`.
+
+`tokens.css` also keeps the legacy aliases (`--bg`, `--panel`, `--line`, `--text`, `--muted`,
+`--accent`, `--display`, `--copy` and others) that `styles.css` and the home page use. New
+code uses the `--px-*` names.
 
 ### 2.1 Surfaces and ink
 
 | Token | Value | Use |
 | --- | --- | --- |
 | `--px-daylight` | `#fefffc` | Page and floating-panel background |
+| `--px-paper` | `#f9fbf7` | Button and input fill |
 | `--px-wash` | `#f5f8f3` | Viewport surround, hovered rows, input fill |
-| `--px-wash-strong` | `#edf3eb` | Selected rows, pressed segments |
-| `--px-edge` | `#dce4da` | Panel and control borders |
+| `--px-canvas` | `#f0f5ed` | Stress view page background |
+| `--px-wash-strong` | `#edf3eb` | Selected rows, pressed segments, code blocks |
+| `--px-selected` | `#e5eee3` | Current navigation item |
 | `--px-rule` | `#e7ede6` | Dividers inside panels |
+| `--px-edge` | `#dce4da` | Panel and control borders |
+| `--px-edge-control` | `#d7e0d5` | Input and select borders |
+| `--px-edge-strong` | `#bacaba` | Pill and callout borders |
+| `--px-halo` | `#dcebe1` | Running-dot halo, pressed list items |
+| `--px-glass` | `#fbfdf9eb` | Translucent chips and tags over a viewport |
+| `--px-overlay` | `#f8fbf4d6` | Loading overlay over a field |
+| `--px-scrim` | `#1d2a237d` | Behind sheets and dialogs |
 | `--px-ink` | `#263229` | Primary text in the lab |
+| `--px-ink-2` | `#45594c` | Secondary body text in the stress views |
 | `--px-ink-muted` | `#59695d` | Labels, units, secondary values |
+| `--px-ink-icon` | `#5b7465` | Panel icons and specimen outlines |
 | `--px-ink-faint` | `#819185` | Decorative separators only, never text that must be read |
 | `--px-editorial-ink` | `#2c2c2c` | Home page prose only |
 | `--px-prose` | `#646464` | Home page body copy only |
@@ -60,7 +78,7 @@ illustrations under `assets/`.
 | Token | Value | Background tint | Use |
 | --- | --- | --- | --- |
 | `--px-ok` | `#357448` | `#eaf2e8` | Running, solver online, verified |
-| `--px-warn` | `#875c15` | `#f7efdf` | Fallback triggered, assumption broken, synthetic noise on |
+| `--px-warn` | `#875c15` | `#fbf6e5` | Fallback triggered, assumption broken, synthetic noise on |
 | `--px-bad` | `#a13e36` | `#faeeea` (edge `#f3d9d4`) | Errors, rejected case, failed solve |
 | `--px-ref` | `#6c408a` | `#f1ebf5` | Reference or FEM values and theory curves |
 | `--px-idle` | `#9eae9d` | — | Idle status dot |
@@ -104,14 +122,29 @@ unlocks it.
 
 ### 2.6 Viewport palette (Motion)
 
-| Element | Value |
-| --- | --- |
-| Background | `--px-wash` |
-| Grid major and minor lines | `#9bad9e`, `#c6d3c4` |
-| Ramps and fixed geometry | Warm grey `#c9c3b5` with `--px-edge` outlines |
-| Bodies | Series colours in creation order, so a body's plot colour matches its 3D colour |
-| Selection | `--px-accent` outline, 2 px, plus a 3 px `#dcebe1` halo |
-| Vectors | Velocity uses the body colour. Forces use `--px-ink` with labelled arrowheads. |
+The three.js scene reads these tokens at start-up, so a change in `tokens.css` reaches the
+3D view without code changes.
+
+| Element | Token | Value |
+| --- | --- | --- |
+| Background | `--px-viewport-bg` | `#eaf0e7` |
+| Floor | `--px-viewport-floor` | `#e2eade` |
+| Grid major and minor lines | `--px-grid-major`, `--px-grid-minor` | `#9bad9e`, `#c6d3c4` |
+| Lights (sky, ground, sun) | `--px-viewport-sky-light`, `--px-viewport-ground-light`, `--px-viewport-sun` | `#ffffff`, `#84917f`, `#fff6e1` |
+| Blocks | `--px-part-block`, edge `--px-part-block-edge` | `#edb765`, `#5a412a` |
+| Ramps and fixed geometry | `--px-part-ramp`, edge `--px-part-edge` | `#83a398`, `#476d61` |
+| Pulley | `--px-part-frame`, `-wheel`, `-rim`, `-hub`, `-spoke`, `-rope`, `-weight-left`, `-weight-right` | See `tokens.css` |
+| Selection | The part's edge outline is shown | — |
+
+From Phase 2, bodies take series colours in creation order so that a body's plot colour
+matches its 3D colour, and velocity vectors use the body colour while forces use `--px-ink`
+with labelled arrowheads.
+
+### 2.7 Home page and illustrations
+
+The `--px-home-*` group holds the landscape, stripe and overlay colours of the home page,
+and `--px-logo-low|mid|high` holds the logo gradient. They are not used in the lab.
+`--px-mesh-line` is the stroke for FEM mesh previews drawn on a canvas.
 
 ---
 
@@ -142,6 +175,10 @@ unlocks it.
 | `--px-shadow-float` | `0 8px 24px #344b341f, 0 1px 2px #344b3414` | Floating panels over the viewport |
 | `--px-shadow-sheet` | `0 24px 64px #26322933` | Modal sheets |
 | `--px-shadow-flat` | `0 2px 6px #344b3412` | Cards on the home page |
+| `--px-shadow-photo`, `--px-shadow-paper` | Black at 15 % and 8 % | Home page photographs and paper cards |
+
+The home page keeps its editorial radii (12 px cards, 24 px figures, pill buttons). The
+16/8/6 scale applies to the lab and the stress views.
 
 - The spacing scale is 4, 8, 12, 16, 24 and 32 px. Panels use 12 px horizontal and 16 px
   vertical padding.
@@ -176,7 +213,7 @@ diagram.
 | Inspector | 280 px wide, floating 12 px from the right edge and below the top bar. It scrolls internally and collapses to a 28 px edge tab. Groups are collapsible and remember their state. |
 | Data dock | Full width minus 12 px gutters, floating 12 px above the bottom edge. Collapsed height is 36 px (one readout line). Expanded height ranges from 200 px to 60 vh. |
 | HUD | Axes gizmo bottom-left, scale bar bottom-centre, colour bar right of centre (Stress), provenance chip top-left under the bar. HUD items move clear of the open panels. |
-| Sheets | Centred, at most 720 px wide, on a scrim of `#26322933`. One sheet at a time. Escape closes it. |
+| Sheets | Centred, at most 720 px wide, on `--px-scrim`. One sheet at a time. Escape closes it. |
 
 ### Floating panels
 
@@ -253,10 +290,10 @@ diagram.
 
 ## 10. Fixes to the current UI
 
-These differences from the current tree are adopted with this document and land in Phase 0
-of LAB_PLAN.md.
+These differences from the earlier tree are adopted with this document. Items 1–5 are done
+(Phase 0). Items 6, 7, 9 and 10 land in Phase 1 and item 8 in Phase 2 of LAB_PLAN.md.
 
-| # | Current | Fix |
+| # | Earlier | Fix |
 | --- | --- | --- |
 | 1 | `styles.css` defines dark tokens (`--bg: #0a0e1a`, `--accent: #22d3ee`) that `stress.css` overrides | Delete the dark token block. Define all tokens once in `tokens.css`. |
 | 2 | `lab.css` declares `--lab-*` tokens and repeats about 25 literal hex values | Replace them with `--px-*` tokens |

@@ -4,6 +4,10 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { LabScene, Pulley } from "./scene";
 import {
+  documentViewportPalette,
+  type ViewportPalette,
+} from "./viewportPalette";
+import {
   initialBlockState,
   PULLEY_HEIGHT,
   PULLEY_RADIUS,
@@ -24,7 +28,10 @@ type View = {
   dispose: () => void;
 };
 
-function solid(geometry: THREE.BufferGeometry, color: number) {
+function solid(
+  geometry: THREE.BufferGeometry,
+  color: THREE.ColorRepresentation,
+) {
   const mesh = new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({ color, roughness: 0.75 }),
@@ -34,16 +41,23 @@ function solid(geometry: THREE.BufferGeometry, color: number) {
   return mesh;
 }
 
-function edges(geometry: THREE.BufferGeometry, color: number) {
+function edges(
+  geometry: THREE.BufferGeometry,
+  color: THREE.ColorRepresentation,
+) {
   return new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry, 24),
     new THREE.LineBasicMaterial({ color }),
   );
 }
 
-function pulleyMesh(object: Pulley, simulation?: Simulation): THREE.Group {
+function pulleyMesh(
+  object: Pulley,
+  palette: ViewportPalette,
+  simulation?: Simulation,
+): THREE.Group {
   const root = new THREE.Group();
-  const frame = 0x57766d;
+  const frame = palette.frame;
   const feet = solid(new THREE.BoxGeometry(2.05, 0.16, 1.18), frame);
   const upright = solid(
     new THREE.BoxGeometry(0.15, PULLEY_HEIGHT, 0.15),
@@ -58,19 +72,22 @@ function pulleyMesh(object: Pulley, simulation?: Simulation): THREE.Group {
   const wheel = new THREE.Group();
   const disk = solid(
     new THREE.CylinderGeometry(PULLEY_RADIUS, PULLEY_RADIUS, 0.18, 32),
-    0xd7a054,
+    palette.wheel,
   );
   disk.rotation.x = Math.PI / 2;
   const rim = solid(
     new THREE.TorusGeometry(PULLEY_RADIUS, 0.037, 8, 32),
-    0x645544,
+    palette.rim,
   );
-  const hub = solid(new THREE.SphereGeometry(0.12, 16, 12), 0x515950);
+  const hub = solid(new THREE.SphereGeometry(0.12, 16, 12), palette.hub);
   hub.position.z = 0.12;
   wheel.position.y = PULLEY_HEIGHT;
   wheel.add(disk, rim, hub);
   for (let i = 0; i < 5; i++) {
-    const spoke = solid(new THREE.BoxGeometry(0.035, 0.34, 0.022), 0x8c6536);
+    const spoke = solid(
+      new THREE.BoxGeometry(0.035, 0.34, 0.022),
+      palette.spoke,
+    );
     const pivot = new THREE.Group();
     spoke.position.set(0, 0.29, 0.103);
     pivot.rotation.z = (i * Math.PI * 2) / 5;
@@ -80,14 +97,14 @@ function pulleyMesh(object: Pulley, simulation?: Simulation): THREE.Group {
   root.add(wheel);
 
   const weightHeight = 0.54;
-  const weights = [0x7898b5, 0xc78161].map((color, i) => {
+  const weights = [palette.weightLeft, palette.weightRight].map((color, i) => {
     const weight = solid(
       new RoundedBoxGeometry(0.5, weightHeight, 0.5, 2, 0.035),
       color,
     );
     const rope = solid(
       new THREE.CylinderGeometry(0.021, 0.021, 1, 8),
-      0x655543,
+      palette.rope,
     );
     weight.position.x = rope.position.x = (i === 0 ? -1 : 1) * PULLEY_RADIUS;
     root.add(weight, rope);
@@ -133,10 +150,13 @@ function createView(
   renderer.domElement.setAttribute("aria-label", "3D view of the experiment");
   host.append(renderer.domElement);
 
+  const palette = documentViewportPalette();
   const stage = new THREE.Scene();
-  stage.background = new THREE.Color(0xeaf0e7);
-  stage.add(new THREE.HemisphereLight(0xffffff, 0x84917f, 2.25));
-  const sun = new THREE.DirectionalLight(0xfff6e1, 2.1);
+  stage.background = new THREE.Color(palette.background);
+  stage.add(
+    new THREE.HemisphereLight(palette.skyLight, palette.groundLight, 2.25),
+  );
+  const sun = new THREE.DirectionalLight(palette.sun, 2.1);
   sun.position.set(-7, 13, 8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -146,11 +166,16 @@ function createView(
   sun.shadow.normalBias = 0.035;
   stage.add(sun);
 
-  const floor = solid(new THREE.BoxGeometry(100, 0.25, 100), 0xe2eade);
+  const floor = solid(new THREE.BoxGeometry(100, 0.25, 100), palette.floor);
   floor.position.y = -0.126;
   floor.castShadow = false;
   stage.add(floor);
-  const grid = new THREE.GridHelper(48, 48, 0x9bad9e, 0xc6d3c4);
+  const grid = new THREE.GridHelper(
+    48,
+    48,
+    palette.gridMajor,
+    palette.gridMinor,
+  );
   grid.position.y = 0.006;
   stage.add(grid);
   const parts = new THREE.Group();
@@ -260,9 +285,9 @@ function createView(
               3,
               0.045,
             ),
-            0xedb765,
+            palette.block,
           );
-          const outline = edges(mesh.geometry, 0x5a412a);
+          const outline = edges(mesh.geometry, palette.blockEdge);
           mesh.add(outline);
           const initial = initialBlockState(object);
           drawable = {
@@ -293,15 +318,15 @@ function createView(
           const flat = geometry.toNonIndexed();
           geometry.dispose();
           flat.computeVertexNormals();
-          const mesh = solid(flat, 0x83a398);
-          const outline = edges(flat, 0x476d61);
+          const mesh = solid(flat, palette.ramp);
+          const outline = edges(flat, palette.partEdge);
           mesh.position.set(object.x, 0, object.z);
           mesh.add(outline);
           drawable = { root: mesh, outline };
         } else {
-          const root = pulleyMesh(object, current);
+          const root = pulleyMesh(object, palette, current);
           const bounds = new THREE.BoxGeometry(2.05, 4.65, 1.18);
-          const outline = edges(bounds, 0x476d61);
+          const outline = edges(bounds, palette.partEdge);
           bounds.dispose();
           outline.position.y = 2.325;
           root.position.set(object.x, 0, object.z);
