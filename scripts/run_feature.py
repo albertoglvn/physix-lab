@@ -10,6 +10,7 @@ ENTRY_POINTS = {
     "model.train": ROOT,
     "model.export": ROOT,
     "physix_mcp.server": ROOT / "mcp",
+    "physix_mcp.http_api": ROOT / "mcp",
 }
 
 
