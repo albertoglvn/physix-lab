@@ -19,9 +19,7 @@ def main() -> None:
     source_root = ENTRY_POINTS[module]
     module_path = source_root.joinpath(*module.split(".")).with_suffix(".py")
     if not module_path.is_file():
-        raise SystemExit(
-            f"{module} is planned but unavailable in this scaffold. See docs/PLAN.md."
-        )
+        raise SystemExit(f"{module} is not available in this checkout ({module_path}).")
 
     sys.path.insert(0, str(source_root))
     runpy.run_module(module, run_name="__main__", alter_sys=True)

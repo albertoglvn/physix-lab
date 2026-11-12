@@ -1,65 +1,126 @@
 # Physix
 
-Physix is a monorepo for fast, solver-backed estimates of 2D linear-elastic stress fields in parametric plates and brackets with holes. The v1 design pairs a five-member PyTorch U-Net ensemble with a scikit-fem reference solver. Agents will use the Python MCP server and Codex skill. The browser will run exported ONNX models locally.
+Physix returns 2D stress fields for parametric plates and L-brackets with circular holes in
+milliseconds. Every answer carries its provenance and a calibrated uncertainty. A five-member
+U-Net ensemble predicts plane-stress `σxx`, `σyy` and `τxy` on a 64 × 128 grid. When the
+members disagree, or the case falls outside the training domain, the request goes to a
+scikit-fem reference solve, and that result is stored as a new training label.
 
-This commit establishes the development harness and a minimal React entry point. The geometry generator, solver, data pipeline, models, MCP tools, and stress visualization are scheduled in the [milestone plan](docs/PLAN.md).
+The same models run in three places:
 
-## Setup
+- **Agents:** an MCP server with `describe_domain`, `predict_stress`, `verify_with_solver` and
+  `optimize`, plus a [skill](skills/physix/SKILL.md) that explains when to trust each answer.
+- **Local HTTP API:** the same service on `127.0.0.1:8765`. It serves the web app and live FEM
+  verification.
+- **Browser:** ONNX Runtime Web runs the same exported graphs in the tab with WebAssembly
+  threads. It checks every member's SHA-256 against the bundle manifest.
 
-Install GNU Make, [uv 0.13.5](https://docs.astral.sh/uv/), [Node.js 22.18.0](https://nodejs.org/), and [pnpm 11.25.0](https://pnpm.io/installation). On Windows, use GNU Make from your development shell or use the direct commands below in PowerShell. uv selects Python 3.11 and can install it if needed.
+Scope is deliberately narrow: 2D plane stress, static, small strain, isotropic linear
+elasticity. Requests for 3D, shells, dynamics, buckling, contact, fracture, plasticity or large
+deformation are rejected with an explicit validation error.
+
+## Quick start
+
+Install GNU Make, [uv 0.13.5](https://docs.astral.sh/uv/), [Node.js 22.18.0](https://nodejs.org/)
+and [pnpm 11.25.0](https://pnpm.io/installation). uv selects Python 3.11.
 
 ```sh
-make setup
-make lint
-make test
-make web
+make setup                      # Python and web dependencies, Git hooks
+make gen-data                   # solver-labelled dataset in data/generated/
+make train                      # five seeded U-Nets in model/checkpoints/
+make export ARGS="--publish"    # ONNX bundle, held-out evaluation, copy to web/public/models
+make demo                       # build the web app and serve it with the API
 ```
 
-Direct setup and verification commands for shells without GNU Make:
+Then open <http://127.0.0.1:8765>. Pages:
+
+| Route | What it shows |
+| --- | --- |
+| `#/` | Overview with a live in-browser demo, the measured held-out evidence and the agent interface |
+| `#/studio` | Case editor, ensemble field, disagreement and fallback decision, FEM verification on the reference mesh, and bounded geometry optimisation |
+| `#/model` | Model card: per-split errors, fallback calibration, training domain, member hashes and provenance |
+
+For development, run `make serve` (API only) and `make web` (Vite dev server with hot reload) in
+two terminals. The dev server proxies `/api` to the local API.
+
+Without GNU Make, run the same commands directly:
 
 ```sh
-uv sync --all-groups
-pnpm install
-uv run --no-sync pre-commit install
-uv run --no-sync ruff check .
-uv run --no-sync ruff format --check .
-pnpm --filter @physix/web run lint
-uv run --no-sync python -m scripts.run_tests
-pnpm --filter @physix/web run test
+uv sync --locked --all-groups
+pnpm install --frozen-lockfile
+uv run --no-sync python -m scripts.run_feature data.generate
+uv run --no-sync python -m scripts.run_feature model.train
+uv run --no-sync python -m scripts.run_feature model.export --publish
 pnpm --filter @physix/web run build
+uv run --no-sync python -m scripts.run_feature physix_mcp.http_api --static web/dist
 ```
-
-Direct dependencies are pinned in the manifests. The first online setup generates `uv.lock` and `pnpm-lock.yaml`. Commit both generated files together. Once present, `make setup` enforces them. For direct setup with lockfiles, use `uv sync --locked --all-groups` and `pnpm install --frozen-lockfile`. The default model environment uses CPU PyTorch. Initial setup needs access to PyPI, the PyTorch wheel index, and the npm registry.
 
 ## Commands
 
 | Target | Purpose |
 | --- | --- |
 | `make setup` | Sync Python and web dependencies and install Git hooks |
-| `make gen-data` | Run the dataset generator once `data.generate` lands |
-| `make train` | Train the five-member ensemble once `model.train` lands |
-| `make export` | Export the ensemble once `model.export` lands |
-| `make mcp` | Launch the MCP server once `physix_mcp.server` lands |
+| `make gen-data` | Sample cases, solve them with scikit-fem, rasterise, and write a versioned dataset and splits |
+| `make train` | Train the five-member ensemble with recorded seeds (`ARGS="--epochs 40 --parallel 5"`) |
+| `make export` | Export ONNX members, check parity, calibrate fallback, evaluate held-out splits |
+| `make mcp` | Run the MCP stdio server (logs go to stderr) |
+| `make serve` | Run the local HTTP API on `127.0.0.1:8765` |
 | `make web` | Start the Vite development server |
-| `make test` | Run pytest and Vitest, including the initial empty suites |
-| `make lint` | Check Python and web lint and formatting |
+| `make demo` | Build the web app and serve it from the local API |
+| `make test` | Run pytest and Vitest |
+| `make lint` | Check Ruff, ESLint and Prettier |
 
-The four planned Python targets accept `ARGS="..."` and exit with an explanatory error until their entry points are implemented.
+The Python targets accept `ARGS="..."`; pass `--help` for options.
+
+### Connect an agent
+
+```json
+{
+  "mcpServers": {
+    "physix": {
+      "command": "uv",
+      "args": ["run", "--no-sync", "python", "-m", "scripts.run_feature", "physix_mcp.server"],
+      "cwd": "/path/to/Physix"
+    }
+  }
+}
+```
+
+## How a prediction is decided
+
+1. **Validate** the case against `physix.case/1` (SI units, geometry clearances, supported
+   families). Out-of-scope physics is rejected.
+2. **Domain check** against the training domain recorded in the bundle (`physix.domain/1`).
+   Anything outside it goes straight to FEM.
+3. **Ensemble** inference gives the member mean field and the disagreement (member spread of
+   the hotspot von Mises).
+4. **Fallback policy** (`physix.fallback/1`, versioned with the model): above the calibrated
+   threshold, the service answers with `fem_fallback` and enqueues the label for retraining.
+5. **Verify** any answer with `verify_with_solver`. It solves the identical case on the
+   reference mesh and reports the discrepancy against the prediction.
+
+Responses always state `source` (`surrogate`, `fem` or `fem_fallback`), the case and model
+versions, and timing boundaries. Model disagreement is reported separately from solver error.
 
 ## Repository
 
 | Path | Owner and purpose |
 | --- | --- |
-| `physics/` | Parametric geometry, validation, meshing, and scikit-fem reference solves |
-| `data/` | Sampling, rasterization, dataset manifests, and active-learning intake |
-| `model/` | PyTorch ensemble, training, calibration, evaluation, and ONNX export |
-| `mcp/physix_mcp/` | Python MCP server and solver-backed tool orchestration |
-| `web/` | React, TypeScript, Vite, and browser ONNX inference |
-| `skills/physix/` | Repository Codex skill for choosing and interpreting MCP tools |
-| `scripts/` | Development command entry points |
-| `tests/` | Python tests organized by module |
-| `docs/` | [Milestones](docs/PLAN.md) and [two-minute demo](docs/DEMO.md) |
+| `physics/` | Case schema, geometry validation, tagged meshing, P2 plane-stress solve, stress recovery, convergence checks |
+| `data/` | Seeded sampling, reference labels, rasterisation, versioned datasets and splits, active-learning label intake |
+| `model/` | U-Net ensemble training, calibration, evaluation, ONNX export and runtime |
+| `mcp/physix_mcp/` | Service layer, MCP server, local HTTP API and bounded optimiser |
+| `web/` | React app, TypeScript feature encoding, in-browser ONNX ensemble, field and mesh views |
+| `skills/physix/` | Agent skill: tool choice, supported domain, provenance and verification |
+| `scripts/`, `tests/` | Command wiring and Python tests by subsystem (web tests sit beside the code) |
+| `docs/` | [Contracts](docs/CONTRACTS.md), [physics reference](docs/PHYSICS.md), [model evaluation](docs/MODEL.md), [plan](docs/PLAN.md), [demo script](docs/DEMO.md), [work log](docs/WORKLOG.md) |
 
-The planned free demo deploy is a static build from `web/dist/` on GitHub Pages for a public repository. The local MCP server will provide live FEM fallback and active-learning intake. See [GitHub Pages hosting requirements](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages).
+Generated datasets, checkpoints, exports and browser model bundles stay out of Git.
 
-Read [AGENTS.md](AGENTS.md) before changing shared contracts or reporting solver comparisons.
+## Evidence policy
+
+The scikit-fem solution of the identical case, on the documented mesh, is the source of truth.
+The model card and [docs/MODEL.md](docs/MODEL.md) report held-out error only from matched solver
+comparisons: the same masks, units and splits, with dataset and model versions and sample
+counts. Timing is a separate measurement, with hardware, boundaries, and cold or warm state.
+Read [AGENTS.md](AGENTS.md) before changing a shared contract or reporting a comparison.
