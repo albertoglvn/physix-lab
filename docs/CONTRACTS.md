@@ -136,6 +136,21 @@ Validation errors return HTTP 422, solver failures 500, and unknown routes 404. 
 response is strict JSON, with non-finite numbers sent as `null`. CORS is allowed only for
 loopback origins, and the server refuses to bind to anything but loopback.
 
+With `--static <dir>` (`make demo`), the API also serves a built web app from the same
+origin. Static responses carry `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`, so the page is cross-origin isolated and
+onnxruntime-web can use WASM threads. Paths that resolve outside the directory, and unknown
+paths, receive `index.html`. The Vite dev and preview servers send the same headers and
+proxy `/api` to this service.
+
+### Browser bundle
+
+The web app loads `models/manifest.json` and the five `member_<k>.onnx` files relative to the
+page. It checks the raster schema, channel order and each member's SHA-256 before creating a
+session, and applies the bundle's `domain` and `fallback_policy` with the same rules as
+`mcp/physix_mcp/service.py`. `tests/fixtures/encoding_v1.json` and `postprocess_v1.json` pin
+the encoder and the ensemble statistics on both sides.
+
 `include_mesh` adds the reference mesh as base64 little-endian arrays: `points` float32
 `(n, 2)` in m, `triangles` int32 `(m, 3)`, and nodal-averaged `von_mises` float32 `(n,)` in Pa.
 

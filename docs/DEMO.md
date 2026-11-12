@@ -1,6 +1,21 @@
 # Physix two-minute demo
 
-**Setup.** Open the deployed browser demo and a local MCP client with the same model version. Prepare one in-domain plate, one valid case that crosses the calibrated uncertainty threshold, and a fixed-scale von Mises legend in MPa. Archive matching solver runs with case IDs and recorded timings. Preload the models for the warm slider segment and report the separate cold load time in the benchmark notes.
+## Local setup
+
+1. Generate data, train and publish a bundle (`make gen-data`, `make train`,
+   `make export ARGS="--publish"`). The bundle lands in `model/exports/<model_id>/` and
+   `web/public/models/`.
+2. Run `make demo`. It builds `web/dist` and serves it with the API at
+   <http://127.0.0.1:8765>, with cross-origin isolation, so the browser ensemble uses WASM
+   threads and FEM verification is same-origin.
+3. Open `#/studio` once before recording so the browser caches the members (warm path). Note
+   the cold load time that the model card reports in "This browser".
+4. For the agent segment, connect an MCP client to `make mcp` (config in the README). It loads
+   the same bundle as the API, which the model card confirms with a "same model as the local API" badge.
+
+## Script
+
+**Before recording.** Open the browser demo and a local MCP client with the same model version. Prepare one in-domain plate, one valid case that crosses the calibrated uncertainty threshold, and a fixed-scale von Mises legend in MPa. Archive matching solver runs with case IDs and recorded timings. Preload the models for the warm slider segment and report the separate cold load time in the benchmark notes.
 
 | Time | Show | Say |
 | --- | --- | --- |

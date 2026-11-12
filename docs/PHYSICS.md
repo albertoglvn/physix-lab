@@ -59,6 +59,23 @@ Measured on the canonical examples (`physics/examples.py`) against a very fine s
 
 Wall time includes meshing, which dominates. These numbers are a one-off measurement for orientation, not a benchmark.
 
+## Dataset pilot
+
+Before labelling, `data/generate.py` repeats the convergence check on 12 seeded pilot cases on the
+`reference` preset and records the result in the dataset manifest (`pilot_convergence`). For
+`physix-ds-v1`, 11 of 12 cases met both tolerances. One plate (`case_9359ba6189320cc2`, 1,094
+coarse and 2,523 fine nodes) changed its hotspot by 2.23 % against the 2 % tolerance, while its
+field changed by 0.21 %. Hotspot labels near tight ligaments therefore carry roughly 2 % of mesh
+uncertainty. This is reported with the dataset and is not hidden by the fallback policy.
+
+## Grid and mesh hotspots
+
+The surrogate is trained on stresses sampled on the 64 x 128 raster (`physix.raster/1`), so its
+hotspot is a grid hotspot. A peak concentrated in a thin band at a hole edge falls partly
+between pixel centres. On the canonical plate, the grid hotspot is 30.9 MPa and the mesh hotspot
+is 33.9 MPa. Model error is always measured grid against grid. `verify_with_solver` reports
+both, and engineering checks should use the mesh value.
+
 ## Analytic checks
 
 `tests/physics/test_solver.py` covers:
