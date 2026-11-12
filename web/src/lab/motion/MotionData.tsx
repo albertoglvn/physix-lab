@@ -1,5 +1,5 @@
 import { Download, Info, Ruler } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Segmented } from "../../ui/controls";
 import { formatDelta, formatStep } from "../data/methods";
 import { Plot } from "../data/Plot";
@@ -54,6 +54,8 @@ export type StepCheck = {
   error?: string;
 };
 
+export type DataView = "plot" | "table" | "sweep";
+
 export type MotionDataProps = {
   scene: LabScene;
   target: string;
@@ -66,6 +68,11 @@ export type MotionDataProps = {
   check?: StepCheck;
   onCheck: (reference: Reference) => void;
   onExport: () => void;
+  /** The view, when the study controls it; the dock keeps its own otherwise. */
+  view?: DataView;
+  onViewChange?: (view: DataView) => void;
+  /** Renders the sweep view around the dock's view switcher. */
+  renderSweep?: (switcher: ReactNode) => ReactNode;
 };
 
 function StepCheckLine({ check }: { check: StepCheck }) {
@@ -189,8 +196,13 @@ export function MotionData({
   check,
   onCheck,
   onExport,
+  view: controlledView,
+  onViewChange,
+  renderSweep,
 }: MotionDataProps) {
-  const [view, setView] = useState<"plot" | "table">("plot");
+  const [ownView, setOwnView] = useState<DataView>("plot");
+  const view = controlledView ?? ownView;
+  const setView = onViewChange ?? setOwnView;
   const [choice, setChoice] = useState<Record<string, string>>({});
   const quantities: Quantity[] = (run?.quantities ?? []).filter(
     (quantity) => quantity.target === target,
@@ -210,18 +222,24 @@ export function MotionData({
     ? run.series.t.flatMap((t, index) => (t <= time + 1e-9 ? [index] : []))
     : [];
 
+  const switcher = (
+    <Segmented
+      label="Data view"
+      value={view}
+      options={[
+        { value: "plot", label: "Plot" },
+        { value: "table", label: "Table" },
+        ...(renderSweep ? [{ value: "sweep" as const, label: "Sweep" }] : []),
+      ]}
+      onChange={setView}
+    />
+  );
+  if (view === "sweep" && renderSweep) return renderSweep(switcher);
+
   return (
     <div className="lab-data">
       <div className="lab-data-bar">
-        <Segmented
-          label="Data view"
-          value={view}
-          options={[
-            { value: "plot", label: "Plot" },
-            { value: "table", label: "Table" },
-          ]}
-          onChange={setView}
-        />
+        {switcher}
         {view === "plot" && quantities.length ? (
           <select
             className="px-input lab-data-quantity"

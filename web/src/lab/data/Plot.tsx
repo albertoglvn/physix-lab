@@ -21,7 +21,7 @@ export type PlotAxis = { label: string; symbol: string; unit: string };
 
 export const TIME_AXIS: PlotAxis = { label: "Time", symbol: "t", unit: "s" };
 
-type Scale = { ticks: number[]; digits: number };
+export type Scale = { ticks: number[]; digits: number };
 
 /** Round tick positions (1, 2 or 5 × 10ⁿ apart) covering [min, max]. */
 export function niceTicks(min: number, max: number, target = 5): Scale {
@@ -56,7 +56,7 @@ export function valueRange(values: number[]): [number, number] {
   return [low, high];
 }
 
-function useWidth(node: HTMLElement | null, fallback: number) {
+export function useWidth(node: HTMLElement | null, fallback: number) {
   const [width, setWidth] = useState(fallback);
   useEffect(() => {
     if (!node || typeof ResizeObserver === "undefined") return;
@@ -69,9 +69,9 @@ function useWidth(node: HTMLElement | null, fallback: number) {
   return width;
 }
 
-const MARGIN = { top: 10, right: 14, bottom: 34, left: 56 };
+export const MARGIN = { top: 10, right: 14, bottom: 34, left: 56 };
 const CURVE_SAMPLES = 96;
-const formatValue = (value: number) =>
+export const formatValue = (value: number) =>
   Number.isFinite(value) ? String(Number(value.toPrecision(4))) : "—";
 
 export type PlotProps = {
@@ -109,6 +109,90 @@ function tracePath(
     shown++;
   });
   return path;
+}
+
+/** Gridlines, tick labels and axis titles shared by the lab's plots. */
+export function PlotAxes({
+  width,
+  height,
+  x,
+  y,
+  xScale,
+  yScale,
+  xTitle,
+  yTitle,
+}: {
+  width: number;
+  height: number;
+  x: (value: number) => number;
+  y: (value: number) => number;
+  xScale: Scale;
+  yScale: Scale;
+  xTitle: string;
+  yTitle: string;
+}) {
+  const innerWidth = width - MARGIN.left - MARGIN.right;
+  const innerHeight = height - MARGIN.top - MARGIN.bottom;
+  return (
+    <>
+      <g className="lab-plot-grid">
+        {yScale.ticks.map((tick) => (
+          <line
+            key={`y${tick}`}
+            x1={MARGIN.left}
+            x2={width - MARGIN.right}
+            y1={y(tick)}
+            y2={y(tick)}
+          />
+        ))}
+        {xScale.ticks.map((tick) => (
+          <line
+            key={`x${tick}`}
+            x1={x(tick)}
+            x2={x(tick)}
+            y1={MARGIN.top}
+            y2={height - MARGIN.bottom}
+          />
+        ))}
+      </g>
+      <g className="lab-plot-axis">
+        {yScale.ticks.map((tick) => (
+          <text
+            key={`y${tick}`}
+            x={MARGIN.left - 6}
+            y={y(tick)}
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            {tick.toFixed(yScale.digits)}
+          </text>
+        ))}
+        {xScale.ticks.map((tick) => (
+          <text
+            key={`x${tick}`}
+            x={x(tick)}
+            y={height - MARGIN.bottom + 14}
+            textAnchor="middle"
+          >
+            {tick.toFixed(xScale.digits)}
+          </text>
+        ))}
+        <text
+          x={MARGIN.left + innerWidth / 2}
+          y={height - 4}
+          textAnchor="middle"
+        >
+          {xTitle}
+        </text>
+        <text
+          transform={`translate(12 ${MARGIN.top + innerHeight / 2}) rotate(-90)`}
+          textAnchor="middle"
+        >
+          {yTitle}
+        </text>
+      </g>
+    </>
+  );
 }
 
 /**
@@ -197,62 +281,16 @@ export function Plot({
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHover(null)}
       >
-        <g className="lab-plot-grid">
-          {yScale.ticks.map((tick) => (
-            <line
-              key={`y${tick}`}
-              x1={MARGIN.left}
-              x2={width - MARGIN.right}
-              y1={y(tick)}
-              y2={y(tick)}
-            />
-          ))}
-          {xScale.ticks.map((tick) => (
-            <line
-              key={`x${tick}`}
-              x1={x(tick)}
-              x2={x(tick)}
-              y1={MARGIN.top}
-              y2={height - MARGIN.bottom}
-            />
-          ))}
-        </g>
-        <g className="lab-plot-axis">
-          {yScale.ticks.map((tick) => (
-            <text
-              key={`y${tick}`}
-              x={MARGIN.left - 6}
-              y={y(tick)}
-              textAnchor="end"
-              dominantBaseline="middle"
-            >
-              {tick.toFixed(yScale.digits)}
-            </text>
-          ))}
-          {xScale.ticks.map((tick) => (
-            <text
-              key={`x${tick}`}
-              x={x(tick)}
-              y={height - MARGIN.bottom + 14}
-              textAnchor="middle"
-            >
-              {tick.toFixed(xScale.digits)}
-            </text>
-          ))}
-          <text
-            x={MARGIN.left + inner.width / 2}
-            y={height - 4}
-            textAnchor="middle"
-          >
-            {axis.label} ({axis.unit})
-          </text>
-          <text
-            transform={`translate(12 ${MARGIN.top + inner.height / 2}) rotate(-90)`}
-            textAnchor="middle"
-          >
-            {axisTitle}
-          </text>
-        </g>
+        <PlotAxes
+          width={width}
+          height={height}
+          x={x}
+          y={y}
+          xScale={xScale}
+          yScale={yScale}
+          xTitle={`${axis.label} (${axis.unit})`}
+          yTitle={axisTitle}
+        />
         {dashed ? <path className="lab-plot-ref" d={dashed} /> : null}
         {path ? (
           <path

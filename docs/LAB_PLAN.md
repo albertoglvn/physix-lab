@@ -607,6 +607,41 @@ uncertainty. The simulated Atwood pulley agrees with the ideal formula when iner
 A 100-point sweep finishes without blocking the UI, and the timing is reported with hardware.
 Determinism behaves as documented in §4.1.
 
+*Status, studying variables (done):*
+
+- "Sweep…" in the Motion menu opens one sheet: vary one scene variable over a range, read
+  one metric from each run, and optionally add seeded synthetic sensor noise (σ,
+  resolution, readings per value, seed). The metric is a reference's measured value, a
+  probe statistic (value at stop, maximum, minimum, mean) or the stop time.
+- Each value runs once headlessly on a pool of module workers, one fewer than the logical
+  processors. Points stream into the dock's new Sweep view and can be cancelled. Runs are
+  deterministic, so repeats differ only by synthetic noise. Readings are keyed by (seed,
+  point, repeat) and do not depend on worker scheduling.
+- The Sweep view plots filled simulated values, hollow synthetic readings, the dashed
+  closed form and a fit over its ±2 SE band. Fits use linear, quadratic, cubic, power,
+  exponential, the incline law or a typed expression (hand-written parser, no `eval`),
+  weighted by the reading uncertainty when noise is on. Parameters show ± 1 SE, R²,
+  χ²/dof and whether a configured value lies within 2 SE.
+- `physix.sweep/1` records the design, every point, the engine version and the timing
+  boundary. The experiment file carries the last sweep and its fit, and importing it
+  restores the plot and repeats the fit. Sweep CSV and a methods paragraph are exported.
+- *Exit evidence, measured.* On the incline template, 5° to 54.5° in 0.5° steps (100
+  values), with σ 0.05 m/s², resolution 0.001 m/s² and 3 readings each, the fit gives
+  μ = 0.20063 ± 0.00038 against the configured 0.2, with χ²/dof 1.21 over 261 readings.
+  The 13 values at rest (θ ≤ 11°) are left out, since the incline law covers sliding only.
+  Without noise, the default 11-value sweep gives μ = 0.2000006 ± 0.0000015. The template
+  reaches a fitted μ in four clicks.
+- *Timing.* The 100-value sweep took 1.65 s from first dispatch to last point, including
+  worker start-up and engine set-up, on 15 workers. Hardware: AMD Ryzen 9 7940HS (16
+  logical processors, 15 GB RAM), Chromium in the desktop preview, dev build, warm
+  cache. During the sweep, no main-thread gap exceeded 50 ms (largest 49.7 ms, measured by
+  message-channel ping).
+- *Still to do in Phase 3:* new parts (spheres, cylinders, springs, rods, ropes, simulated
+  pulley, applied forces, launcher, drag, restitution, materials) with `physix.lab/2`,
+  pendulum and spring–mass overlays, contact-force probes, run history and comparison, a
+  residual plot, two-variable grids, seeded initial-condition perturbations, the damped
+  sinusoid and period metrics, and Stress sweeps with the convergence study sheet.
+
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 
 - `physix.case/2` with plane strain, slots and elliptical holes, notches, pin bearing,

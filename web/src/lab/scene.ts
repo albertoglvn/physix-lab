@@ -177,6 +177,29 @@ export function findRampPlacement(
     if (!blocked) return candidate;
   }
 }
+
+/**
+ * Replaces the object with `next`'s ID. Blocks that rest on a ramp being changed keep their
+ * place on it, so a new angle or length carries them along.
+ */
+export function replaceObject(scene: LabScene, next: LabObject): LabScene {
+  const previous = scene.objects.find((part) => part.id === next.id);
+  const objects = scene.objects.map((part) => {
+    if (part.id === next.id) return next;
+    if (
+      part.kind === "block" &&
+      previous?.kind === "ramp" &&
+      next.kind === "ramp"
+    ) {
+      const placement = rampPlacement(part, previous);
+      if (placement)
+        return blockOnRamp(part, next, placement.fraction, placement.lateral);
+    }
+    return part;
+  });
+  return { ...scene, objects };
+}
+
 export function makeScene(preset: Preset): LabScene {
   const scene: LabScene = {
     version: SCENE_VERSION,

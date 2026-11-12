@@ -1,5 +1,6 @@
 import {
   Box,
+  ChartScatter,
   CircleDot,
   Code2,
   Copy,
@@ -33,7 +34,6 @@ import {
 } from "../LabFrame";
 import { LabViewport } from "../LabViewport";
 import {
-  blockOnRamp,
   findRampPlacement,
   limits,
   makeObject,
@@ -42,7 +42,7 @@ import {
   objectNames,
   parseScene,
   presetNames,
-  rampPlacement,
+  replaceObject,
   type LabObject,
   type LabScene,
   type Preset,
@@ -72,6 +72,8 @@ import {
   MotionData,
   probeTarget,
   revealTime,
+  seriesColour,
+  type DataView,
   type StepCheck,
 } from "./MotionData";
 import {
@@ -83,7 +85,13 @@ import {
   type Protocol,
 } from "./probes";
 import { reproduce, runProtocol, type MotionRun } from "./run";
+import { metricTarget } from "./sweep";
+import { SweepData } from "./SweepData";
+import { SweepSheet } from "./SweepSheet";
 import { compare, curvesFor, referencesFor, type Reference } from "./theory";
+import { sweepMethods, sweepToCsv, storedFit } from "./sweepExport";
+import { fitSweep, type SweepFit } from "./sweepFit";
+import { useSweep } from "./useSweep";
 
 const icons = { block: Box, ramp: TriangleRight, pulley: CircleDot };
 const objectKinds = ["block", "ramp", "pulley"] as const;
@@ -316,7 +324,13 @@ export function MotionStudy({
     simulation: Simulation;
     time: number;
   }>();
-  const [sheet, setSheet] = useState<"json" | "keys" | "export" | null>(null);
+  const [sheet, setSheet] = useState<
+    "json" | "keys" | "export" | "sweep" | null
+  >(null);
+  const [view, setView] = useState<DataView>("plot");
+  const sweep = useSweep();
+  const sweepRecord = sweep.state?.record;
+  const sweepFit = sweep.state?.fit ? storedFit(sweep.state.fit) : undefined;
   const [json, setJson] = useState("");
   const [jsonError, setJsonError] = useState("");
   const jsonFile = useRef<HTMLInputElement>(null);
@@ -457,21 +471,7 @@ export function MotionStudy({
   }
 
   function updateObject(next: LabObject) {
-    const previous = scene.objects.find((part) => part.id === next.id);
-    const objects = scene.objects.map((part) => {
-      if (part.id === next.id) return next;
-      if (
-        part.kind === "block" &&
-        previous?.kind === "ramp" &&
-        next.kind === "ramp"
-      ) {
-        const placement = rampPlacement(part, previous);
-        if (placement)
-          return blockOnRamp(part, next, placement.fraction, placement.lateral);
-      }
-      return part;
-    });
-    apply({ ...scene, objects });
+    apply(replaceObject(scene, next));
   }
 
   function placeOnRamp(ramp: Ramp) {
@@ -567,7 +567,12 @@ export function MotionStudy({
 
   async function exportExperiment() {
     if (!recorded) return;
-    const experiment = await makeExperiment(scene, protocol, [recorded]);
+    const experiment = await makeExperiment(
+      scene,
+      protocol,
+      [recorded],
+      sweepRecord ? { record: sweepRecord, fit: sweepFit } : undefined,
+    );
     download(
       `${slug(scene.name)}.experiment.json`,
       experimentJson(experiment),
@@ -583,6 +588,7 @@ export function MotionStudy({
     setProtocolChoice(experiment.protocol);
     setSheet(null);
     setViewRevision((value) => value + 1);
+    if (experiment.sweep) restoreSweep(experiment.sweep);
     const [stored] = experiment.runs;
     if (!stored) return;
     reproduce(stored).then(
@@ -605,6 +611,28 @@ export function MotionStudy({
           message: `The stored run could not be repeated. ${message(error)}`,
         }),
     );
+  }
+
+  function restoreSweep({ record, fit }: NonNullable<Experiment["sweep"]>) {
+    let refit: SweepFit | undefined;
+    if (fit)
+      try {
+        refit = fitSweep(
+          record.scene,
+          record.spec,
+          record.points,
+          fit.model,
+          fit.expression,
+        );
+      } catch (error) {
+        toasts.push({
+          tone: "warn",
+          message: `The stored fit could not be repeated. ${message(error)}`,
+        });
+      }
+    sweep.load(record, refit);
+    setView("sweep");
+    panels.setDockOpen(true);
   }
 
   function openJson() {
@@ -670,11 +698,16 @@ export function MotionStudy({
     .join(" · ");
   const methods =
     sheet === "export" && recorded
-      ? methodsSummary(
-          recorded,
-          references.map((reference) => compare(reference, recorded)),
-          stepCheck?.result,
-        )
+      ? [
+          methodsSummary(
+            recorded,
+            references.map((reference) => compare(reference, recorded)),
+            stepCheck?.result,
+          ),
+          sweepRecord ? sweepMethods(sweepRecord, sweepFit) : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n")
       : "";
   const help =
     object?.kind === "pulley"
@@ -866,6 +899,11 @@ export function MotionStudy({
           onSelect: openJson,
         },
         {
+          label: "Sweep…",
+          icon: <ChartScatter size={15} />,
+          onSelect: () => setSheet("sweep"),
+        },
+        {
           label: "Export data",
           icon: <Download size={15} />,
           onSelect: () => setSheet("export"),
@@ -1016,6 +1054,21 @@ export function MotionStudy({
                   >
                     <Download size={15} aria-hidden="true" /> Samples (.csv)
                   </button>
+                  {sweepRecord ? (
+                    <button
+                      className="lab-button"
+                      type="button"
+                      onClick={() =>
+                        download(
+                          `${slug(scene.name)}.sweep.csv`,
+                          sweepToCsv(sweepRecord, sweepFit),
+                          "text/csv",
+                        )
+                      }
+                    >
+                      <Download size={15} aria-hidden="true" /> Sweep (.csv)
+                    </button>
+                  ) : null}
                 </div>
                 <label className="lab-select">
                   <span>Methods summary</span>
@@ -1055,6 +1108,19 @@ export function MotionStudy({
               </p>
             )}
           </Sheet>
+          <SweepSheet
+            open={sheet === "sweep"}
+            scene={scene}
+            protocol={protocol}
+            running={sweep.state?.status === "running"}
+            onClose={() => setSheet(null)}
+            onRun={(spec) => {
+              sweep.start(scene, spec);
+              setSheet(null);
+              setView("sweep");
+              panels.setDockOpen(true);
+            }}
+          />
           <ShortcutsSheet
             open={sheet === "keys"}
             onClose={() => setSheet(null)}
@@ -1217,6 +1283,27 @@ export function MotionStudy({
           check={stepCheck}
           onCheck={runCheck}
           onExport={() => setSheet("export")}
+          view={view}
+          onViewChange={setView}
+          renderSweep={(switcher) => (
+            <SweepData
+              state={sweep.state}
+              scene={scene}
+              color={
+                sweep.state
+                  ? seriesColour(
+                      sweep.state.scene,
+                      metricTarget(sweep.state.spec.metric),
+                    )
+                  : seriesColour(scene, target)
+              }
+              switcher={switcher}
+              onSetup={() => setSheet("sweep")}
+              onCancel={sweep.cancel}
+              onExport={() => setSheet("export")}
+              onFit={sweep.setFit}
+            />
+          )}
         />
       </Dock>
     </LabFrame>

@@ -16,6 +16,7 @@ consumer in the same change.
 | Prediction response | `physix.prediction/1` | `mcp/physix_mcp/service.py` | `tests/mcp` |
 | Motion run | `physix.run/1` | `web/src/lab/motion/run.ts` | `run.test.ts` |
 | Experiment | `physix.experiment/1` | `web/src/lab/state/experiment.ts` | `exports.test.ts` |
+| Motion sweep | `physix.sweep/1` | `web/src/lab/motion/sweep.ts`, `sweepPool.ts` | `sweep.test.ts`, `sweepExport.test.ts` |
 | Line probe | `physix.probe/1` | `physics/probe.py`, `web/src/lab/stress/probe.ts` | `tests/fixtures/line_probe_v1.json` |
 
 ## Units and coordinates
@@ -219,11 +220,68 @@ starting position.
 
 ## Experiment (`physix.experiment/1`)
 
-`{schema, id, name, studies: {motion: {scene}}, probes, protocol, runs, units: {display}}`.
+`{schema, id, name, studies: {motion: {scene}}, probes, protocol, runs, units: {display}, sweep?}`.
 `id` is `sha256:` of `{schema, scene, protocol}`, so re-exporting the same set-up keeps the
 id. `runs` holds `physix.run/1` records. Importing an experiment restores the scene and
 protocol, re-runs it and reports whether the stored run is reproduced exactly, with the
 largest difference.
+
+`sweep` is optional: `{record, fit?}` with the last `physix.sweep/1` record and the fit made
+on it. It does not change the experiment `id`. Importing shows the stored points without
+re-running them and repeats the fit from its `model` and `expression`.
+
+## Motion sweep (`physix.sweep/1`)
+
+One variable of a Motion scene varied over a list of values, with one headless
+`physix.run/1` per value and one metric read from each run.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | `sha256:` of the canonical JSON of `{schema, scene, spec}`. Equal designs share an id. |
+| `scene` | The base scene (`physix.lab/1`) before any value is applied |
+| `spec.variable` | `gravity`, `floorFriction` or `<object id>.<field>`, in the scene's own unit (degrees for angles, SI otherwise) |
+| `spec.values` | At most 200 values inside the variable's limits |
+| `spec.metric` | `{kind: "reference", id}` (the measured side of a closed-form reference), `{kind: "probe", key, stat}` with `stat` in `final`, `max`, `min` and `mean`, or `{kind: "stop_time"}` |
+| `spec.noise` | `null`, or `{sigma, resolution}` in the metric's SI unit |
+| `spec.repeats`, `spec.seed` | Synthetic readings per value (1 to 20, at most 400 in all; 1 without noise) and an unsigned 32-bit seed |
+| `spec.protocol`, `spec.timeStep` | The stop protocol and step every run uses |
+| `points` | `{index, x, value, theory?, readings, runId, stop, wallMs, note?}` in index order. `value` is the clean simulated metric, `NaN` in memory and `null` in JSON when a run does not define it. `theory` is the closed-form value at `x`. `note` says why a value is missing or which assumption the scene breaks. |
+| `status` | `complete`, or `cancelled` with the points finished so far |
+| `engine` | `name` (`rapier3d-compat`) and the `version` that ran the points |
+| `timing` | `wallMs`, `runners`, `hardwareConcurrency` when the browser reports it, and the `boundary`: first dispatch to last point, including worker start-up and engine set-up in each worker |
+
+Runs are deterministic for the same engine build, so repeats differ only by synthetic noise.
+Reading `r` of point `i` is `round((value + σ·z) / resolution) · resolution`, where `z` is a
+Box–Muller normal draw from mulberry32 seeded by a hash of `(seed, i, r)`. Readings do not
+depend on worker count or completion order. Each reading's standard uncertainty is
+`sqrt(σ² + resolution²/12)`.
+
+### Sweep fit
+
+`{model, expression, constants, weighting, sigma?, parameters, covariance, n, dof, r2,
+chi2?, reducedChi2?, converged, bandCoverage, excluded?}`. `model` is `linear`, `quadratic`, `cubic`,
+`power`, `exponential`, `incline` or `custom`. `parameters` are `{name, value, se}` with
+`se` one standard error. With noise, the fit is weighted by the reading uncertainty over
+every reading, and `chi2` is reported. Without noise, it is unweighted over the clean values,
+and the standard errors are scaled by the residual variance. Expressions may use `x`, the
+named parameters, `g` (the scene's gravity), `pi` and `deg`. Plotted bands are
+`bandCoverage` (2) standard errors of the fitted curve.
+The `incline` model fits sliding values only. Values whose clean acceleration is below
+10⁻³ m/s² (the block rests at or below the sliding angle) are left out and listed in
+`excluded: {values, reason}`.
+
+### Sweep CSV
+
+One row per simulated value, synthetic reading and closed-form value:
+
+```
+point,x,x_unit,repeat,value,unit,source
+```
+
+`source` is `simulated`, `synthetic` or `theory`, and `repeat` is set only on synthetic rows.
+`#` lines at the top give the schema and id, scene, engine, `time_step_s`, variable, metric,
+status, noise model with seed, and the fit when there is one. A missing value is an empty
+cell.
 
 ### Samples CSV
 

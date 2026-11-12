@@ -9,13 +9,19 @@ import {
   sha256,
   type MotionRun,
 } from "../motion/run";
+import {
+  parseSweepRecord,
+  parseStoredFit,
+  type StoredFit,
+} from "../motion/sweepExport";
+import type { SweepRecord } from "../motion/sweepPool";
 import { parseScene, type LabScene } from "../scene";
 
 export const EXPERIMENT_SCHEMA = "physix.experiment/1";
 
 /**
  * A `physix.experiment/1` file: the Motion scene, its protocol and the runs made from it.
- * Probes, sweeps and noise join the same file in later phases (LAB_PLAN.md §4.3).
+ * A sweep, with the fit made on it, rides along when there is one (LAB_PLAN.md §4.3).
  */
 export type Experiment = {
   schema: typeof EXPERIMENT_SCHEMA;
@@ -26,12 +32,15 @@ export type Experiment = {
   protocol: Protocol;
   runs: MotionRun[];
   units: { display: "si" };
+  /** The last sweep and its fit; a sweep keeps its own base scene and identity. */
+  sweep?: { record: SweepRecord; fit?: StoredFit };
 };
 
 export async function makeExperiment(
   scene: LabScene,
   protocol: Protocol,
   runs: MotionRun[],
+  sweep?: Experiment["sweep"],
 ): Promise<Experiment> {
   const rate = runs[0]?.inputs.rate ?? 60;
   return {
@@ -50,6 +59,7 @@ export async function makeExperiment(
     protocol,
     runs,
     units: { display: "si" },
+    ...(sweep ? { sweep } : {}),
   };
 }
 
@@ -100,12 +110,23 @@ export function parseExperiment(input: unknown): Experiment {
   const scene = parseScene(studies?.motion?.scene);
   const protocol = parseProtocol(file.protocol);
   const runs = Array.isArray(file.runs) ? file.runs.map(parseRun) : [];
+  const stored = file.sweep as
+    { record?: unknown; fit?: unknown } | undefined | null;
+  const sweep = stored
+    ? {
+        record: parseSweepRecord(stored.record),
+        ...(stored.fit ? { fit: parseStoredFit(stored.fit) } : {}),
+      }
+    : undefined;
+  const { sweep: _sweep, ...rest } = file as Experiment;
+  void _sweep;
   return {
-    ...(file as Experiment),
+    ...rest,
     name: scene.name,
     studies: { motion: { scene } },
     protocol,
     runs,
+    ...(sweep ? { sweep } : {}),
   };
 }
 
