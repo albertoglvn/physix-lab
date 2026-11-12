@@ -1,7 +1,7 @@
 /** Shared app state: the in-browser ensemble (loaded once) and the local API status. */
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { api } from "./api/client";
+import { api, BROWSER_FEM } from "./api/client";
 import { Engine } from "./inference/engine";
 
 export type EngineState =
@@ -59,17 +59,23 @@ export interface Health {
   modelId: string | null;
   solver: string | null;
   checked: boolean;
+  source: "browser" | "api";
 }
 
 /** Polls `/api/health` every few seconds so the UI can tell whether FEM checks are available. */
 export function useHealth(intervalMs = 5000): Health {
   const [health, setHealth] = useState<Health>({
-    online: false,
+    online:
+      BROWSER_FEM &&
+      typeof Worker === "function" &&
+      typeof WebAssembly === "object",
     modelId: null,
-    solver: null,
-    checked: false,
+    solver: BROWSER_FEM ? "scikit-fem" : null,
+    checked: BROWSER_FEM,
+    source: BROWSER_FEM ? "browser" : "api",
   });
   useEffect(() => {
+    if (BROWSER_FEM) return;
     let alive = true;
     const ctl = new AbortController();
     const check = () =>
@@ -82,6 +88,7 @@ export function useHealth(intervalMs = 5000): Health {
               modelId: h.model_id,
               solver: `${h.solver.name} ${h.solver.version}`,
               checked: true,
+              source: "api",
             });
         })
         .catch(() => {
@@ -91,6 +98,7 @@ export function useHealth(intervalMs = 5000): Health {
               modelId: null,
               solver: null,
               checked: true,
+              source: "api",
             });
         });
     check();
@@ -102,20 +110,4 @@ export function useHealth(intervalMs = 5000): Health {
     };
   }, [intervalMs]);
   return health;
-}
-
-/** Current `location.hash` route, e.g. "/studio". */
-export function useRoute(): string {
-  const read = () =>
-    (window.location.hash.replace(/^#/, "") || "/").split("?")[0];
-  const [route, setRoute] = useState(read);
-  useEffect(() => {
-    const on = () => {
-      setRoute(read());
-      window.scrollTo({ top: 0 });
-    };
-    window.addEventListener("hashchange", on);
-    return () => window.removeEventListener("hashchange", on);
-  }, []);
-  return route;
 }

@@ -1,10 +1,44 @@
 # Physix
 
-Physix returns 2D stress fields for parametric plates and L-brackets with circular holes in
+Physix is a browser lab for university physics. Its mechanics workspace lets students build
+and run 3D experiments with blocks, ramps, friction, and ideal pulleys. Start the lab with
+`pnpm --filter @physix/web run dev`, then open <http://localhost:5173/#/lab>.
+
+## Mechanics lab
+
+Start with an inclined plane, a friction track, an Atwood machine, or a blank scene. Edit
+starting conditions in the inspector, then run, pause, step, or reset the simulation. The
+**Scene JSON** editor imports and exports `physix.lab/1` scenes that agents can generate and
+run headlessly:
+
+```sh
+pnpm --filter @physix/web run lab --preset pulley 60
+node web/scripts/run-lab.mjs experiment.physix.json 120
+```
+
+The command writes JSON measurements to stdout and accepts `-` for stdin. The TypeScript
+entry points are `parseScene` in [scene.ts](web/src/lab/scene.ts) and `createSimulation` in
+[simulation.ts](web/src/lab/simulation.ts). Positions and dimensions use metres, mass uses
+kilograms, angles use degrees, and Y points up. A ramp descends along +X. Blocks and ramps
+use Rapier 3D contacts at a fixed 120 Hz timestep with one friction coefficient per surface.
+Each pulley is an independent ideal Atwood machine with a massless rope and wheel. Its
+motion ends when either weight reaches the travel stop.
+
+## Stress analysis
+
+The stress studio returns 2D stress fields for parametric plates and L-brackets with circular holes in
 milliseconds. Every answer carries its provenance and a calibrated uncertainty. A five-member
 U-Net ensemble predicts plane-stress `σxx`, `σyy` and `τxy` on a 64 × 128 grid. When the
 members disagree, or the case falls outside the training domain, the request goes to a
 scikit-fem reference solve, and that result is stored as a new training label.
+
+The ChatGPT Sites build (`pnpm run build`) runs verification and bounded optimisation in a
+Web Worker using the same scikit-fem reference solver as the Python service. The first FEM
+request loads Pyodide and its numerical packages. Cases and results stay in the browser.
+Optimisation screens candidates with the fast FEM mesh and uses the reference mesh for the
+baseline and finalists. The homepage stress previews are the reference-mesh von Mises
+rasters for `physics.examples.example_plate()` and `example_bracket()`, with their own
+peak-based colour scales. The ordinary web build connects to the local Python API.
 
 The same models run in three places:
 
@@ -15,7 +49,7 @@ The same models run in three places:
 - **Browser:** ONNX Runtime Web runs the same exported graphs in the tab with WebAssembly
   threads. It checks every member's SHA-256 against the bundle manifest.
 
-Scope is deliberately narrow: 2D plane stress, static, small strain, isotropic linear
+Stress-tool scope is deliberately narrow: 2D plane stress, static, small strain, isotropic linear
 elasticity. Requests for 3D, shells, dynamics, buckling, contact, fracture, plasticity or large
 deformation are rejected with an explicit validation error.
 
@@ -36,7 +70,9 @@ Then open <http://127.0.0.1:8765>. Pages:
 
 | Route | What it shows |
 | --- | --- |
-| `#/` | Overview with a live in-browser demo, the measured held-out evidence and the agent interface |
+| `#/` | Physix homepage and student experiments |
+| `#/lab` | Interactive 3D mechanics lab and scene JSON editor |
+| `#/stress` | Stress analysis overview, live stress demo, held-out evidence and agent interface |
 | `#/studio` | Case editor, ensemble field, disagreement and fallback decision, FEM verification on the reference mesh, and bounded geometry optimisation |
 | `#/model` | Model card: per-split errors, fallback calibration, training domain, member hashes and provenance |
 
@@ -110,7 +146,7 @@ versions, and timing boundaries. Model disagreement is reported separately from 
 | `data/` | Seeded sampling, reference labels, rasterisation, versioned datasets and splits, active-learning label intake |
 | `model/` | U-Net ensemble training, calibration, evaluation, ONNX export and runtime |
 | `mcp/physix_mcp/` | Service layer, MCP server, local HTTP API and bounded optimiser |
-| `web/` | React app, TypeScript feature encoding, in-browser ONNX ensemble, field and mesh views |
+| `web/` | React app, 3D mechanics lab and headless scene runner, in-browser ONNX ensemble, field and mesh views |
 | `skills/physix/` | Agent skill: tool choice, supported domain, provenance and verification |
 | `scripts/`, `tests/` | Command wiring and Python tests by subsystem (web tests sit beside the code) |
 | `docs/` | [Contracts](docs/CONTRACTS.md), [physics reference](docs/PHYSICS.md), [model evaluation](docs/MODEL.md), [plan](docs/PLAN.md), [demo script](docs/DEMO.md), [work log](docs/WORKLOG.md) |

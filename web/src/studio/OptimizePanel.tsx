@@ -175,7 +175,13 @@ function DesignCard({
             : mpa(d.fem.objective)}
         </dd>
         <dt>Feasible</dt>
-        <dd>{d.fem.feasible ? "yes" : d.fem.violations.join(", ") || "no"}</dd>
+        <dd>
+          {d.fem.feasible
+            ? "Yes"
+            : d.fem.violations.includes("min_safety_factor")
+              ? "Below minimum safety factor"
+              : "No"}
+        </dd>
       </dl>
       <ul className="vars">
         {Object.entries(d.variables).map(([k, v]) => (
@@ -191,10 +197,12 @@ function DesignCard({
 export function OptimizePanel({
   c,
   online,
+  browser,
   onApply,
 }: {
   c: Case;
   online: boolean;
+  browser: boolean;
   onApply: (c: Case) => void;
 }) {
   const candidates = useMemo(() => candidateVariables(c), [c]);
@@ -204,7 +212,7 @@ export function OptimizePanel({
   >({});
   const [objective, setObjective] = useState<Objective>("min_max_von_mises");
   const [minSf, setMinSf] = useState(2);
-  const [budget, setBudget] = useState(80);
+  const [budget, setBudget] = useState(browser ? 16 : 80);
   const [seed, setSeed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,15 +264,19 @@ export function OptimizePanel({
 
   const data = result?.data;
   const sel = data?.selected;
+  const resultObjective =
+    data?.objective === "min_volume" ? "min_volume" : "min_max_von_mises";
   const stale = result && result.forCase !== key;
 
   return (
     <div className="panel-body">
       <div className="panel-intro">
         <p>
-          Search only the variables and bounds you choose. Candidates are
-          screened with the surrogate (or the fast FEM mesh outside its domain);
-          the baseline and the best designs are then re-solved with FEM.
+          Search within the bounds you choose.{" "}
+          {browser
+            ? "A fast FEM mesh screens candidates in this tab."
+            : "The surrogate or a fast FEM mesh screens candidates."}{" "}
+          The reference mesh checks the baseline and the best designs.
         </p>
         <button
           type="button"
@@ -277,8 +289,14 @@ export function OptimizePanel({
       </div>
       {!online && (
         <p className="callout tone-warn">
-          Optimisation runs in the local API. Start it with{" "}
-          <code>make serve</code>.
+          {browser ? (
+            "Optimisation needs a browser with WebAssembly and worker support."
+          ) : (
+            <>
+              Start the local solver with <code>make serve</code> to optimise a
+              part.
+            </>
+          )}
         </p>
       )}
       {error && <p className="callout tone-bad">{error}</p>}
@@ -352,7 +370,7 @@ export function OptimizePanel({
               onChange={(v) =>
                 setBudget(Math.round(Math.min(Math.max(v, 8), 400)))
               }
-              hint="Surrogate evaluations (8–400)"
+              hint="Search evaluations (8–400)"
             />
             <NumField
               label="Seed"
@@ -410,7 +428,8 @@ export function OptimizePanel({
               label="Evaluations"
               value={data.search.evaluations}
               sub={Object.entries(data.search.estimators)
-                .map(([k, v]) => `${v} ${k}`)
+                .filter(([, count]) => count > 0)
+                .map(([k, v]) => `${v} ${k === "fem_fast" ? "fast FEM" : k}`)
                 .join(" · ")}
             />
             <Stat
@@ -424,15 +443,19 @@ export function OptimizePanel({
             <DesignCard
               title="Baseline (FEM)"
               d={data.baseline}
-              objective={objective}
+              objective={resultObjective}
               tone="neutral"
             />
             {sel ? (
               <DesignCard
-                title="Selected (FEM)"
+                title={
+                  sel.fem.feasible
+                    ? "Selected (FEM)"
+                    : "Best infeasible candidate (FEM)"
+                }
                 d={sel}
-                objective={objective}
-                tone="ok"
+                objective={resultObjective}
+                tone={sel.fem.feasible ? "ok" : "neutral"}
               />
             ) : (
               <div className="placeholder">No feasible candidate.</div>
@@ -456,53 +479,62 @@ export function OptimizePanel({
                   className="btn btn-secondary"
                   onClick={() => onApply(sel.case)}
                 >
-                  Apply selected design
+                  {sel.fem.feasible
+                    ? "Apply selected design"
+                    : "Load candidate for inspection"}
                 </button>
               </div>
             )}
           </div>
           {data.candidates_verified.length > 0 && (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Surrogate estimate</th>
-                  <th>FEM peak</th>
-                  <th>Estimate error</th>
-                  <th>Safety factor</th>
-                  <th>Feasible</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.candidates_verified.map((d, k) => (
-                  <tr
-                    key={k}
-                    className={
-                      sel &&
-                      JSON.stringify(d.variables) ===
-                        JSON.stringify(sel.variables)
-                        ? "is-selected"
-                        : ""
-                    }
-                  >
-                    <td>#{k + 1}</td>
-                    <td>
-                      {typeof d.estimate.hotspot_von_mises === "number"
-                        ? mpa(d.estimate.hotspot_von_mises)
-                        : "—"}
-                    </td>
-                    <td>{mpa(d.fem.hotspot_von_mises)}</td>
-                    <td>{pct(d.fem.estimate_error)}</td>
-                    <td>
-                      {d.fem.safety_factor != null
-                        ? d.fem.safety_factor.toFixed(2)
-                        : "—"}
-                    </td>
-                    <td>{d.fem.feasible ? "yes" : "no"}</td>
+            <div
+              className="stress-table-scroll"
+              role="region"
+              aria-label="Verified candidates"
+              tabIndex={0}
+            >
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Screening estimate</th>
+                    <th>FEM peak</th>
+                    <th>Estimate error</th>
+                    <th>Safety factor</th>
+                    <th>Feasible</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.candidates_verified.map((d, k) => (
+                    <tr
+                      key={k}
+                      className={
+                        sel &&
+                        JSON.stringify(d.variables) ===
+                          JSON.stringify(sel.variables)
+                          ? "is-selected"
+                          : ""
+                      }
+                    >
+                      <td>#{k + 1}</td>
+                      <td>
+                        {typeof d.estimate.hotspot_von_mises === "number"
+                          ? `${mpa(d.estimate.hotspot_von_mises)}${d.estimate.estimator === "fem_fast" ? " · fast FEM" : d.estimate.estimator === "surrogate" ? " · surrogate" : ""}`
+                          : "—"}
+                      </td>
+                      <td>{mpa(d.fem.hotspot_von_mises)}</td>
+                      <td>{pct(d.fem.estimate_error)}</td>
+                      <td>
+                        {d.fem.safety_factor != null
+                          ? d.fem.safety_factor.toFixed(2)
+                          : "—"}
+                      </td>
+                      <td>{d.fem.feasible ? "yes" : "no"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

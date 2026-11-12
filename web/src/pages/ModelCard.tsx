@@ -128,8 +128,10 @@ export function ModelCard({ health }: { health: Health }) {
   return (
     <div className="page narrow model-card">
       <header className="page-head">
-        <span className="eyebrow">Model card</span>
-        <h1 className="mono">{m.model_id}</h1>
+        <h1>Model card</h1>
+        <p className="model-identity">
+          <code>{m.model_id}</code>
+        </p>
         <div className="badges">
           <Badge tone="accent">{m.members.length}-member ensemble</Badge>
           <Badge>{m.raster.schema}</Badge>

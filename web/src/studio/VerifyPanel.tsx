@@ -22,19 +22,20 @@ import { mm, mpa, ms, newtons, pct, ratio } from "../ui/units";
 interface Run {
   forCase: string;
   data: VerifyResponse;
-  browserMs: number | null;
-  browserHotspot: number | null;
+  prediction: SurrogatePrediction | null;
 }
 
 export function VerifyPanel({
   c,
   pred,
   online,
+  browser,
   onInvalid,
 }: {
   c: Case;
   pred: SurrogatePrediction | null;
   online: boolean;
+  browser: boolean;
   onInvalid: (field: string | null) => void;
 }) {
   const [run, setRun] = useState<Run | null>(null);
@@ -56,8 +57,7 @@ export function VerifyPanel({
       setRun({
         forCase: key,
         data,
-        browserMs: pred?.timing.total_ms ?? null,
-        browserHotspot: pred ? pred.result.hotspot.von_mises : null,
+        prediction: pred,
       });
     } catch (err) {
       if (err instanceof ApiError) {
@@ -82,7 +82,8 @@ export function VerifyPanel({
     () => (fem?.field ? fieldComponent(fem.field, "von_mises") : null),
     [fem],
   );
-  const surVm = !stale && pred ? pred.result.vonMises : null;
+  const comparedPrediction = run?.prediction ?? (stale ? null : pred);
+  const surVm = comparedPrediction?.result.vonMises ?? null;
 
   const range = useMemo(() => {
     const a = femVm ? fieldRange(femVm, mask) : { min: 0, max: 1 };
@@ -106,12 +107,14 @@ export function VerifyPanel({
   }, [femVm, surVm, mask]);
 
   const rasterRef = fem?.summary.raster_hotspot?.von_mises;
+  const browserHotspot = comparedPrediction?.result.hotspot.von_mises ?? null;
+  const browserMs = comparedPrediction?.timing.total_ms ?? null;
   const hotErr =
-    run?.browserHotspot != null && rasterRef
-      ? Math.abs(run.browserHotspot - rasterRef) / rasterRef
+    browserHotspot != null && rasterRef
+      ? Math.abs(browserHotspot - rasterRef) / rasterRef
       : null;
   const femMs = fem?.timing.total_ms ?? null;
-  const speedup = femMs && run?.browserMs ? femMs / run.browserMs : null;
+  const speedup = femMs && browserMs ? femMs / browserMs : null;
   const disc = fem?.discrepancy.surrogate;
 
   return (
@@ -137,10 +140,22 @@ export function VerifyPanel({
           )}
         </button>
       </div>
+      {browser && online && !run && !error && (
+        <p className="muted small">
+          The first check loads the solver. The case and results stay in this
+          tab.
+        </p>
+      )}
       {!online && (
         <p className="callout tone-warn">
-          The local solver API is offline. Start it with <code>make serve</code>{" "}
-          to run FEM checks and optimisation.
+          {browser ? (
+            "FEM verification needs a browser with WebAssembly and worker support."
+          ) : (
+            <>
+              Start the local solver with <code>make serve</code> to run FEM
+              checks and optimisation.
+            </>
+          )}
         </p>
       )}
       {error && <p className="callout tone-bad">{error}</p>}
@@ -165,7 +180,7 @@ export function VerifyPanel({
             />
             <Stat
               label="Surrogate peak"
-              value={mpa(run.browserHotspot)}
+              value={mpa(browserHotspot)}
               sub={
                 hotErr != null
                   ? `${pct(hotErr)} vs grid reference`
@@ -184,7 +199,7 @@ export function VerifyPanel({
             <Stat
               label="Speed-up"
               value={ratio(speedup, 0)}
-              sub={`${ms(run.browserMs)} browser vs ${ms(femMs)} FEM`}
+              sub={`${ms(browserMs)} browser vs ${ms(femMs)} FEM`}
               tone="accent"
             />
           </div>
@@ -288,80 +303,88 @@ export function VerifyPanel({
             )}
           </div>
 
-          <table className="kv">
-            <tbody>
-              <tr>
-                <th>Mesh</th>
-                <td>
-                  {fem.solver?.nodes.toLocaleString()} nodes,{" "}
-                  {fem.solver?.elements.toLocaleString()} {fem.solver?.element}{" "}
-                  elements
-                </td>
-                <th>Equilibrium residual</th>
-                <td>
-                  {fem.summary.equilibrium_residual != null
-                    ? fem.summary.equilibrium_residual.toExponential(1)
-                    : "—"}
-                </td>
-              </tr>
-              <tr>
-                <th>Reaction</th>
-                <td>
-                  {fem.summary.reaction_force
-                    ? `${newtons(fem.summary.reaction_force[0])}, ${newtons(fem.summary.reaction_force[1])}`
-                    : "—"}
-                </td>
-                <th>Max displacement</th>
-                <td>
-                  {fem.summary.max_displacement != null
-                    ? mm(fem.summary.max_displacement, 3)
-                    : "—"}
-                </td>
-              </tr>
-              <tr>
-                <th>Safety factor (FEM)</th>
-                <td>
-                  {fem.summary.safety_factor != null
-                    ? fem.summary.safety_factor.toFixed(2)
-                    : "needs a named material"}
-                </td>
-                <th>Stress concentration</th>
-                <td>
-                  {fem.summary.stress_concentration != null
-                    ? fem.summary.stress_concentration.toFixed(2)
-                    : "—"}
-                </td>
-              </tr>
-              {disc && (
+          <div
+            className="stress-table-scroll"
+            role="region"
+            aria-label="FEM solver details"
+            tabIndex={0}
+          >
+            <table className="kv">
+              <tbody>
                 <tr>
-                  <th>Service surrogate</th>
+                  <th>Mesh</th>
                   <td>
-                    hotspot error {pct(disc.hotspot_error)}, von Mises rel. L2{" "}
-                    {pct(disc.von_mises_rel_l2)}
+                    {fem.solver?.nodes.toLocaleString()} nodes,{" "}
+                    {fem.solver?.elements.toLocaleString()}{" "}
+                    {fem.solver?.element} elements
                   </td>
-                  <th>Fallback verdict</th>
+                  <th>Equilibrium residual</th>
                   <td>
-                    {disc.would_fallback
-                      ? "would fall back to FEM"
-                      : "accepted"}
+                    {fem.summary.equilibrium_residual != null
+                      ? fem.summary.equilibrium_residual.toExponential(1)
+                      : "—"}
                   </td>
                 </tr>
-              )}
-              <tr>
-                <th>Case id</th>
-                <td colSpan={3}>
-                  <code>{fem.case_id}</code>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                <tr>
+                  <th>Reaction</th>
+                  <td>
+                    {fem.summary.reaction_force
+                      ? `${newtons(fem.summary.reaction_force[0])}, ${newtons(fem.summary.reaction_force[1])}`
+                      : "—"}
+                  </td>
+                  <th>Max displacement</th>
+                  <td>
+                    {fem.summary.max_displacement != null
+                      ? mm(fem.summary.max_displacement, 3)
+                      : "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Safety factor (FEM)</th>
+                  <td>
+                    {fem.summary.safety_factor != null
+                      ? fem.summary.safety_factor.toFixed(2)
+                      : "needs a named material"}
+                  </td>
+                  <th>Stress concentration</th>
+                  <td>
+                    {fem.summary.stress_concentration != null
+                      ? fem.summary.stress_concentration.toFixed(2)
+                      : "—"}
+                  </td>
+                </tr>
+                {disc && (
+                  <tr>
+                    <th>Service surrogate</th>
+                    <td>
+                      hotspot error {pct(disc.hotspot_error)}, von Mises rel. L2{" "}
+                      {pct(disc.von_mises_rel_l2)}
+                    </td>
+                    <th>Fallback verdict</th>
+                    <td>
+                      {disc.would_fallback
+                        ? "would fall back to FEM"
+                        : "accepted"}
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <th>Case id</th>
+                  <td colSpan={3}>
+                    <code>{fem.case_id}</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p className="muted small">
             The mesh peak is evaluated at FE nodes; the grid reference samples
             the same FEM field at pixel centres, which is what the surrogate
             predicts, so grid-to-grid is the like-for-like comparison. Timings:
             browser time is the full in-tab inference (encode, every member,
-            statistics); FEM time is the server-side solve and post-processing,
-            without HTTP.
+            statistics). FEM time covers the solve and post-processing and
+            excludes
+            {browser ? " solver startup." : " HTTP transport."}
           </p>
         </>
       )}

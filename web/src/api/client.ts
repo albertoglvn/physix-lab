@@ -2,9 +2,11 @@
 
 import type { Case } from "../physics/case";
 import type { DomainCheck } from "../physics/domain";
+import { runBrowserFem } from "./browser-fem";
 
 export const API_BASE: string =
   (import.meta.env.VITE_PHYSIX_API as string | undefined) ?? "";
+export const BROWSER_FEM = import.meta.env.MODE === "sites" && !API_BASE;
 
 export interface Frame {
   schema: string;
@@ -184,6 +186,18 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  if (BROWSER_FEM && body !== undefined) {
+    const payload = await runBrowserFem(path, body, signal);
+    const error = payload as Partial<ApiErrorBody>;
+    if (error.error)
+      throw new ApiError(
+        error.error,
+        error.message ?? "FEM calculation failed.",
+        0,
+        error.field,
+      );
+    return payload as T;
+  }
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {

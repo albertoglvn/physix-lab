@@ -6,7 +6,8 @@ import type { Case } from "../physics/case";
 import { examplePlate, tractionMagnitude } from "../physics/case";
 import { solidMask } from "../physics/encoding";
 import { useEngine, type Health } from "../state";
-import { Badge, CopyButton, Logo, Spinner } from "../ui/controls";
+import { Badge, CopyButton, Spinner } from "../ui/controls";
+import { Action, PhysixMark } from "../ui/pastoral";
 import { Colorbar, FieldView } from "../ui/FieldView";
 import { mpa, ms, pct } from "../ui/units";
 
@@ -218,74 +219,56 @@ export function Landing({ health }: { health: Health }) {
     <div className="landing">
       <section className="hero">
         <div className="hero-copy">
-          <Badge tone="accent">
-            2D linear elasticity · plates and brackets
-          </Badge>
-          <h1>
-            Stress fields in milliseconds.
-            <br />
-            <span className="grad">Checked against FEM when it matters.</span>
-          </h1>
+          <h1>See where a part is most stressed.</h1>
           <p className="lead">
-            Physix gives engineering agents and their humans an instant estimate
-            of the stress field in a parametric part, states how much to trust
-            it, and falls back to a real finite-element solve when the models
-            disagree.
+            Load a plate or bracket, move its holes, and compare the stress
+            prediction with a finite element solve of the same design.
           </p>
           <div className="hero-cta">
-            <a className="btn btn-primary btn-lg" href="#/studio">
-              Open the studio
-            </a>
-            <a className="btn btn-secondary btn-lg" href="#/model">
-              Read the model card
-            </a>
+            <Action href="#/studio/plate">Try the plate</Action>
+            <Action href="#/studio/bracket" variant="text">
+              Try the bracket
+            </Action>
           </div>
-          <ul className="hero-points">
-            <li>Five-model ensemble runs locally in the browser, no upload</li>
-            <li>Calibrated disagreement decides when to call scikit-fem</li>
-            <li>MCP tools for prediction, verification and optimisation</li>
-          </ul>
         </div>
         <HeroDemo />
       </section>
 
       <section className="section" id="how">
         <div className="section-head">
-          <span className="eyebrow">How it works</span>
-          <h2>A fast path that knows when to take the slow one</h2>
+          <h2>From load to design</h2>
         </div>
         <ol className="steps">
           <li>
-            <span className="step-n">1</span>
             <h3>Describe the part</h3>
             <p>
-              A versioned case in SI units: plate or L-bracket, circular holes,
-              thickness, material, traction or force.
+              Choose a plate or bracket. Set its dimensions, holes, material,
+              and load.
             </p>
           </li>
           <li>
-            <span className="step-n">2</span>
-            <h3>Predict with five models</h3>
+            <h3>Read the field</h3>
             <p>
-              Each U-Net maps the encoded geometry to unit-load stress fields;
-              the mean is the estimate, the spread is the doubt.
+              Inspect the stress components and the places where the five
+              predictions disagree.
             </p>
           </li>
           <li>
-            <span className="step-n">3</span>
-            <h3>Fall back when unsure</h3>
+            <h3>Verify the case</h3>
             <p>
-              Out-of-domain cases or disagreement above the calibrated threshold
-              go to a quadratic-element scikit-fem solve.
+              Run scikit-fem and compare the results on the same grid and in the
+              same units.
             </p>
           </li>
           <li>
-            <span className="step-n">4</span>
-            <h3>Learn from every fallback</h3>
+            <h3>Optimise the geometry</h3>
             <p>
-              Solved cases are stored by case id for the next training round;
-              new weights ship only with a new evaluation.
+              Search within your own bounds and check the baseline and the best
+              candidates with FEM.
             </p>
+            <Action href="#/studio/plate/optimize" variant="text">
+              Open optimiser
+            </Action>
           </li>
         </ol>
       </section>
@@ -328,13 +311,17 @@ export function Landing({ health }: { health: Health }) {
             <CopyButton text={MCP_CONFIG} />
           </div>
           <pre className="code">{MCP_CONFIG}</pre>
-          <div className="code-head">
-            <span className="muted small">Local HTTP API</span>
-            <span className={`api-dot ${health.online ? "is-on" : ""}`}>
-              {health.online ? "online" : "offline"}
-            </span>
-          </div>
-          <pre className="code">{`make serve   # http://127.0.0.1:8765\nPOST /api/predict   POST /api/verify   POST /api/optimize`}</pre>
+          {health.source === "api" && (
+            <>
+              <div className="code-head">
+                <span className="muted small">Local HTTP API</span>
+                <span className={`api-dot ${health.online ? "is-on" : ""}`}>
+                  {health.online ? "online" : "offline"}
+                </span>
+              </div>
+              <pre className="code">{`make serve   # http://127.0.0.1:8765\nPOST /api/predict   POST /api/verify   POST /api/optimize`}</pre>
+            </>
+          )}
         </div>
       </section>
 
@@ -370,7 +357,7 @@ export function Landing({ health }: { health: Health }) {
 
       <footer className="footer">
         <div className="footer-brand">
-          <Logo size={18} /> Physix
+          <PhysixMark /> Physix
         </div>
         <span className="muted small">
           Estimates are engineering aids, not certification. The scikit-fem

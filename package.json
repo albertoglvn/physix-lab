@@ -1,6 +1,9 @@
 {
   "name": "physix",
   "private": true,
+  "scripts": {
+    "build": "pnpm --filter @physix/web run build --mode sites --outDir ../dist --emptyOutDir"
+  },
   "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": "^22.18.0"
