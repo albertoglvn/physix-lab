@@ -91,3 +91,23 @@ def test_mcp_tools_are_registered(service) -> None:
     assert set(tools) == {"describe_domain", "predict_stress", "verify_with_solver", "optimize"}
     assert "case" in tools["predict_stress"].inputSchema["properties"]
     assert "variables" in tools["optimize"].inputSchema["required"]
+
+
+def test_static_serving_is_isolated_and_falls_back(service, tmp_path) -> None:
+    (tmp_path / "index.html").write_text("<!doctype html><title>x</title>", encoding="utf-8")
+    (tmp_path / "app.wasm").write_bytes(b"\0asm")
+    httpd = serve("127.0.0.1", 0, service, tmp_path)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        with urllib.request.urlopen(f"{base}/app.wasm", timeout=10) as resp:
+            assert resp.headers["Content-Type"] == "application/wasm"
+            assert resp.headers["Cross-Origin-Opener-Policy"] == "same-origin"
+            assert resp.headers["Cross-Origin-Embedder-Policy"] == "require-corp"
+        with urllib.request.urlopen(f"{base}/studio/deep/link", timeout=10) as resp:
+            assert b"<title>x</title>" in resp.read()
+        with urllib.request.urlopen(f"{base}/../../etc/passwd", timeout=10) as resp:
+            assert b"<title>x</title>" in resp.read()
+    finally:
+        httpd.shutdown()
