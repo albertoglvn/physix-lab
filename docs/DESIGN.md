@@ -246,7 +246,8 @@ diagram.
 | Provenance chip | `source · version · time`, for example `surrogate · unet5-2d0d · 4 ms warm`. Clicking it opens the model card or run details. Uses `--px-ref` for FEM sources. |
 | Run chip | 6 px radius, a series-colour swatch, the run label, and pin and close icons |
 | Toast | Top centre, at most 420 px wide, with an icon, one sentence and an optional action. Auto-dismisses after 5 s unless it is an error. |
-| Plot | Axes in `--px-ink-muted` 11 px, gridlines in `--px-rule`, ticks 1, 2 or 5 × 10ⁿ apart, and a series stroke of 1.75 px. The theory curve is dashed in `--px-ref`. Samples appear up to the live time. Hover shows a cursor and a `t · value` readout in the key. Axis titles include units. Linking the cursor to the viewport is still to come. |
+| Plot | Axes in `--px-ink-muted` 11 px, gridlines in `--px-rule`, ticks 1, 2 or 5 × 10ⁿ apart, and a series stroke of 1.75 px. The theory curve is dashed in `--px-ref`. Samples appear up to the live time. Hover shows a cursor and a `t · value` readout in the key. Axis titles include units. The horizontal axis is time unless a plot names another, such as distance along a probe line. A sampled reference, such as an FEM profile, is drawn like the theory curve and breaks where it is undefined. Linking the cursor to the viewport is still to come. |
+| Probe line | A 2 px white line over a 4.5 px ink halo, with white end handles and `A` and `B` labels in small ink chips. It is shown while the Line probe view is open or a line is being drawn. While drawing, the cursor is a crosshair and a HUD chip offers Cancel. |
 | Comparison row | The quantity and its symbol with an ⓘ for the formula and assumptions. Next come Sim and Theory values in tabular figures, then one chip: `Pending` until the live run reaches the event, `Δ …` coloured by tolerance, or `Assumption broken` (warn) with the reason as its tooltip. |
 
 ---

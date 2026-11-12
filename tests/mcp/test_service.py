@@ -163,6 +163,13 @@ def test_mesh_payload_shapes(tmp_path) -> None:
     vm = np.frombuffer(base64.b64decode(mesh["von_mises"]), dtype="<f4")
     assert len(pts) == mesh["n_nodes"] == len(vm)
     assert len(tri) == mesh["n_triangles"] and tri.max() < len(pts)
+    stress = np.frombuffer(base64.b64decode(mesh["stress"]), dtype="<f4").reshape(-1, 3, 3)
+    assert stress.shape == (len(tri), 3, 3)
+    # Element-vertex von Mises peaks where the nodal average does, within averaging loss.
+    sxx, syy, txy = stress[..., 0], stress[..., 1], stress[..., 2]
+    peak = np.sqrt(sxx**2 - sxx * syy + syy**2 + 3 * txy**2).max()
+    assert peak == pytest.approx(out["summary"]["max_von_mises"], rel=1e-5)
+    assert vm.max() <= peak * (1 + 1e-6)
 
 
 @pytest.mark.parametrize(

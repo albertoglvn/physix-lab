@@ -55,4 +55,28 @@ describe("plot", () => {
     const path = html.match(/class="lab-plot-line" d="([^"]+)"/)?.[1] ?? "";
     expect(path).not.toContain("L");
   });
+
+  it("plots against another axis with a sampled reference", () => {
+    const html = renderToStaticMarkup(
+      <Plot
+        series={{ ...series, label: "von Mises", symbol: "σvm", unit: "MPa" }}
+        reference={{ t: series.t, values: [0, 1, Number.NaN, 3, 4] }}
+        axis={{ label: "Distance along line", symbol: "s", unit: "mm" }}
+        keys={{ series: "Surrogate", reference: "FEM" }}
+        domain={2}
+      />,
+    );
+    expect(html).toContain("Distance along line (mm)");
+    expect(html).not.toContain("Time (s)");
+    expect(html).toContain(
+      'aria-label="von Mises against distance along line, with the FEM reference"',
+    );
+    expect(html).toContain("Surrogate");
+    expect(html).toContain("FEM");
+    // The full series is shown without a live limit; the reference breaks at its gap.
+    const line = html.match(/class="lab-plot-line" d="([^"]+)"/)?.[1] ?? "";
+    expect(line.match(/[ML]/g)).toHaveLength(5);
+    const ref = html.match(/class="lab-plot-ref" d="([^"]+)"/)?.[1] ?? "";
+    expect(ref.match(/M/g)).toHaveLength(2);
+  });
 });

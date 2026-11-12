@@ -4,6 +4,8 @@ import {
   Home,
   Keyboard,
   LayoutTemplate,
+  PenLine,
+  Ruler,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -13,7 +15,7 @@ import type { Case } from "../../physics/case";
 import {
   exampleBracket,
   examplePlate,
-  tractionMagnitude,
+  resultantForce,
   yieldStrength,
 } from "../../physics/case";
 import { solidMask } from "../../physics/encoding";
@@ -37,10 +39,14 @@ import {
   type FieldKey,
 } from "../../studio/fields";
 import { OptimizePanel } from "../../studio/OptimizePanel";
-import { VerifyPanel, type VerifyHandle } from "../../studio/VerifyPanel";
-import { Badge, Segmented, Spinner, Stat } from "../../ui/controls";
+import {
+  VerifyPanel,
+  type VerifyHandle,
+  type VerifyRun,
+} from "../../studio/VerifyPanel";
+import { Badge, NumField, Segmented, Spinner, Stat } from "../../ui/controls";
 import { Colorbar, FieldView } from "../../ui/FieldView";
-import { mm, mpa, ms, pct } from "../../ui/units";
+import { mm, mpa, ms, newtons, pct } from "../../ui/units";
 import {
   LabFrame,
   NameField,
@@ -57,6 +63,10 @@ import { FloatingPanel } from "../ui/FloatingPanel";
 import type { RailItem } from "../ui/Rail";
 import { Sheet } from "../ui/Sheet";
 import { toasts } from "../ui/toastStore";
+import { safetyFactor } from "./compare";
+import { HOTSPOT_RULE, ktReferences, measuredKt } from "./concentration";
+import { defaultLines, type ProbeLine } from "./probe";
+import { signedPct, StressProbe } from "./StressProbe";
 import { stressSummary } from "./summary";
 import "./stress.css";
 
@@ -67,6 +77,26 @@ const REASONS: Record<string, string> = {
 };
 
 type StressSheet = LabSheet | "keys" | null;
+
+type DockView = "summary" | "probe" | "fem";
+
+/** A preset line follows the part as it changes; a drawn line stays where it was drawn. */
+type ProbeChoice = { preset: string } | { custom: ProbeLine };
+
+const slug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "study";
+
+function download(name: string, text: string, type: string) {
+  const href = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = name;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
 
 export type StressStudyProps = {
   active: boolean;
@@ -92,6 +122,11 @@ export function StressStudy({
   const [field, setField] = useState<FieldKey>("von_mises");
   const [invalidField, setInvalidField] = useState<string | null>(null);
   const [sheet, setSheet] = useState<StressSheet>(initialSheet ?? null);
+  const [dockView, setDockView] = useState<DockView>("summary");
+  const [probe, setProbe] = useState<ProbeChoice>({ preset: "" });
+  const [drawing, setDrawing] = useState(false);
+  const [yieldOverride, setYieldOverride] = useState<number | null>(null);
+  const [femRun, setFemRun] = useState<VerifyRun | null>(null);
   const panels = useLabPanels();
   const verify = useRef<VerifyHandle>(null);
   const health = useHealth();
@@ -107,10 +142,21 @@ export function StressStudy({
     [values, field, mask],
   );
   const res = pred?.result;
-  const ys = yieldStrength(c);
-  const sf = res && ys ? ys / res.hotspot.von_mises : null;
-  const kt = res ? res.hotspot.von_mises / tractionMagnitude(c) : null;
+  const materialYield = yieldStrength(c);
+  const ys = yieldOverride ?? materialYield;
+  const sf = safetyFactor(ys, res?.hotspot.von_mises);
+  const kt = res ? (measuredKt(c, res.hotspot.von_mises)?.gross ?? null) : null;
+  const ktRef = useMemo(() => ktReferences(c), [c]);
   const threshold = engine.engine?.policy.threshold ?? null;
+
+  const presets = useMemo(() => defaultLines(c), [c]);
+  const preset =
+    "preset" in probe
+      ? (presets.find((p) => p.id === probe.preset) ?? presets[0])
+      : null;
+  const line = "custom" in probe ? probe.custom : preset!.line;
+  const fem = femRun?.forCase === JSON.stringify(c) ? femRun.data : null;
+  const showLine = drawing || (panels.dockOpen && dockView === "probe");
 
   const edit = (next: Case, group?: string) => {
     setInvalidField(null);
@@ -125,7 +171,19 @@ export function StressStudy({
 
   const startVerify = () => {
     panels.setDockOpen(true);
+    setDockView("fem");
     verify.current?.start();
+  };
+
+  const openProbe = (next?: ProbeChoice) => {
+    if (next) setProbe(next);
+    setDockView("probe");
+    panels.setDockOpen(true);
+  };
+
+  const startDrawing = (on: boolean) => {
+    setDrawing(on);
+    if (on) openProbe();
   };
 
   useShortcuts(active && sheet === null, {
@@ -174,19 +232,20 @@ export function StressStudy({
       icon: <LayoutTemplate size={18} aria-hidden="true" />,
       content: (close) => (
         <ul className="px-pick-list">
-          {PRESETS.map((preset) => (
-            <li key={preset.id}>
+          {PRESETS.map((template) => (
+            <li key={template.id}>
               <button
                 type="button"
                 className="px-pick"
                 onClick={() => {
-                  edit(preset.make());
-                  setName(preset.label);
+                  edit(template.make());
+                  setName(template.label);
+                  setProbe({ preset: "" });
                   close();
                 }}
               >
                 <LayoutTemplate size={15} aria-hidden="true" />
-                {preset.label}
+                {template.label}
               </button>
             </li>
           ))}
@@ -214,6 +273,45 @@ export function StressStudy({
                 {c.family === "plate" ? "Plate" : "L-bracket"} ·{" "}
                 {c.geometry.holes.length} holes
               </small>
+            </button>
+          </li>
+        </ul>
+      ),
+    },
+    {
+      id: "probe",
+      label: "Line probe",
+      icon: <Ruler size={18} aria-hidden="true" />,
+      content: (close) => (
+        <ul className="px-pick-list">
+          {presets.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                className="px-pick"
+                onClick={() => {
+                  setDrawing(false);
+                  openProbe({ preset: p.id });
+                  close();
+                }}
+              >
+                <Ruler size={15} aria-hidden="true" />
+                {p.label}
+              </button>
+            </li>
+          ))}
+          <li>
+            <button
+              type="button"
+              className="px-pick"
+              onClick={() => {
+                startDrawing(true);
+                close();
+              }}
+            >
+              <PenLine size={15} aria-hidden="true" />
+              Draw a line
+              <small>press and drag over the part</small>
             </button>
           </li>
         </ul>
@@ -375,6 +473,13 @@ export function StressStudy({
               edit({ ...c, geometry: { ...c.geometry, holes } }, "drag")
             }
             formatValue={(v) => mpa(v)}
+            line={showLine ? line : null}
+            onLineChange={(next) => setProbe({ custom: next })}
+            drawing={drawing}
+            onDrawEnd={() => {
+              setDrawing(false);
+              openProbe();
+            }}
             markers={
               res && !sur.blocked
                 ? [
@@ -386,7 +491,11 @@ export function StressStudy({
                   ]
                 : []
             }
-            ariaLabel="Predicted stress field; drag holes to move them, drag the handle to resize"
+            ariaLabel={
+              drawing
+                ? "Predicted stress field; press and drag to draw a probe line"
+                : "Predicted stress field; drag holes to move them, drag the handle to resize"
+            }
           />
         </div>
       </div>
@@ -411,6 +520,16 @@ export function StressStudy({
           <span className="lab-chip" data-tone="warn" role="status">
             Paused: {sur.blocked}
           </span>
+        ) : null}
+        {drawing ? (
+          <button
+            type="button"
+            className="lab-chip lab-chip-button"
+            onClick={() => setDrawing(false)}
+            title="Stop drawing"
+          >
+            Drag over the part to draw a line · Cancel
+          </button>
         ) : null}
       </div>
       {values && !sur.blocked ? (
@@ -456,71 +575,187 @@ export function StressStudy({
         defaultHeight={360}
         keepMounted
       >
-        <div className="lab-stress">
-          <div className="stat-row">
-            <Stat
-              label="Peak von Mises"
-              value={mpa(res?.hotspot.von_mises)}
-              sub={
-                res
-                  ? `at ${mm(res.hotspot.x)}, ${mm(res.hotspot.y)} · grid basis`
-                  : "surrogate"
+        <div className="lab-stress lab-stress-dock">
+          <Segmented<DockView>
+            label="Results view"
+            value={dockView}
+            onChange={setDockView}
+            options={[
+              { value: "summary", label: "Summary" },
+              { value: "probe", label: "Line probe" },
+              { value: "fem", label: "FEM check" },
+            ]}
+          />
+          <div hidden={dockView !== "summary"}>
+            <div className="stat-row">
+              <Stat
+                label="Peak von Mises"
+                value={mpa(res?.hotspot.von_mises)}
+                sub={
+                  res
+                    ? `at ${mm(res.hotspot.x)}, ${mm(res.hotspot.y)} · grid basis`
+                    : "surrogate"
+                }
+                title={HOTSPOT_RULE}
+              />
+              <Stat
+                label="Safety factor"
+                value={sf ? sf.toFixed(2) : "—"}
+                sub={
+                  ys
+                    ? `yield ${mpa(ys)}${yieldOverride != null ? " (entered)" : ""}`
+                    : "enter a yield strength"
+                }
+                tone={
+                  sf == null
+                    ? undefined
+                    : sf >= 2
+                      ? "ok"
+                      : sf >= 1
+                        ? "warn"
+                        : "bad"
+                }
+              />
+              <Stat
+                label="Stress concentration"
+                value={kt ? kt.toFixed(2) : "—"}
+                sub={
+                  ktRef.applicable
+                    ? `Heywood ${ktRef.heywoodGross.toFixed(2)}${
+                        kt
+                          ? ` · ${signedPct((kt - ktRef.heywoodGross) / ktRef.heywoodGross)}`
+                          : ""
+                      }`
+                    : "peak / applied traction"
+                }
+                title={`Gross-section Kt: peak von Mises over the applied traction. ${HOTSPOT_RULE}${
+                  ktRef.applicable
+                    ? ` Kirsch (infinite plate) ${ktRef.kirsch}; Heywood at d/H ${ktRef.dOverH.toFixed(2)}: net ${ktRef.heywoodNet.toFixed(3)}, gross ${ktRef.heywoodGross.toFixed(3)}.`
+                    : ` No closed-form reference: ${ktRef.reason}.`
+                }`}
+              />
+              <Stat
+                label="Ensemble disagreement"
+                value={pct(res?.disagreement)}
+                sub={
+                  threshold != null
+                    ? threshold < 0
+                      ? "fallback forced for every case"
+                      : `model spread · threshold ${pct(threshold)}`
+                    : "model spread"
+                }
+                title="Spread between the five models, not an error against the solver"
+                tone={pred ? (pred.accepted ? "ok" : "warn") : undefined}
+              />
+            </div>
+            <div className="lab-stress-inputs">
+              <NumField
+                label="Yield strength"
+                value={ys ?? 0}
+                scale={1e-6}
+                unit="MPa"
+                min={0}
+                step={10}
+                hint={
+                  materialYield
+                    ? `From the material: ${mpa(materialYield)}. Edit to use your own value.`
+                    : "This material has no tabulated yield strength; enter one."
+                }
+                onChange={(value) =>
+                  setYieldOverride(
+                    value > 0 && value !== materialYield ? value : null,
+                  )
+                }
+              />
+              {yieldOverride != null && materialYield ? (
+                <button
+                  type="button"
+                  className="lab-button"
+                  onClick={() => setYieldOverride(null)}
+                >
+                  Use material value
+                </button>
+              ) : null}
+              {fem ? (
+                <p className="lab-check">
+                  <span>Equilibrium</span>
+                  <span className="num">
+                    applied {newtons(Math.hypot(...resultantForce(c)))} ·
+                    reaction{" "}
+                    {fem.summary.reaction_force
+                      ? newtons(Math.hypot(...fem.summary.reaction_force))
+                      : "—"}{" "}
+                    · residual{" "}
+                    {fem.summary.equilibrium_residual != null
+                      ? fem.summary.equilibrium_residual.toExponential(1)
+                      : "—"}
+                  </span>
+                </p>
+              ) : (
+                <p className="lab-check">
+                  <span>Reactions and equilibrium come from the solver.</span>
+                  <button
+                    type="button"
+                    className="lab-button"
+                    disabled={!health.online}
+                    onClick={startVerify}
+                  >
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    <span>Run FEM check</span>
+                  </button>
+                </p>
+              )}
+            </div>
+            {pred && !pred.domain.in_domain ? (
+              <div className="callout tone-warn">
+                <strong>Outside the training domain.</strong> The surrogate
+                field is shown for orientation only; the service answers with
+                FEM.
+                <ul>
+                  {pred.domain.reasons.map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+          <div hidden={dockView !== "probe"}>
+            <StressProbe
+              c={shownCase}
+              pred={sur.blocked ? null : pred}
+              modelId={engine.engine?.manifest.model_id ?? null}
+              mask={mask}
+              field={field}
+              line={line}
+              presets={presets}
+              preset={preset?.id ?? null}
+              onPreset={(id) => {
+                if (id !== "custom") setProbe({ preset: id });
+              }}
+              drawing={drawing}
+              onDrawingChange={startDrawing}
+              fem={sur.forCase === c ? fem : null}
+              canSolve={health.online}
+              onSolve={startVerify}
+              onExport={(csv) =>
+                download(`${slug(name)}-probe.csv`, csv, "text/csv")
               }
-            />
-            <Stat
-              label="Safety factor"
-              value={sf ? sf.toFixed(2) : "—"}
-              sub={ys ? `yield ${mpa(ys)}` : "named material needed"}
-              tone={
-                sf == null
-                  ? undefined
-                  : sf >= 2
-                    ? "ok"
-                    : sf >= 1
-                      ? "warn"
-                      : "bad"
-              }
-            />
-            <Stat
-              label="Stress concentration"
-              value={kt ? kt.toFixed(2) : "—"}
-              sub="peak / applied traction"
-            />
-            <Stat
-              label="Ensemble disagreement"
-              value={pct(res?.disagreement)}
-              sub={
-                threshold != null
-                  ? threshold < 0
-                    ? "fallback forced for every case"
-                    : `threshold ${pct(threshold)}`
-                  : "—"
-              }
-              tone={pred ? (pred.accepted ? "ok" : "warn") : undefined}
             />
           </div>
-          {pred && !pred.domain.in_domain ? (
-            <div className="callout tone-warn">
-              <strong>Outside the training domain.</strong> The surrogate field
-              is shown for orientation only; the service answers with FEM.
-              <ul>
-                {pred.domain.reasons.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <VerifyPanel
-            ref={verify}
-            c={c}
-            pred={sur.forCase === c ? pred : null}
-            online={health.online}
-            browser={health.source === "browser"}
-            onInvalid={(field) => {
-              setInvalidField(field);
-              if (field) panels.setInspectorOpen(true);
-            }}
-          />
+          <div hidden={dockView !== "fem"}>
+            <VerifyPanel
+              ref={verify}
+              c={c}
+              pred={sur.forCase === c ? pred : null}
+              online={health.online}
+              browser={health.source === "browser"}
+              onResult={setFemRun}
+              onInvalid={(field) => {
+                setInvalidField(field);
+                if (field) panels.setInspectorOpen(true);
+              }}
+            />
+          </div>
         </div>
       </Dock>
     </LabFrame>

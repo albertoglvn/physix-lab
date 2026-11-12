@@ -27,6 +27,16 @@
 .lab-field .fieldview {
   position: absolute;
   inset: 0;
+  container-type: size;
+}
+/* The SVG letterboxes inside the stage; match its drawn area so labels sit on the part. */
+.lab-field .fv-overlay {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: min(100cqw, 100cqh * var(--fv-aspect));
+  height: min(100cqh, 100cqw / var(--fv-aspect));
+  transform: translate(-50%, -50%);
 }
 .lab-field .fieldview svg {
   width: 100%;
@@ -137,4 +147,51 @@
     max-width: 100%;
     flex-wrap: wrap;
   }
+}
+
+/* Results dock: one view at a time under a segmented header. */
+.lab-stress-dock {
+  display: grid;
+  gap: 12px;
+}
+.lab-stress-dock > .segmented {
+  justify-self: start;
+}
+.lab-stress-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.lab-stress-inputs .numfield {
+  width: 160px;
+}
+.lab-stress-inputs .lab-check {
+  flex: 1 1 280px;
+}
+
+/* Probe side panel: label and value pairs. */
+.lab-probe-ends {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.lab-probe-ends dt {
+  color: var(--px-ink-muted);
+}
+.lab-probe-ends dd {
+  margin: 0;
+  font-family: var(--px-font-mono);
+  text-align: right;
+}
+.lab-probe-ends small {
+  color: var(--px-ink-muted);
+}
+.lab-chip-button {
+  cursor: pointer;
+  border-color: var(--px-ink);
+  color: var(--px-ink);
 }

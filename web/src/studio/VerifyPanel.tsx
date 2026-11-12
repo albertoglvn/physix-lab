@@ -11,8 +11,9 @@ import {
   type VerifyResponse,
 } from "../api/client";
 import type { SurrogatePrediction } from "../inference/engine";
+import { compareFields } from "../lab/stress/compare";
 import type { Case } from "../physics/case";
-import { PIXELS, solidMask } from "../physics/encoding";
+import { solidMask } from "../physics/encoding";
 import { Badge, Spinner, Stat } from "../ui/controls";
 import { Colorbar, FieldView } from "../ui/FieldView";
 import { MeshView } from "../ui/MeshView";
@@ -21,6 +22,9 @@ import { mm, mpa, ms, newtons, pct, ratio } from "../ui/units";
 
 /** Lets the lab start a check from its top bar. */
 export type VerifyHandle = { start: () => void };
+
+/** A finished check and the case it solved, as `JSON.stringify(case)`. */
+export type VerifyRun = { forCase: string; data: VerifyResponse };
 
 interface Run {
   forCase: string;
@@ -34,6 +38,7 @@ export function VerifyPanel({
   online,
   browser,
   onInvalid,
+  onResult,
   ref,
 }: {
   c: Case;
@@ -41,6 +46,8 @@ export function VerifyPanel({
   online: boolean;
   browser: boolean;
   onInvalid: (field: string | null) => void;
+  /** Called with each finished check, so the lab can reuse the solver field. */
+  onResult?: (run: VerifyRun) => void;
   ref?: Ref<VerifyHandle>;
 }) {
   const [run, setRun] = useState<Run | null>(null);
@@ -64,6 +71,7 @@ export function VerifyPanel({
         data,
         prediction: pred,
       });
+      onResult?.({ forCase: key, data });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -102,20 +110,19 @@ export function VerifyPanel({
     return { min: 0, max: Math.max(a.max, b.max) };
   }, [femVm, surVm, mask]);
 
-  const errorMap = useMemo(() => {
-    if (!femVm || !surVm || !mask) return null;
-    const peak = fieldRange(femVm, mask).max || 1;
-    const out = new Float32Array(PIXELS);
-    let worst = 0;
-    for (let k = 0; k < PIXELS; k++) {
-      out[k] =
-        mask[k] && Number.isFinite(femVm[k])
-          ? (surVm[k] - femVm[k]) / peak
-          : Number.NaN;
-      if (Number.isFinite(out[k])) worst = Math.max(worst, Math.abs(out[k]));
-    }
-    return { values: out, range: { min: -(worst || 1), max: worst || 1 } };
-  }, [femVm, surVm, mask]);
+  const comparison = useMemo(
+    () => (femVm && surVm && mask ? compareFields(surVm, femVm, mask) : null),
+    [femVm, surVm, mask],
+  );
+  const errorMap = comparison
+    ? {
+        values: comparison.diff,
+        range: {
+          min: -(comparison.maxAbsRel || 1),
+          max: comparison.maxAbsRel || 1,
+        },
+      }
+    : null;
 
   const rasterRef = fem?.summary.raster_hotspot?.von_mises;
   const browserHotspot = comparedPrediction?.result.hotspot.von_mises ?? null;
@@ -206,6 +213,16 @@ export function VerifyPanel({
                       ? "warn"
                       : "bad"
               }
+            />
+            <Stat
+              label="Masked RMSE"
+              value={mpa(comparison?.rmse)}
+              sub={
+                comparison
+                  ? `${pct(comparison.rmseRel)} of FEM peak · ${comparison.count.toLocaleString()} px`
+                  : "no browser prediction"
+              }
+              title="Root-mean-square von Mises difference over the solid mask, against FEM on the same grid"
             />
             <Stat
               label="Speed-up"
@@ -391,10 +408,11 @@ export function VerifyPanel({
           <p className="muted small">
             The mesh peak is evaluated at FE nodes; the grid reference samples
             the same FEM field at pixel centres, which is what the surrogate
-            predicts, so grid-to-grid is the like-for-like comparison. Timings:
-            browser time is the full in-tab inference (encode, every member,
-            statistics). FEM time covers the solve and post-processing and
-            excludes
+            predicts, so grid-to-grid is the like-for-like comparison. Errors
+            here are against the solver; the ensemble disagreement in Results is
+            the spread between models and is not an error. Timings: browser time
+            is the full in-tab inference (encode, every member, statistics). FEM
+            time covers the solve and post-processing and excludes
             {browser ? " solver startup." : " HTTP transport."}
           </p>
         </>

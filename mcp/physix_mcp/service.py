@@ -218,9 +218,14 @@ class PhysixService:
             "points": _b64(mesh.points, np.float32),
             "triangles": _b64(mesh.triangles, np.int32),
             "von_mises": _b64(vm, np.float32),
+            "stress": _b64(sol.stress.values, np.float32),
             "n_nodes": int(mesh.n_nodes),
             "n_triangles": int(len(mesh.triangles)),
-            "encoding": "base64 little-endian; points float32 (n,2) m, triangles int32 (m,3)",
+            "encoding": (
+                "base64 little-endian; points float32 (n,2) m, triangles int32 (m,3), "
+                "von_mises float32 (n,) Pa nodal average, stress float32 (m,3,3) Pa at "
+                "element vertices ordered (sxx, syy, txy)"
+            ),
         }
 
     def _fem_response(

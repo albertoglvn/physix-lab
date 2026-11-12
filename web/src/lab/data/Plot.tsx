@@ -13,6 +13,14 @@ export type PlotSeries = {
 /** A closed-form curve drawn dashed in the reference colour. */
 export type PlotCurve = { at: (t: number) => number; until: number };
 
+/** Sampled reference data (a solver profile, say), drawn dashed like a curve. */
+export type PlotReference = { t: number[]; values: number[] };
+
+/** The horizontal axis; time in seconds unless a plot says otherwise. */
+export type PlotAxis = { label: string; symbol: string; unit: string };
+
+export const TIME_AXIS: PlotAxis = { label: "Time", symbol: "t", unit: "s" };
+
 type Scale = { ticks: number[]; digits: number };
 
 /** Round tick positions (1, 2 or 5 × 10ⁿ apart) covering [min, max]. */
@@ -69,22 +77,53 @@ const formatValue = (value: number) =>
 export type PlotProps = {
   series: PlotSeries;
   curve?: PlotCurve;
-  /** The time axis runs from 0 to this value. */
+  reference?: PlotReference;
+  /** The horizontal axis runs from 0 to this value. */
   domain: number;
-  /** Samples after this time stay hidden, so the line follows the live run. */
-  until: number;
+  /** Samples after this value stay hidden, so the line follows the live run. */
+  until?: number;
+  axis?: PlotAxis;
+  /** Key labels for the series and the dashed reference. */
+  keys?: { series?: string; reference?: string };
   height?: number;
 };
 
+/** An SVG path through the finite samples up to `until`, broken at gaps. */
+function tracePath(
+  t: number[],
+  values: number[],
+  until: number,
+  x: (t: number) => number,
+  y: (value: number) => number,
+): string {
+  let path = "";
+  let shown = 0;
+  t.forEach((at, index) => {
+    if (at > until + 1e-9) return;
+    const value = values[index];
+    if (!Number.isFinite(value)) {
+      shown = 0;
+      return;
+    }
+    path += `${shown ? "L" : "M"}${x(at).toFixed(1)} ${y(value).toFixed(1)}`;
+    shown++;
+  });
+  return path;
+}
+
 /**
- * A time-series plot (DESIGN.md §6, Plot): a probe series revealed up to the live time over a
- * dashed closed-form curve, with axis titles in SI units and a hover readout.
+ * A series plot (DESIGN.md §6, Plot): a probe series revealed up to the live value over a
+ * dashed reference (a closed-form curve or solver samples), with axis titles in SI units and a
+ * hover readout. The horizontal axis is time unless `axis` names another quantity.
  */
 export function Plot({
   series,
   curve,
+  reference,
   domain,
-  until,
+  until = Infinity,
+  axis = TIME_AXIS,
+  keys = {},
   height = 180,
 }: PlotProps) {
   const [node, setNode] = useState<HTMLElement | null>(null);
@@ -99,7 +138,11 @@ export function Plot({
       )
     : [];
   const curveValues = curve ? curveTimes.map((t) => curve.at(t)) : [];
-  const [low, high] = valueRange([...series.values, ...curveValues]);
+  const [low, high] = valueRange([
+    ...series.values,
+    ...curveValues,
+    ...(reference?.values ?? []),
+  ]);
   const inner = {
     width: width - MARGIN.left - MARGIN.right,
     height: height - MARGIN.top - MARGIN.bottom,
@@ -110,24 +153,14 @@ export function Plot({
   const xScale = niceTicks(0, span, Math.max(2, Math.round(inner.width / 90)));
   const yScale = niceTicks(low, high, 4);
 
-  let path = "";
-  let shown = 0;
-  series.t.forEach((t, index) => {
-    if (t > until + 1e-9) return;
-    const value = series.values[index];
-    if (!Number.isFinite(value)) {
-      shown = 0;
-      return;
-    }
-    path += `${shown ? "L" : "M"}${x(t).toFixed(1)} ${y(value).toFixed(1)}`;
-    shown++;
-  });
-  const reference = curveTimes
-    .map(
-      (t, index) =>
-        `${index ? "L" : "M"}${x(t).toFixed(1)} ${y(curveValues[index]).toFixed(1)}`,
-    )
-    .join("");
+  const path = tracePath(series.t, series.values, until, x, y);
+  const dashed =
+    tracePath(curveTimes, curveValues, Infinity, x, y) +
+    (reference ? tracePath(reference.t, reference.values, Infinity, x, y) : "");
+  const referenceAt = (index: number) =>
+    reference && reference.t[index] === series.t[index]
+      ? reference.values[index]
+      : undefined;
 
   let last = series.t.length - 1;
   while (last >= 0 && series.t[last] > until + 1e-9) last--;
@@ -150,6 +183,9 @@ export function Plot({
   }
 
   const axisTitle = `${series.label} (${series.unit})`;
+  const hasReference = Boolean(curve || reference);
+  const hoveredReference =
+    hovered === undefined ? undefined : referenceAt(hovered);
   return (
     <figure className="lab-plot" ref={setNode}>
       <svg
@@ -157,7 +193,7 @@ export function Plot({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${series.label} against time${curve ? ", with the closed-form curve" : ""}`}
+        aria-label={`${series.label} against ${axis.label.toLowerCase()}${hasReference ? `, with the ${keys.reference ? `${keys.reference} reference` : "closed-form curve"}` : ""}`}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHover(null)}
       >
@@ -208,7 +244,7 @@ export function Plot({
             y={height - 4}
             textAnchor="middle"
           >
-            Time (s)
+            {axis.label} ({axis.unit})
           </text>
           <text
             transform={`translate(12 ${MARGIN.top + inner.height / 2}) rotate(-90)`}
@@ -217,7 +253,7 @@ export function Plot({
             {axisTitle}
           </text>
         </g>
-        {reference ? <path className="lab-plot-ref" d={reference} /> : null}
+        {dashed ? <path className="lab-plot-ref" d={dashed} /> : null}
         {path ? (
           <path
             className="lab-plot-line"
@@ -247,8 +283,11 @@ export function Plot({
       <figcaption className="lab-plot-key">
         {hovered !== undefined ? (
           <span className="num">
-            t {formatValue(series.t[hovered])} s · {series.symbol}{" "}
-            {formatValue(series.values[hovered])} {series.unit}
+            {axis.symbol} {formatValue(series.t[hovered])} {axis.unit} ·{" "}
+            {series.symbol} {formatValue(series.values[hovered])} {series.unit}
+            {hoveredReference !== undefined
+              ? ` · ${keys.reference ?? "Theory"} ${formatValue(hoveredReference)} ${series.unit}`
+              : null}
           </span>
         ) : (
           <>
@@ -258,15 +297,15 @@ export function Plot({
                 style={{ background: series.color }}
                 aria-hidden="true"
               />
-              Simulated
+              {keys.series ?? "Simulated"}
             </span>
-            {curve ? (
+            {hasReference ? (
               <span>
                 <i
                   className="lab-plot-swatch lab-plot-swatch--ref"
                   aria-hidden="true"
                 />
-                Theory
+                {keys.reference ?? "Theory"}
               </span>
             ) : null}
           </>

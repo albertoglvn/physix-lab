@@ -1,13 +1,15 @@
 /**
  * A stress field on the physix.raster/1 grid with the part drawn on top: outline, holes,
  * clamped edge, load arrows and hotspot. Everything lives in one SVG whose user units are
- * metres, so the raster and the geometry can never drift apart. Holes can be dragged.
+ * metres, so the raster and the geometry can never drift apart. Holes can be dragged, and an
+ * optional probe line can be drawn and its ends dragged.
  */
 
 import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { Case, Hole } from "../physics/case";
@@ -24,6 +26,12 @@ export interface Marker {
   tone?: "hot" | "ref";
 }
 
+/** A straight probe line in metres, from `a` to `b`. */
+export interface FieldLine {
+  a: [number, number];
+  b: [number, number];
+}
+
 export interface FieldViewProps {
   c: Case;
   values: Float32Array | null;
@@ -36,6 +44,12 @@ export interface FieldViewProps {
   formatValue?: (v: number) => string;
   showLoads?: boolean;
   ghost?: Case | null;
+  /** A probe line over the part; its ends can be dragged when `onLineChange` is set. */
+  line?: FieldLine | null;
+  onLineChange?: (line: FieldLine) => void;
+  /** While true, pressing and dragging over the part draws a new line. */
+  drawing?: boolean;
+  onDrawEnd?: () => void;
   className?: string;
   ariaLabel?: string;
 }
@@ -59,7 +73,7 @@ function rasterUrl(
 }
 
 type Drag = {
-  kind: "move" | "resize";
+  kind: "move" | "resize" | "a" | "b" | "draw";
   index: number;
   pointerId: number;
   dx: number;
@@ -80,11 +94,16 @@ export function FieldView({
   formatValue,
   showLoads = true,
   ghost = null,
+  line = null,
+  onLineChange,
+  drawing = false,
+  onDrawEnd,
   className,
   ariaLabel,
 }: FieldViewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag>(null);
+  const [draft, setDraft] = useState<FieldLine | null>(null);
   const [hover, setHover] = useState<{
     x: number;
     y: number;
@@ -124,10 +143,37 @@ export function FieldView({
     return [pt.x, frameH - pt.y];
   };
 
+  const clampToPart = (x: number, y: number): [number, number] => [
+    snap(Math.min(Math.max(x, 0), w)),
+    snap(Math.min(Math.max(y, 0), h)),
+  ];
+
+  const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (!drawing || !onLineChange || e.button !== 0) return;
+    const p = toModel(e);
+    if (!p) return;
+    e.preventDefault();
+    const start = clampToPart(...p);
+    svgRef.current?.setPointerCapture(e.pointerId);
+    setDraft({ a: start, b: start });
+    setDrag({ kind: "draw", index: -1, pointerId: e.pointerId, dx: 0, dy: 0 });
+    setHover(null);
+  };
+
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
     const p = toModel(e);
     if (!p) return;
     const [x, y] = p;
+    if (drag?.kind === "draw") {
+      setDraft((current) =>
+        current ? { a: current.a, b: clampToPart(x, y) } : current,
+      );
+      return;
+    }
+    if ((drag?.kind === "a" || drag?.kind === "b") && line && onLineChange) {
+      onLineChange({ ...line, [drag.kind]: clampToPart(x, y) });
+      return;
+    }
     if (drag && onHolesChange) {
       const holes = c.geometry.holes.map((hole) => ({ ...hole }));
       const hole = holes[drag.index];
@@ -163,7 +209,7 @@ export function FieldView({
     index: number,
     kind: "move" | "resize",
   ) => {
-    if (!editable || !onHolesChange) return;
+    if (!editable || !onHolesChange || drawing) return;
     e.stopPropagation();
     e.preventDefault();
     const p = toModel(e);
@@ -180,8 +226,27 @@ export function FieldView({
     setHover(null);
   };
 
+  const startLineDrag = (e: ReactPointerEvent, end: "a" | "b") => {
+    if (!onLineChange || drawing) return;
+    e.stopPropagation();
+    e.preventDefault();
+    svgRef.current?.setPointerCapture(e.pointerId);
+    setDrag({ kind: end, index: -1, pointerId: e.pointerId, dx: 0, dy: 0 });
+    setHover(null);
+  };
+
   const endDrag = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (drag) svgRef.current?.releasePointerCapture(drag.pointerId);
+    if (drag?.kind === "draw") {
+      // A click without a drag keeps the previous line.
+      if (
+        draft &&
+        Math.hypot(draft.b[0] - draft.a[0], draft.b[1] - draft.a[1]) >= 2 * dx
+      )
+        onLineChange?.(draft);
+      setDraft(null);
+      onDrawEnd?.();
+    }
     setDrag(null);
     if (e.type === "pointerleave") setHover(null);
   };
@@ -238,6 +303,7 @@ export function FieldView({
   }, [c, w]);
 
   const fmt = formatValue ?? ((v: number) => v.toPrecision(3));
+  const shownLine = draft ?? line;
   const viewH = frameH + m - top;
 
   return (
@@ -247,13 +313,14 @@ export function FieldView({
         viewBox={`${-m} ${top} ${w + 2 * m} ${viewH}`}
         role="img"
         aria-label={ariaLabel ?? "Stress field"}
+        onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={endDrag}
         style={{
           aspectRatio: `${w + 2 * m} / ${viewH}`,
-          cursor: drag ? "grabbing" : undefined,
+          cursor: drawing ? "crosshair" : drag ? "grabbing" : undefined,
         }}
       >
         <defs>
@@ -367,6 +434,40 @@ export function FieldView({
             )}
           </g>
         ))}
+        {shownLine && (
+          <g
+            className={`fv-probe ${onLineChange && !drawing ? "is-editable" : ""}`}
+          >
+            <line
+              className="fv-probe-halo"
+              x1={shownLine.a[0]}
+              y1={Y(shownLine.a[1])}
+              x2={shownLine.b[0]}
+              y2={Y(shownLine.b[1])}
+              vectorEffect="non-scaling-stroke"
+            />
+            <line
+              x1={shownLine.a[0]}
+              y1={Y(shownLine.a[1])}
+              x2={shownLine.b[0]}
+              y2={Y(shownLine.b[1])}
+              vectorEffect="non-scaling-stroke"
+            />
+            {(["a", "b"] as const).map((end) => (
+              <g key={end}>
+                <circle
+                  cx={shownLine[end][0]}
+                  cy={Y(shownLine[end][1])}
+                  r={0.011 * w}
+                  vectorEffect="non-scaling-stroke"
+                  onPointerDown={(e) => startLineDrag(e, end)}
+                >
+                  <title>{`${end.toUpperCase()}: x ${mm(shownLine[end][0])}, y ${mm(shownLine[end][1])}`}</title>
+                </circle>
+              </g>
+            ))}
+          </g>
+        )}
         {markers.map((mk, k) => (
           <g
             key={k}
@@ -395,20 +496,39 @@ export function FieldView({
           </g>
         ))}
       </svg>
-      {markers
-        .filter((mk) => mk.label)
-        .map((mk, k) => (
-          <div
-            key={k}
-            className={`fv-tag ${mk.tone === "ref" ? "is-ref" : ""}`}
-            style={{
-              left: `${((mk.x + m) / (w + 2 * m)) * 100}%`,
-              top: `${((Y(mk.y) - top) / viewH) * 100}%`,
-            }}
-          >
-            {mk.label}
-          </div>
-        ))}
+      <div
+        className="fv-overlay"
+        style={{ "--fv-aspect": (w + 2 * m) / viewH } as CSSProperties}
+      >
+        {markers
+          .filter((mk) => mk.label)
+          .map((mk, k) => (
+            <div
+              key={k}
+              className={`fv-tag ${mk.tone === "ref" ? "is-ref" : ""}`}
+              style={{
+                left: `${((mk.x + m) / (w + 2 * m)) * 100}%`,
+                top: `${((Y(mk.y) - top) / viewH) * 100}%`,
+              }}
+            >
+              {mk.label}
+            </div>
+          ))}
+        {shownLine &&
+          (["a", "b"] as const).map((end) => (
+            <div
+              key={end}
+              className="fv-probe-end"
+              aria-hidden="true"
+              style={{
+                left: `${((shownLine[end][0] + m) / (w + 2 * m)) * 100}%`,
+                top: `${((Y(shownLine[end][1]) - top) / viewH) * 100}%`,
+              }}
+            >
+              {end.toUpperCase()}
+            </div>
+          ))}
+      </div>
       {hover && !drag && (
         <div className="fv-readout" style={{ left: hover.px, top: hover.py }}>
           <span>{hover.v === null ? "outside the part" : fmt(hover.v)}</span>

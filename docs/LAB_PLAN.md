@@ -6,9 +6,9 @@ with theory, varies parameters, and exports evidence that holds up in a report o
 keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the style rules, and
 this plan cites it wherever the UI changes.
 
-Status: proposal. Nothing in this document is implemented yet. It builds on the current
-working tree, including the uncommitted `web/src/lab/` workspace, `browser-fem` worker,
-`Home` page and `physix.lab/1` scene contract.
+Status: in progress. Phases 0 and 1 are done, and Phase 2 has its Motion and Stress
+slices; each phase lists its own status. The plan started from the `web/src/lab/`
+workspace, `browser-fem` worker, `Home` page and `physix.lab/1` scene contract.
 
 ---
 
@@ -569,9 +569,29 @@ canonical plate. A re-imported export reproduces the same results.
 - Experiment JSON, a tidy CSV and a methods summary can be exported. Importing an
   experiment re-runs it and reports whether the stored run was reproduced exactly.
 
+*Status, Stress slice (done):*
+
+- The Results dock has three views: Summary, Line probe and FEM check.
+- Line probes plot σxx, σyy, τxy, von Mises or the model spread along a preset or drawn
+  line. The surrogate is the solid line and FEM the dashed reference. Plates offer the net
+  section and the centreline; brackets offer the web and flange sections. Drawn ends can
+  be dragged. Profiles export as CSV (`physix.probe/1`).
+- The FEM response carries element-vertex stress, so the probe evaluates the solver
+  field exactly. `line_probe_v1.json` pins Python and TypeScript to 10⁻⁶ of peak. This
+  meets the exit criterion.
+- A line that cuts the part reports its section resultant against the applied force.
+  On the canonical plate, the FEM net section carries 3.99 kN of 4.00 kN.
+- Kt is reported against Kirsch and Heywood, with the hotspot rule in the tooltip.
+  Outside the references' assumptions (a single centred hole in axial tension, away from
+  the ends, d/H ≤ 0.6), the reason is shown instead. On the reference mesh FEM gives 3.39
+  against Heywood's 3.35.
+- The safety factor uses the material's yield strength or a value the user enters.
+- After an FEM check, the summary shows applied force, reaction and equilibrium residual.
+- The FEM check adds masked RMSE to the difference map. Model disagreement is labelled
+  as spread between models and never mixed with error against the solver.
+
 *Moved:* the pendulum and spring–mass overlays go to Phase 3, which adds rods and springs.
-Contact-force probes go to Phase 3 with the contact-force events. The Stress items above
-are the next Phase 2 slice.
+Contact-force probes go to Phase 3 with the contact-force events.
 
 ### Phase 3: New parts and studying variables (about 3 weeks)
 

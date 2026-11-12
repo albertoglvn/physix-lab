@@ -1056,6 +1056,13 @@ ul {
   touch-action: none;
 }
 
+/* Labels positioned in % of the drawing; the overlay covers exactly what the SVG draws. */
+.fv-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .fv-shadow {
   fill: var(--px-specimen-shadow);
 }
@@ -1129,6 +1136,40 @@ ul {
 .fv-hole:hover .fv-handle,
 .fv-hole.is-active .fv-handle {
   opacity: 1;
+}
+
+/* Probe line: white over the field with an ink halo so it reads on every colormap. */
+.fv-probe line {
+  stroke: var(--px-white);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.fv-probe .fv-probe-halo {
+  stroke: var(--px-ink);
+  stroke-width: 4.5;
+  stroke-opacity: 0.45;
+}
+
+.fv-probe circle {
+  fill: var(--px-white);
+  stroke: var(--px-ink);
+  stroke-width: 1.5;
+}
+
+.fv-probe.is-editable circle {
+  cursor: grab;
+}
+
+.fv-probe-end {
+  position: absolute;
+  transform: translate(6px, calc(-100% - 6px));
+  padding: 0 0.3rem;
+  border-radius: var(--px-radius-chip);
+  background: var(--px-ink);
+  color: var(--px-white);
+  font: 600 0.7rem/1.4 var(--mono);
+  pointer-events: none;
 }
 
 .fv-marker circle {

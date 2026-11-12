@@ -16,6 +16,7 @@ consumer in the same change.
 | Prediction response | `physix.prediction/1` | `mcp/physix_mcp/service.py` | `tests/mcp` |
 | Motion run | `physix.run/1` | `web/src/lab/motion/run.ts` | `run.test.ts` |
 | Experiment | `physix.experiment/1` | `web/src/lab/state/experiment.ts` | `exports.test.ts` |
+| Line probe | `physix.probe/1` | `physics/probe.py`, `web/src/lab/stress/probe.ts` | `tests/fixtures/line_probe_v1.json` |
 
 ## Units and coordinates
 
@@ -154,7 +155,28 @@ session, and applies the bundle's `domain` and `fallback_policy` with the same r
 the encoder and the ensemble statistics on both sides.
 
 `include_mesh` adds the reference mesh as base64 little-endian arrays: `points` float32
-`(n, 2)` in m, `triangles` int32 `(m, 3)`, and nodal-averaged `von_mises` float32 `(n,)` in Pa.
+`(n, 2)` in m, `triangles` int32 `(m, 3)`, nodal-averaged `von_mises` float32 `(n,)` in Pa,
+and `stress` float32 `(m, 3, 3)` in Pa: σxx, σyy and τxy at each element's three vertices,
+in triangle order. `stress` is the exact linear stress of each element, so a point
+evaluation needs no smoothing.
+
+### Line probe (`physix.probe/1`)
+
+A probe samples `n` evenly spaced points from `a` to `b`, both included (`n` = 201 in the
+lab). On the FEM mesh a point takes the first triangle, in index order, whose barycentric
+coordinates are all at least −10⁻⁹, and interpolates that element's vertex stress. On the
+surrogate grid a point blends its four neighbouring pixel centres bilinearly, using solid
+pixels only and renormalising the weights. Points outside the part or inside a hole are
+undefined. Von Mises comes from the components with the shared plane-stress formula.
+
+A section resultant is `t ∫ σ·n ds` over 1001 points, with `n` the unit normal of the line
+oriented towards the load edge. The trapezoid rule skips intervals with an undefined end.
+It is reported only when the line cuts the part into a supported side and a loaded side.
+
+`tests/fixtures/line_probe_v1.json` stores the canonical plate, its float32 mesh payload
+and two probes (the net section and an oblique line through the hole) with their values
+and section resultants. Python and TypeScript must reproduce every value within 10⁻⁶ of the
+probe's peak von Mises and every resultant within 10⁻⁶ of the applied force.
 
 ### Optimization report (`physix.optimize/1`)
 
@@ -214,3 +236,15 @@ run_id,t,quantity,value,unit,source
 `#` lines at the top give each run's schema and id, scene, engine, `time_step_s`,
 `probe_rate_hz`, stop event and the finite-difference note. Values are SI. A missing value
 is an empty cell. Cells that contain a comma, quote or line break are quoted.
+
+### Probe CSV
+
+The stress probe export has one row per point and source:
+
+```
+source,s_m,x_m,y_m,sxx_pa,syy_pa,txy_pa,von_mises_pa
+```
+
+`source` is `surrogate` or `fem`. `#` lines at the top give `physix.probe/1`, the case
+family and thickness, the model id, the solver and mesh preset, and each line's end points.
+Points outside the solid have empty stress cells.

@@ -31,6 +31,8 @@ export interface MeshPayload {
   points: string;
   triangles: string;
   von_mises: string;
+  /** Element-vertex stress (m, 3, 3) float32, ordered (σxx, σyy, τxy); absent from older services. */
+  stress?: string;
   n_nodes: number;
   n_triangles: number;
 }
