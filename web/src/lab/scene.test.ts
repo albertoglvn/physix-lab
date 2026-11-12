@@ -12,7 +12,7 @@ import {
 } from "./scene";
 
 describe("mechanics scene contract", () => {
-  it.each<Preset>(["incline", "friction", "pulley", "blank"])(
+  it.each<Preset>(["incline", "friction", "projectile", "pulley", "blank"])(
     "round-trips %s",
     (preset) => {
       const scene = makeScene(preset);

@@ -45,12 +45,13 @@ export type LabScene = {
   floorFriction: number;
   objects: LabObject[];
 };
-export type Preset = "incline" | "friction" | "pulley" | "blank";
+export type Preset = "incline" | "friction" | "projectile" | "pulley" | "blank";
 
 export const objectNames = { block: "Block", ramp: "Ramp", pulley: "Pulley" };
 export const presetNames: Record<Preset, string> = {
   incline: "Inclined plane",
   friction: "Friction track",
+  projectile: "Projectile",
   pulley: "Atwood machine",
   blank: "Untitled experiment",
 };
@@ -111,6 +112,9 @@ export function makeObject(
   }
 }
 
+/** Gap left between a placed block and the ramp surface, in metres. */
+export const RAMP_CLEARANCE = 0.015;
+
 export const radians = (degrees: number) => (degrees * Math.PI) / 180;
 export const rampHeight = (ramp: Ramp) =>
   ramp.length * Math.tan(radians(ramp.angle));
@@ -123,7 +127,7 @@ export function blockOnRamp(
 ): Block {
   const tilt = radians(ramp.angle);
   const surfaceX = ramp.length * (fraction - 0.5);
-  const clearance = block.size / 2 + 0.015;
+  const clearance = block.size / 2 + RAMP_CLEARANCE;
   return {
     ...block,
     x: ramp.x + surfaceX + clearance * Math.sin(tilt),
@@ -139,7 +143,8 @@ export function blockOnRamp(
 /** Returns an on-surface starting position expressed relative to the ramp. */
 export function rampPlacement(block: Block, ramp: Ramp) {
   if (block.rotation !== -ramp.angle || block.vx !== 0) return;
-  const normalOffset = (block.size / 2 + 0.015) * Math.sin(radians(ramp.angle));
+  const normalOffset =
+    (block.size / 2 + RAMP_CLEARANCE) * Math.sin(radians(ramp.angle));
   const fraction = (block.x - ramp.x - normalOffset) / ramp.length + 0.5;
   const lateral = block.z - ramp.z;
   if (fraction <= 0 || fraction >= 1 || Math.abs(lateral) > ramp.width / 2)
@@ -184,7 +189,10 @@ export function makeScene(preset: Preset): LabScene {
     const ramp = makeObject("ramp", "ramp-1");
     scene.objects = [ramp, blockOnRamp(makeObject("block", "block-1"), ramp)];
   } else if (preset === "friction") {
-    scene.objects = [{ ...makeObject("block", "block-1", -4), vx: 5 }];
+    // The block starts resting on the floor, so friction acts from the first step.
+    scene.objects = [{ ...makeObject("block", "block-1", -4), y: 0.5, vx: 5 }];
+  } else if (preset === "projectile") {
+    scene.objects = [{ ...makeObject("block", "block-1", -6), y: 6, vx: 4 }];
   } else if (preset === "pulley") {
     scene.objects = [makeObject("pulley", "pulley-1")];
   }

@@ -287,6 +287,11 @@
   background: var(--px-warn-tint);
   color: var(--px-ink);
 }
+.lab-chip[data-tone="ok"] {
+  border-color: var(--px-rule);
+  background: var(--px-ok-tint);
+  color: var(--px-ok);
+}
 
 /* ---------- inspector ---------- */
 
@@ -318,6 +323,15 @@
   margin-top: 12px;
   color: var(--px-ink-muted);
   font-size: 12px;
+}
+.lab-select--inline {
+  align-content: start;
+  margin-top: 0;
+}
+.lab-kind--section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--px-rule);
 }
 .lab-note {
   margin: 12px 0 0;
@@ -360,6 +374,202 @@
   font: 500 15px/1.3 var(--px-font-mono);
 }
 
+.lab-data {
+  display: grid;
+  gap: 10px;
+}
+.lab-data-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lab-data-quantity {
+  width: auto;
+  max-width: 220px;
+}
+.lab-data-target {
+  color: var(--px-ink-muted);
+  font: 500 12px/1 var(--px-font-mono);
+}
+.lab-data-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.lab-data-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 12px;
+  align-items: start;
+}
+.lab-data-main {
+  min-width: 0;
+}
+.lab-data-side {
+  display: grid;
+  gap: 8px;
+}
+.lab-data-side .lab-note,
+.lab-data-main .lab-note {
+  margin: 0;
+}
+
+/* Plot: DESIGN.md §6. Axes 11 px muted, gridlines in the rule colour, 1.75 px series. */
+.lab-plot {
+  margin: 0;
+  min-width: 0;
+}
+.lab-plot svg {
+  display: block;
+  max-width: 100%;
+  touch-action: none;
+}
+.lab-plot-grid line {
+  stroke: var(--px-rule);
+  stroke-width: 1;
+}
+.lab-plot-axis text {
+  fill: var(--px-ink-muted);
+  font: 11px var(--px-font-mono);
+}
+.lab-plot-line,
+.lab-plot-ref {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.lab-plot-ref {
+  stroke: var(--px-ref);
+  stroke-dasharray: 5 4;
+}
+.lab-plot-cursor line {
+  stroke: var(--px-ink-faint);
+  stroke-width: 1;
+}
+.lab-plot-key {
+  display: flex;
+  gap: 14px;
+  min-height: 18px;
+  color: var(--px-ink-muted);
+  font-size: 11px;
+}
+.lab-plot-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lab-plot-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+}
+.lab-plot-swatch--ref {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--px-ref) 0 5px,
+    transparent 5px 8px
+  );
+}
+
+.lab-table-wrap {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--px-rule);
+  border-radius: var(--px-radius-control);
+}
+.lab-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.lab-table th {
+  position: sticky;
+  top: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--px-rule);
+  background: var(--px-paper);
+  color: var(--px-ink-muted);
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+.lab-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--px-rule);
+  font-family: var(--px-font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.lab-table-wrap .lab-note {
+  padding: 8px;
+}
+
+.lab-compare {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-compare > li {
+  padding: 6px 10px 8px;
+  border: 1px solid var(--px-rule);
+  border-radius: var(--px-radius-control);
+  background: var(--px-paper);
+}
+.lab-compare-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.lab-compare-head small {
+  color: var(--px-ink-muted);
+  font-weight: 400;
+}
+.lab-compare-head .lab-info {
+  width: 22px;
+  height: 22px;
+}
+.lab-compare-values {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  align-items: end;
+  gap: 8px;
+  margin: 0;
+}
+.lab-compare-values dt {
+  color: var(--px-ink-muted);
+  font-size: 11px;
+}
+.lab-compare-values dd {
+  margin: 0;
+  font: 500 13px/1.3 var(--px-font-mono);
+  white-space: nowrap;
+}
+.lab-compare-values small {
+  color: var(--px-ink-muted);
+  font-size: 11px;
+}
+.lab-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--px-ink-2);
+  font-size: 12px;
+}
+.lab-check .lab-info {
+  width: 22px;
+  height: 22px;
+}
+
 /* ---------- sheets ---------- */
 
 .lab-sheet-lead {
@@ -389,6 +599,15 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+.lab-sheet-actions--start {
+  justify-content: flex-start;
+  margin: 0 0 4px;
+}
+.lab-methods {
+  min-height: 180px;
+  font-family: var(--px-font-copy);
+  font-size: 13px;
 }
 .lab-keys {
   display: grid;
@@ -496,6 +715,12 @@
   .lab-keys > div {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+  .lab-data-body {
+    grid-template-columns: 1fr;
+  }
+  .lab-data-actions span {
+    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

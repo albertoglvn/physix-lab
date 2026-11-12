@@ -500,7 +500,7 @@ and rejects incompatible dimensions.
 | --- | --- | --- |
 | `physix.lab/2` | New parts, materials, environment, full initial state. `migrateLabV1` with fixtures. | `web/src/lab/motion/scene.ts` |
 | `physix.experiment/1` | New: studies, probes, protocol, sweep, noise, runs, units | `web/src/lab/state/experiment.ts` with a JSON Schema in `docs/schemas/` |
-| `physix.run/1` | New run record | `web/src/lab/data/` |
+| `physix.run/1` | New run record | `web/src/lab/motion/run.ts` |
 | `physix.case/2` | Analysis type, hole shapes, notches, load list, support kinds. `case_from_dict` accepts `/1`. | `physics/case.py` |
 | `physix.prediction/2` | Optional displacement, reactions and Kt fields | `mcp/physix_mcp/service.py` |
 | `physix.domain/1` | Unchanged. New geometry kinds are out of domain by definition and go to FEM. | `data/domain.py` |
@@ -552,10 +552,32 @@ tolerance at the default step (tests in `simulation.test.ts`/`theory.test.ts`), 
 convergence order is reported. The stress line probe matches FEM point evaluation on the
 canonical plate. A re-imported export reproduces the same results.
 
+*Status, Motion slice (done):*
+
+- Probes cover block position, velocity, speed, acceleration and energy, the ideal pulley's
+  displacement, speed and tension, and system energy and momentum, all at 60 Hz.
+- Four events (rest, leaves the ramp, touches the floor, weight reaches its stop) resolve to
+  one step. A protocol stops a run at an event or a time limit. The live run pauses at the
+  same step as the headless run.
+- A projectile template joins incline, friction and Atwood.
+- Each template has closed-form references with stated tolerances: 1 to 3 %, and 10⁻⁶ for
+  the ideal Atwood model. Measured agreement at the default step: incline within 0.1 %,
+  friction within 0.2 %, projectile within 0.06 %, Atwood exact.
+- Scenes that break a reference's assumptions show "Assumption broken" with the reason.
+- The dock has a plot with dashed theory curves, a table, Δ chips and the step check
+  (Δt, Δt/2, Δt/4, observed order and a 1 % pass rule).
+- Experiment JSON, a tidy CSV and a methods summary can be exported. Importing an
+  experiment re-runs it and reports whether the stored run was reproduced exactly.
+
+*Moved:* the pendulum and spring–mass overlays go to Phase 3, which adds rods and springs.
+Contact-force probes go to Phase 3 with the contact-force events. The Stress items above
+are the next Phase 2 slice.
+
 ### Phase 3: New parts and studying variables (about 3 weeks)
 
 - Spheres, cylinders, springs, rods and ropes, simulated pulley, applied forces, launcher,
   drag, restitution and the materials library. `physix.lab/2` with v1 migration.
+- Pendulum and spring–mass theory overlays, and contact-force probes.
 - Sweep sheet with a worker pool, seeded repeats, virtual-sensor noise, fitting with
   uncertainties, run history and comparison.
 - Stress sweeps (surrogate screen with FEM confirmation) and the convergence study sheet.

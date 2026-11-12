@@ -9,6 +9,9 @@ import {
 } from "./scene.ts";
 
 export const TIME_STEP = 1 / 120;
+export const SOLVER_ITERATIONS = 8;
+/** Largest step a caller may request; convergence checks only refine below the default. */
+export const MAX_TIME_STEP = 1 / 30;
 export const PULLEY_HEIGHT = 4;
 export const PULLEY_RADIUS = 0.58;
 export const PULLEY_WEIGHT_HEIGHT = 2;
@@ -20,6 +23,8 @@ export type BlockState = {
   position: Vec3;
   rotation: Rotation;
   velocity: Vec3;
+  /** Angular velocity in rad/s about the world axes. */
+  angularVelocity?: Vec3;
 };
 export type PulleyState = {
   displacement: number;
@@ -96,8 +101,15 @@ export function initialBlockState(
 type Rapier = typeof import("@dimforge/rapier3d-compat").default;
 let initializing: Promise<Rapier> | undefined;
 
+export type SimulationOptions = {
+  /** Fixed step in seconds, from 0 to 1/30 s. Defaults to 1/120 s. */
+  timeStep?: number;
+};
+
 export type Simulation = {
   readonly rapierVersion: string;
+  readonly timeStep: number;
+  readonly solverIterations: number;
   readonly time: number;
   step: (count?: number) => void;
   block: (id: string) => BlockState | undefined;
@@ -106,8 +118,15 @@ export type Simulation = {
 };
 
 /** Uses the same fixed-step simulation in the browser and in headless callers. */
-export async function createSimulation(input: unknown): Promise<Simulation> {
+export async function createSimulation(
+  input: unknown,
+  { timeStep = TIME_STEP }: SimulationOptions = {},
+): Promise<Simulation> {
   const scene = parseScene(input);
+  if (!Number.isFinite(timeStep) || timeStep <= 0 || timeStep > MAX_TIME_STEP)
+    throw new RangeError(
+      "The time step must be greater than 0 and at most 1/30 s.",
+    );
   initializing ??= import("@dimforge/rapier3d-compat")
     .then(async ({ default: rapier }) => {
       await rapier.init();
@@ -130,8 +149,8 @@ export async function createSimulation(input: unknown): Promise<Simulation> {
       .setFrictionCombineRule(rapier.CoefficientCombineRule.Multiply);
 
   try {
-    world.timestep = TIME_STEP;
-    world.numSolverIterations = 8;
+    world.timestep = timeStep;
+    world.numSolverIterations = SOLVER_ITERATIONS;
     world.createCollider(
       friction(
         rapier.ColliderDesc.cuboid(200, 0.25, 200),
@@ -176,8 +195,10 @@ export async function createSimulation(input: unknown): Promise<Simulation> {
 
   return {
     rapierVersion: rapier.version(),
+    timeStep,
+    solverIterations: SOLVER_ITERATIONS,
     get time() {
-      return ticks * TIME_STEP;
+      return ticks * timeStep;
     },
     step(count = 1) {
       if (disposed) throw new Error("The simulation has been disposed.");
@@ -193,11 +214,12 @@ export async function createSimulation(input: unknown): Promise<Simulation> {
           position: body.translation(),
           rotation: body.rotation(),
           velocity: body.linvel(),
+          angularVelocity: body.angvel(),
         };
     },
     pulley(id) {
       const pulley = pulleys.get(id);
-      if (pulley) return pulleyState(pulley, scene.gravity, ticks * TIME_STEP);
+      if (pulley) return pulleyState(pulley, scene.gravity, ticks * timeStep);
     },
     dispose() {
       if (disposed) return;

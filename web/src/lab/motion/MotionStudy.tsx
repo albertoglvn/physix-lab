@@ -2,6 +2,7 @@ import {
   Box,
   CircleDot,
   Code2,
+  Copy,
   Download,
   Focus,
   Home,
@@ -19,7 +20,7 @@ import {
   TriangleRight,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { labHash, replaceHash, type Study } from "../../routes";
 import {
   LabFrame,
@@ -56,13 +57,40 @@ import type { RailItem } from "../ui/Rail";
 import { Sheet } from "../ui/Sheet";
 import { toasts } from "../ui/toastStore";
 import { UnitInput } from "../ui/UnitInput";
+import { runToCsv } from "../data/exportCsv";
+import { formatDelta, methodsSummary } from "../data/methods";
+import {
+  experimentJson,
+  isExperiment,
+  makeExperiment,
+  parseExperiment,
+  type Experiment,
+} from "../state/experiment";
+import { checkConvergence } from "./convergence";
 import { measure, summarize } from "./measurements";
+import {
+  MotionData,
+  probeTarget,
+  revealTime,
+  type StepCheck,
+} from "./MotionData";
+import {
+  availableStops,
+  EVENT_LABELS,
+  MAX_TIME_LIMITS,
+  protocolFor,
+  SYSTEM,
+  type Protocol,
+} from "./probes";
+import { reproduce, runProtocol, type MotionRun } from "./run";
+import { compare, curvesFor, referencesFor, type Reference } from "./theory";
 
 const icons = { block: Box, ramp: TriangleRight, pulley: CircleDot };
 const objectKinds = ["block", "ramp", "pulley"] as const;
 const TEMPLATE_NOTES: Record<Preset, string> = {
   incline: "Block sliding down a rough ramp",
-  friction: "Two surfaces, one launch speed",
+  friction: "Block sliding to rest on the floor",
+  projectile: "Horizontal launch from a height",
   pulley: "Ideal Atwood machine",
   blank: "Empty floor",
 };
@@ -85,23 +113,45 @@ const range = (limit: readonly [number, number, number], scale = 1) => ({
   max: limit[1] * scale,
 });
 
-function downloadScene(scene: LabScene) {
-  const href = URL.createObjectURL(
-    new Blob([JSON.stringify(scene, null, 2) + "\n"], {
-      type: "application/json",
-    }),
-  );
+/** Largest file the JSON sheet loads: experiment files carry every probe sample. */
+const FILE_LIMIT = 16_000_000;
+const PAST_STOPS: Record<Protocol["stop"], string> = {
+  rest: "came to rest",
+  leaves_ramp: "left the ramp",
+  floor_contact: "touched the floor",
+  pulley_stop: "reached its stop",
+  time: "reached the time limit",
+};
+
+const slug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "experiment";
+
+function download(name: string, text: string, type: string) {
+  const href = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement("a");
   link.href = href;
-  link.download = `${
-    scene.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "experiment"
-  }.physix.json`;
+  link.download = name;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
+
+function downloadScene(scene: LabScene) {
+  download(
+    `${slug(scene.name)}.physix.json`,
+    JSON.stringify(scene, null, 2) + "\n",
+    "application/json",
+  );
+}
+
+type RunRecord = {
+  scene: LabScene;
+  protocol: Protocol;
+  run?: MotionRun;
+  error?: string;
+};
 
 function ObjectFields({
   object,
@@ -266,11 +316,14 @@ export function MotionStudy({
     simulation: Simulation;
     time: number;
   }>();
-  const [sheet, setSheet] = useState<"json" | "keys" | null>(null);
+  const [sheet, setSheet] = useState<"json" | "keys" | "export" | null>(null);
   const [json, setJson] = useState("");
   const [jsonError, setJsonError] = useState("");
   const jsonFile = useRef<HTMLInputElement>(null);
   const panels = useLabPanels();
+  const [protocolChoice, setProtocolChoice] = useState<Protocol | null>(null);
+  const [record, setRecord] = useState<RunRecord>();
+  const [check, setCheck] = useState<StepCheck & { runId: string }>();
 
   const current =
     runtime?.scene === scene && runtime.revision === revision
@@ -280,6 +333,45 @@ export function MotionStudy({
   const object = scene.objects.find((part) => part.id === selected);
   const time = clock && clock.simulation === simulation ? clock.time : 0;
   const select = useCallback((id: string | null) => setSelected(id), []);
+  const protocol = useMemo(
+    () => protocolFor(scene, protocolChoice),
+    [scene, protocolChoice],
+  );
+  const result =
+    record?.scene === scene && record.protocol === protocol
+      ? record
+      : undefined;
+  const recorded = result?.run;
+  const stopTick = recorded
+    ? Math.round(recorded.stop.t / TIME_STEP)
+    : undefined;
+  const stopped =
+    stopTick !== undefined && Math.round(time / TIME_STEP) >= stopTick;
+  const stopMessage = recorded
+    ? `${recorded.stop.event?.target ?? "The run"} ${PAST_STOPS[recorded.stop.event?.type ?? "time"]} at t = ${recorded.stop.t.toFixed(3)} s.`
+    : "";
+  const references = useMemo(() => referencesFor(scene), [scene]);
+  const curves = useMemo(() => curvesFor(scene), [scene]);
+  const target = probeTarget(scene, selected);
+  const comparisons = references
+    .filter((reference) => target === SYSTEM || reference.target === target)
+    .map((reference) => compare(reference, recorded));
+  const stepCheck = check && check.runId === recorded?.id ? check : undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    runProtocol(scene, protocol).then(
+      (run) => {
+        if (!cancelled) setRecord({ scene, protocol, run });
+      },
+      (error: unknown) => {
+        if (!cancelled) setRecord({ scene, protocol, error: message(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [scene, protocol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,11 +404,14 @@ export function MotionStudy({
     let previous = performance.now();
     let remainder = 0;
     let reported = simulation.time;
+    const ticks = () => Math.round(simulation.time / TIME_STEP);
     const tick = (now: number) => {
       remainder += Math.max(0, Math.min((now - previous) / 1000, 0.1));
       previous = now;
-      const steps = Math.floor(remainder / TIME_STEP);
-      if (steps) {
+      let steps = Math.floor(remainder / TIME_STEP);
+      // The live run pauses on the protocol's stop, the same step the headless run ended.
+      if (stopTick !== undefined) steps = Math.min(steps, stopTick - ticks());
+      if (steps > 0) {
         simulation.step(steps);
         remainder -= steps * TIME_STEP;
         if (simulation.time - reported >= 0.075) {
@@ -324,11 +419,17 @@ export function MotionStudy({
           setClock({ simulation, time: reported });
         }
       }
+      if (stopTick !== undefined && ticks() >= stopTick) {
+        setClock({ simulation, time: simulation.time });
+        setRunning(false);
+        toasts.push({ tone: "info", message: `Stopped: ${stopMessage}` });
+        return;
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [running, simulation, active]);
+  }, [running, simulation, active, stopTick, stopMessage]);
 
   /** Validates and commits an edit as one undo step. Returns false when it was rejected. */
   function apply(next: LabScene, nextSelected = selected): boolean {
@@ -423,14 +524,87 @@ export function MotionStudy({
 
   function run() {
     if (!simulation) return;
+    if (stopped && !running) {
+      // Replay: a fresh simulation from the starting state, running as soon as it loads.
+      setRevision((value) => value + 1);
+      setRunning(true);
+      return;
+    }
     if (running) setClock({ simulation, time: simulation.time });
     setRunning(!running);
   }
 
   function advance() {
-    if (!simulation || running) return;
+    if (!simulation || running || stopped) return;
     simulation.step();
     setClock({ simulation, time: simulation.time });
+  }
+
+  function setProtocol(next: Protocol) {
+    setProtocolChoice(next);
+    reset();
+  }
+
+  function runCheck(reference: Reference) {
+    if (!recorded) return;
+    const runId = recorded.id;
+    setCheck({ runId, reference });
+    checkConvergence(scene, protocol, reference).then(
+      (result) =>
+        setCheck((previous) =>
+          previous?.runId === runId && previous.reference === reference
+            ? { ...previous, result }
+            : previous,
+        ),
+      (error: unknown) =>
+        setCheck((previous) =>
+          previous?.runId === runId && previous.reference === reference
+            ? { ...previous, error: message(error) }
+            : previous,
+        ),
+    );
+  }
+
+  async function exportExperiment() {
+    if (!recorded) return;
+    const experiment = await makeExperiment(scene, protocol, [recorded]);
+    download(
+      `${slug(scene.name)}.experiment.json`,
+      experimentJson(experiment),
+      "application/json",
+    );
+  }
+
+  function importExperiment(experiment: Experiment) {
+    const next = experiment.studies.motion.scene;
+    const first =
+      next.objects.find((part) => part.kind === "block") ?? next.objects[0];
+    if (!apply(next, first?.id ?? null)) return;
+    setProtocolChoice(experiment.protocol);
+    setSheet(null);
+    setViewRevision((value) => value + 1);
+    const [stored] = experiment.runs;
+    if (!stored) return;
+    reproduce(stored).then(
+      (outcome) =>
+        toasts.push(
+          outcome.identical
+            ? { tone: "ok", message: "The stored run reproduced exactly." }
+            : {
+                tone: "warn",
+                message: `The re-run differs from the stored run by up to ${outcome.largestDifference.toPrecision(3)}${
+                  outcome.sameEngine
+                    ? "."
+                    : `; it was recorded with Rapier ${stored.engine.version}, this lab uses ${outcome.run.engine.version}.`
+                }`,
+              },
+        ),
+      (error: unknown) =>
+        toasts.push({
+          tone: "bad",
+          message: `The stored run could not be repeated. ${message(error)}`,
+        }),
+    );
   }
 
   function openJson() {
@@ -441,7 +615,12 @@ export function MotionStudy({
 
   function importJson() {
     try {
-      const next = parseScene(JSON.parse(json) as unknown);
+      const parsed = JSON.parse(json) as unknown;
+      if (isExperiment(parsed)) {
+        importExperiment(parseExperiment(parsed));
+        return;
+      }
+      const next = parseScene(parsed);
       if (apply(next, next.objects[0]?.id ?? null)) {
         setSheet(null);
         setViewRevision((value) => value + 1);
@@ -472,6 +651,37 @@ export function MotionStudy({
   const readings = measure(scene, object, simulation, time);
   const ramps = scene.objects.filter((part) => part.kind === "ramp");
   const full = scene.objects.length >= OBJECT_LIMIT;
+  const stops = availableStops(scene);
+  const firstResult = recorded
+    ? comparisons.find(
+        (comparison) =>
+          comparison.delta !== undefined &&
+          !comparison.reference.broken &&
+          time + 1e-9 >= revealTime(comparison.reference, recorded),
+      )
+    : undefined;
+  const summary = [
+    summarize(readings),
+    firstResult
+      ? `Δ ${firstResult.reference.symbol} ${formatDelta(firstResult)}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const methods =
+    sheet === "export" && recorded
+      ? methodsSummary(
+          recorded,
+          references.map((reference) => compare(reference, recorded)),
+          stepCheck?.result,
+        )
+      : "";
+  const help =
+    object?.kind === "pulley"
+      ? "Ideal Atwood machine with a massless rope and wheel. Motion ends when a weight reaches its stop. Positive acceleration lowers the right mass. Edits set the starting state and reset the run. Metres, Y up."
+      : object
+        ? "Edits set the starting state and reset the run. Metres, Y up."
+        : "Gravity and floor friction apply to every part. The protocol sets when a run stops; the live run pauses there. Edits reset the run. Metres, Y up.";
 
   const rail: RailItem[] = [
     {
@@ -610,20 +820,26 @@ export function MotionStudy({
             className="lab-button lab-button--dark lab-run"
             onClick={run}
             disabled={!simulation}
-            title="Run or pause (Space)"
+            title={
+              stopped && !running
+                ? "Replay from the start (Space)"
+                : "Run or pause (Space)"
+            }
           >
             {running ? (
               <Pause size={15} aria-hidden="true" />
+            ) : stopped ? (
+              <RotateCcw size={15} aria-hidden="true" />
             ) : (
               <Play size={15} aria-hidden="true" />
             )}
-            {running ? "Pause" : "Run"}
+            {running ? "Pause" : stopped ? "Replay" : "Run"}
           </button>
           <button
             type="button"
             className="lab-button lab-secondary"
             onClick={advance}
-            disabled={!simulation || running}
+            disabled={!simulation || running || stopped}
             title="Step 1/120 s (.)"
           >
             <SkipForward size={15} aria-hidden="true" />
@@ -650,9 +866,9 @@ export function MotionStudy({
           onSelect: openJson,
         },
         {
-          label: "Export scene",
+          label: "Export data",
           icon: <Download size={15} />,
-          onSelect: () => downloadScene(scene),
+          onSelect: () => setSheet("export"),
         },
         {
           label: "Reset camera",
@@ -685,8 +901,9 @@ export function MotionStudy({
             onClose={() => setSheet(null)}
           >
             <p className="lab-sheet-lead">
-              Edit or paste a <code>physix.lab/1</code> scene in SI units, then
-              apply it. Applying is one undo step.
+              Edit or paste a <code>physix.lab/1</code> scene in SI units, or
+              load a <code>physix.experiment/1</code> file to repeat its run.
+              Applying is one undo step.
             </p>
             <textarea
               className="lab-json"
@@ -713,16 +930,32 @@ export function MotionStudy({
                 const file = input.files?.[0];
                 input.value = "";
                 if (!file) return;
-                if (file.size > 64_000) {
-                  setJsonError("Choose a JSON file smaller than 64 KB.");
+                if (file.size > FILE_LIMIT) {
+                  setJsonError("Choose a JSON file smaller than 16 MB.");
+                  return;
+                }
+                let text: string;
+                try {
+                  text = await file.text();
+                } catch {
+                  setJsonError("The selected file could not be read.");
                   return;
                 }
                 try {
-                  setJson(await file.text());
-                  setJsonError("");
-                } catch {
-                  setJsonError("The selected file could not be read.");
+                  const parsed = JSON.parse(text) as unknown;
+                  // Experiment files are large, so they load directly.
+                  if (isExperiment(parsed)) {
+                    importExperiment(parseExperiment(parsed));
+                    return;
+                  }
+                } catch (error) {
+                  if (!(error instanceof SyntaxError)) {
+                    setJsonError(message(error));
+                    return;
+                  }
                 }
+                setJson(text);
+                setJsonError("");
               }}
             />
             <div className="lab-sheet-actions">
@@ -748,6 +981,79 @@ export function MotionStudy({
                 Apply scene
               </button>
             </div>
+          </Sheet>
+          <Sheet
+            open={sheet === "export"}
+            title="Export data"
+            wide
+            onClose={() => setSheet(null)}
+          >
+            {recorded ? (
+              <>
+                <p className="lab-sheet-lead">
+                  Run <code>{recorded.id.slice(7, 19)}</code> ·{" "}
+                  {recorded.series.t.length} samples at {recorded.inputs.rate}{" "}
+                  Hz · {stopMessage}
+                </p>
+                <div className="lab-sheet-actions lab-sheet-actions--start">
+                  <button
+                    className="lab-button"
+                    type="button"
+                    onClick={() => void exportExperiment()}
+                  >
+                    <Download size={15} aria-hidden="true" /> Experiment (.json)
+                  </button>
+                  <button
+                    className="lab-button"
+                    type="button"
+                    onClick={() =>
+                      download(
+                        `${slug(scene.name)}.csv`,
+                        runToCsv([recorded]),
+                        "text/csv",
+                      )
+                    }
+                  >
+                    <Download size={15} aria-hidden="true" /> Samples (.csv)
+                  </button>
+                </div>
+                <label className="lab-select">
+                  <span>Methods summary</span>
+                  <textarea
+                    className="lab-json lab-methods"
+                    readOnly
+                    value={methods}
+                  />
+                </label>
+                <div className="lab-sheet-actions">
+                  <button
+                    className="lab-button lab-button--dark"
+                    type="button"
+                    onClick={() =>
+                      navigator.clipboard.writeText(methods).then(
+                        () =>
+                          toasts.push({
+                            tone: "ok",
+                            message: "Copied the methods summary.",
+                          }),
+                        () =>
+                          toasts.push({
+                            tone: "warn",
+                            message:
+                              "The clipboard is unavailable. Select the text to copy it.",
+                          }),
+                      )
+                    }
+                  >
+                    <Copy size={15} aria-hidden="true" /> Copy
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="lab-sheet-lead">
+                {result?.error ?? "Recording the run…"}
+              </p>
+            )}
           </Sheet>
           <ShortcutsSheet
             open={sheet === "keys"}
@@ -784,18 +1090,16 @@ export function MotionStudy({
         onCollapsedChange={(collapsed) => panels.setInspectorOpen(!collapsed)}
         className="lab-inspector"
         actions={
-          object ? (
-            <>
-              {object.kind === "pulley" ? (
-                <span
-                  className="lab-info"
-                  role="img"
-                  aria-label="Ideal Atwood machine with a massless rope and wheel. Motion ends when a weight reaches its stop. Positive acceleration lowers the right mass."
-                  title="Ideal Atwood machine with a massless rope and wheel. Motion ends when a weight reaches its stop. Positive acceleration lowers the right mass."
-                >
-                  <Info size={15} aria-hidden="true" />
-                </span>
-              ) : null}
+          <>
+            <span
+              className="lab-info"
+              role="img"
+              aria-label={help}
+              title={help}
+            >
+              <Info size={15} aria-hidden="true" />
+            </span>
+            {object ? (
               <button
                 type="button"
                 className="px-icon-button lab-delete"
@@ -805,8 +1109,8 @@ export function MotionStudy({
               >
                 <Trash2 size={15} aria-hidden="true" />
               </button>
-            </>
-          ) : null
+            ) : null}
+          </>
         }
       >
         {object ? (
@@ -839,54 +1143,81 @@ export function MotionStudy({
             ) : null}
           </div>
         ) : (
-          <div className="lab-fields">
-            <UnitInput
-              label="Gravity"
-              dimension="acceleration"
-              unit="m/s²"
-              value={scene.gravity}
-              {...range(limits.gravity)}
-              onCommit={(gravity) => apply({ ...scene, gravity })}
-            />
-            <UnitInput
-              label="Floor friction μ"
-              dimension="ratio"
-              unit=""
-              value={scene.floorFriction}
-              {...range(limits.friction)}
-              onCommit={(floorFriction) => apply({ ...scene, floorFriction })}
-            />
-          </div>
+          <>
+            <div className="lab-fields">
+              <UnitInput
+                label="Gravity"
+                dimension="acceleration"
+                unit="m/s²"
+                value={scene.gravity}
+                {...range(limits.gravity)}
+                onCommit={(gravity) => apply({ ...scene, gravity })}
+              />
+              <UnitInput
+                label="Floor friction μ"
+                dimension="ratio"
+                unit=""
+                value={scene.floorFriction}
+                {...range(limits.friction)}
+                onCommit={(floorFriction) => apply({ ...scene, floorFriction })}
+              />
+            </div>
+            <p className="lab-kind lab-kind--section">Protocol</p>
+            <div className="lab-fields">
+              <label className="lab-select lab-select--inline">
+                <span>Stop at</span>
+                <select
+                  className="px-input"
+                  value={protocol.stop}
+                  onChange={(event) =>
+                    setProtocol({
+                      ...protocol,
+                      stop: event.currentTarget.value as Protocol["stop"],
+                    })
+                  }
+                >
+                  {stops.map((type) => (
+                    <option key={type} value={type}>
+                      {EVENT_LABELS[type]}
+                    </option>
+                  ))}
+                  <option value="time">Time limit</option>
+                </select>
+              </label>
+              <UnitInput
+                label="Time limit"
+                dimension="time"
+                unit="s"
+                value={protocol.maxTime}
+                min={MAX_TIME_LIMITS[0]}
+                max={MAX_TIME_LIMITS[1]}
+                onCommit={(maxTime) => setProtocol({ ...protocol, maxTime })}
+              />
+            </div>
+          </>
         )}
-        <p className="lab-note">
-          Edits set the starting state and reset the run. Metres, Y up.
-        </p>
       </FloatingPanel>
 
       <Dock
         title="Data"
-        summary={summarize(readings)}
+        summary={summary}
         open={panels.dockOpen}
         onOpenChange={panels.setDockOpen}
         maxFraction={panels.dockMaxFraction}
-        defaultHeight={220}
+        defaultHeight={300}
       >
-        <dl className="lab-readout">
-          {readings.map(({ label, value, unit }) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd className="num">
-                {Number.isFinite(value) ? (
-                  <>
-                    {value.toFixed(2)} <small>{unit}</small>
-                  </>
-                ) : (
-                  "—"
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <MotionData
+          scene={scene}
+          target={target}
+          run={recorded}
+          runError={result?.error}
+          time={time}
+          comparisons={comparisons}
+          curves={curves}
+          check={stepCheck}
+          onCheck={runCheck}
+          onExport={() => setSheet("export")}
+        />
       </Dock>
     </LabFrame>
   );

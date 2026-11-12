@@ -14,6 +14,8 @@ consumer in the same change.
 | Active-learning label | `physix.label/1` | `data/labels.py` | label store records |
 | Model bundle | `physix.model/1` | `model/export.py` | `manifest.json` of each bundle |
 | Prediction response | `physix.prediction/1` | `mcp/physix_mcp/service.py` | `tests/mcp` |
+| Motion run | `physix.run/1` | `web/src/lab/motion/run.ts` | `run.test.ts` |
+| Experiment | `physix.experiment/1` | `web/src/lab/state/experiment.ts` | `exports.test.ts` |
 
 ## Units and coordinates
 
@@ -165,3 +167,50 @@ trace. `verified_improvement` is true only when the selected design is FEM-feasi
 FEM-better than the FEM baseline.
 
 MCP tools use the same service functions and return the same JSON.
+
+## Motion run (`physix.run/1`)
+
+One headless run of a Motion scene. The browser builds it with `runProtocol`, and the live
+view replays the same steps.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | `sha256:` of the canonical JSON (sorted keys) of `inputs`. Equal inputs give the same id. |
+| `inputs` | `scene` (`physix.lab/1`), `protocol`, `timeStep` (s, at most 1/30, default 1/120) and `rate` (probe rate in Hz, default 60) |
+| `engine` | `name` (`rapier3d-compat`), `version`, `solverIterations` and `reproducibility` (`"same build and browser engine"`) |
+| `seed` | `null`. Motion runs are not stochastic yet. |
+| `timing` | `wallMs` and its `boundary`: engine set-up, every step and probe sampling, without rendering |
+| `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a body id or `system`, and `source` is `rapier`, `derived` or `ideal-atwood`. |
+| `series` | `t` (s) and one column per quantity key with the same length. Samples sit on the `1/rate` grid, plus a final sample at the stop. A missing value is `NaN` in memory and `null` in JSON. |
+| `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` and `pulley_stop`, resolved to one time step |
+| `stop` | `{reason: "event" \| "time", t, event?}` |
+
+A protocol is `{stop, maxTime}`: `stop` is an event type or `"time"`, and `maxTime` lies
+between 0.5 and 60 s. A run ends at the first matching event or at `maxTime`.
+
+Block quantities are position, velocity, speed, acceleration, kinetic and potential energy.
+Acceleration is a backward finite difference of velocity over one sample, and the first
+sample repeats the second. Pulley quantities come from the ideal Atwood model. System
+quantities are total kinetic, potential and mechanical energy and linear momentum.
+Block potential energy is m g y from y = 0. A pulley's potential energy is measured from its
+starting position.
+
+## Experiment (`physix.experiment/1`)
+
+`{schema, id, name, studies: {motion: {scene}}, probes, protocol, runs, units: {display}}`.
+`id` is `sha256:` of `{schema, scene, protocol}`, so re-exporting the same set-up keeps the
+id. `runs` holds `physix.run/1` records. Importing an experiment restores the scene and
+protocol, re-runs it and reports whether the stored run is reproduced exactly, with the
+largest difference.
+
+### Samples CSV
+
+The CSV export is a tidy long table, one row per sample and quantity:
+
+```
+run_id,t,quantity,value,unit,source
+```
+
+`#` lines at the top give each run's schema and id, scene, engine, `time_step_s`,
+`probe_rate_hz`, stop event and the finite-difference note. Values are SI. A missing value
+is an empty cell. Cells that contain a comma, quote or line break are quoted.
