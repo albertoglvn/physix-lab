@@ -124,11 +124,29 @@ disagreement and solver discretisation error are reported separately and never c
 
 | Method and path | Body | Returns |
 | --- | --- | --- |
-| `GET /api/health` | | `{status, model_id, solver}` |
-| `GET /api/model` | | Model bundle manifest (evaluation and policy) |
+| `GET /api/health` | | `{status, model_id, model_error, solver}` |
+| `GET /api/model` | | Model bundle manifest (evaluation and policy) or `{available: false}` |
+| `GET /api/domain` | | Case schema summary, materials, surrogate domain and examples |
 | `GET /api/examples` | | Named example cases |
-| `POST /api/predict` | `{case, include_field?, force_fem?}` | Prediction response |
-| `POST /api/verify` | `{case, prediction?}` | FEM response plus `discrepancy` against the prediction |
-| `POST /api/optimize` | `{case, variables, objective, constraints?, budget?}` | Optimization report |
+| `POST /api/predict` | `{case, include_field?, force_fem?, include_mesh?}` | Prediction response |
+| `POST /api/verify` | `{case, prediction?, include_field?, include_mesh?}` | FEM response plus `discrepancy` |
+| `POST /api/optimize` | `{case, variables, objective?, constraints?, budget?, seed?}` | `physix.optimize/1` report |
+
+Validation errors return HTTP 422, solver failures 500, and unknown routes 404. Every
+response is strict JSON, with non-finite numbers sent as `null`. CORS is allowed only for
+loopback origins, and the server refuses to bind to anything but loopback.
+
+`include_mesh` adds the reference mesh as base64 little-endian arrays: `points` float32
+`(n, 2)` in m, `triangles` int32 `(m, 3)`, and nodal-averaged `von_mises` float32 `(n,)` in Pa.
+
+### Optimization report (`physix.optimize/1`)
+
+`variables` are `{path, min, max}` with paths `geometry.{width,height,web_width,
+flange_height,fillet_radius}` or `geometry.holes[i].{x,y,radius}`. The response holds
+`baseline` and `selected` designs, each with the screening `estimate` and an FEM block
+(`fem`) on the service mesh preset, plus `candidates_verified`, `improvement`
+(`relative_change` of the FEM objective), `verified_improvement` and the seeded `search`
+trace. `verified_improvement` is true only when the selected design is FEM-feasible and
+FEM-better than the FEM baseline.
 
 MCP tools use the same service functions and return the same JSON.
