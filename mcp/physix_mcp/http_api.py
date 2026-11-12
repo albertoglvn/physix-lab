@@ -151,6 +151,9 @@ def make_handler(service: PhysixService, static: Path | None) -> type[BaseHTTPRe
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            # Cross-origin isolation enables multi-threaded WASM inference in the browser.
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
             self.end_headers()
             self.wfile.write(data)
 
