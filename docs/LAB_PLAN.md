@@ -7,8 +7,8 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator, simulated-pulley, materials and forces-and-drag slices; each phase lists its
-own status. The
+oscillator, simulated-pulley, materials, forces-and-drag and links-and-contact-forces
+slices; each phase lists its own status. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
@@ -749,10 +749,47 @@ Determinism behaves as documented in §4.1.
   for 1.366667, 1.366667 and 1.364583 s against 1.364197 s, with range 8.184762,
   8.180154 and 8.173665 m against 8.173401 m. Vertical speeds in free flight match
   the exact solution to 10⁻⁶ at every step.
-- *Still to do in Phase 3:* rods, ropes, contact-force probes, run
-  history and comparison, a residual plot, two-variable grids, seeded initial-condition
-  perturbations, and Stress sweeps with
-  the convergence study sheet.
+
+*Status, rods, ropes and contact forces (done):*
+
+- A pendulum has a `link`, `rod` or `rope`, and a rod may have a mass `rodMass`. The rod's
+  mass is a collider-free mass at its middle with the inertia of a thin rod, so the body
+  has I = m L² + (2/5) m r² + M L²/3 about the pivot and gravity a lever of m L + M L/2. A
+  rope is a Rapier rope joint: it goes slack when the bob moves inwards and its bob does
+  not turn.
+- New probes: every free body records its contact `normal` and `friction` forces, and the
+  pendulum's `tension` is now measured instead of computed from the angle. Rapier's
+  contact impulses did not give usable forces (the incline normal read 22.9 N against
+  17.6 N, and the tangent impulses were zero), so both are measured from momentum: the
+  force over the step before a sample is m Δv/h + m g ŷ less any applied force and drag,
+  split along the mean contact normal. The pendulum's `omega` is now the bob's swing rate
+  about the pivot, so a rope's bob has one too, and its energies include a massive rod.
+- New presets: a 1 kg bob on a 2 kg rod released at 8°, and a bob released at 120°, above
+  the pivot, on a 3 m rope. The 3D view draws a massive rod thicker and a rope as a line
+  that sags when slack.
+- References: the period uses the generalized inertia and lever, so a compound pendulum's
+  T₀ = 2π √(I / ((m L + M L/2) g)). A new bottom tension (m + M) g + (m L + M L/2) ω²,
+  ω² from energy, is read as the largest sample over the first period. A rope released
+  above the horizontal has no period: it falls freely through 2 L |cos θ₀| until taut, at
+  t = √(−4 L cos θ₀ / g), and the jerk keeps |sin θ₀| of the fall speed. The friction,
+  incline and push templates add N and F_f references (m g and μ m g on the floor,
+  m g cos θ and μ m g cos θ on the ramp or m g sin θ when it holds, m g − F_y while
+  pushed), read as means over the slide, the time on the ramp or the push.
+- Sweeps vary a rod's mass. The methods paragraph names each pendulum's link and how
+  forces are measured.
+- *Exit evidence, measured* at steps of 1/120, 1/240 and 1/480 s (probe rate up to 240 Hz).
+  The sliding block's mean normal force is 19.62000, 19.62001 and 19.62001 N against
+  19.62, and its friction 6.86699, 6.86708 and 6.86674 N against 6.867. On the incline the
+  block reads N = 17.63436, 17.63436 and 17.63435 N against 17.63434, and F_f = 3.52687,
+  3.52678 and 3.52699 N against 3.52687. The 8° pendulum's bottom tension is 10.00058,
+  10.00059 and 10.00060 N against 10.00060. The compound pendulum released at 30° swings
+  with period 3.22874, 3.22878 and 3.22881 s against 3.22881, and pulls 35.72927, 35.73114
+  and 35.73249 N against 35.73187. The slack rope pulls taut at 0.78155, 0.78180 and
+  0.78193 s against 0.78206, and leaves the jerk at 6.63880, 6.64146 and 6.64305 m/s
+  against 6.64417, both converging at first order.
+- *Still to do in Phase 3:* run history and comparison, a residual plot, two-variable
+  grids, seeded initial-condition perturbations, and Stress sweeps with the convergence
+  study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

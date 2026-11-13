@@ -78,12 +78,22 @@ export function methodsSummary(
         ]
       : [],
   );
+  const links = scene.objects.flatMap((part) =>
+    part.kind !== "pendulum"
+      ? []
+      : part.link === "rope"
+        ? [`${part.id} hangs on a massless rope of ${part.length} m`]
+        : [
+            `${part.id} hangs on a rigid rod of ${part.length} m${part.rodMass > 0 ? ` and ${part.rodMass} kg (I = M L²/3 about the pivot)` : ", massless"}`,
+          ],
+  );
   const sentences = [
     `The ${scene.name} scene was simulated with ${engine.name} ${engine.version} using a fixed step of ${formatStep(inputs.timeStep)} and ${engine.solverIterations} solver iterations, with g = ${scene.gravity} m/s², ${surfaces.join(", ")}.`,
-    `Probes were sampled at ${inputs.rate} Hz; acceleration is a backward finite difference of velocity over one sample, and events are resolved to one step.`,
+    `Probes were sampled at ${inputs.rate} Hz; acceleration is a backward finite difference of velocity over one sample, contact forces and link tension are measured from each body's change of momentum over the step before a sample, and events are resolved to one step.`,
     `The run stopped ${stop}, at t = ${significant(run.stop.t)} s, within a ${inputs.protocol.maxTime} s limit.`,
     `Contact model: ${CONTACT_MODEL}`,
   ];
+  if (links.length) sentences.push(`Pendulums: ${links.join("; ")}.`);
   if (air.length)
     sentences.push(
       `Free bodies felt ${air.join(" and ")}, held over each step so the velocity follows the exact solution with |v| at the step's midpoint.`,

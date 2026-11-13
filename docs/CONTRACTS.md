@@ -206,7 +206,7 @@ degrees and everything else is SI.
 | `cylinder` | `y`, `radius`, `length` (0.2 to 3 m), `mass`, `vx`, `vy`, surface | A solid cylinder lying with its axis along z, so it rolls along x (I = m r²/2 about the axis). |
 | `ramp` | `length`, `width`, `angle`, `friction` | A fixed wedge rising towards −x. |
 | `pulley` | `leftMass`, `rightMass`, `wheelMass` | An Atwood machine: two weights on an inextensible rope over a wheel. `wheelMass` (kg, 0 to 20) makes the wheel a uniform disc, I = M R²/2. It is optional and defaults to 0, a massless wheel. |
-| `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle` | A solid bob on a rigid, massless rod hinged about z. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. |
+| `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle`, `link`, `rodMass` | A solid bob hung from a pivot. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. `link` is `rod` (default), a rigid rod hinged about z that turns the bob with the swing, or `rope`, which only stops the bob going beyond `length`: it goes slack when the bob moves inwards, and the bob does not turn. `rodMass` (kg, 0 to 20, default 0) makes the rod uniform; a rope must have none. |
 | `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
 
 `vx` and `vy` are the initial velocity in m/s. `vy` is optional and defaults to 0, so a
@@ -249,7 +249,11 @@ the rebound height falls short of e² h by the contact's sink into the floor (ab
 at 1/120 s). Scenes saved before restitution and per-body friction parse unchanged and
 behave as before against the floor and ramps, but the parsed scene gains `vy` and
 `restitution`, so its run identity changes. A pendulum's moment of inertia about the
-pivot is m L² + 2/5 m r².
+pivot is m L² + 2/5 m r² + M L²/3 on a rod of mass M, and m L² on a rope. The rod's mass
+is a collider-free mass at the rod's middle with the inertia M L²/12 of a thin rod, so
+gravity acts on it with the lever M L/2. A rope is a Rapier rope joint between the pivot
+and the bob's centre. Scenes saved before links parse unchanged as a massless rod, but the
+parsed scene gains `link` and `rodMass`, so its run identity changes.
 Air drag acts on free bodies only, at the centre, as F = −(b + c |v|) v with b =
 `linearDrag` and c = ½ ρ C_d A. The frontal area A is π r² for a ball, s² for a block and
 2 r L for a cylinder, whatever the body's orientation; drag adds no torque. Each step holds
@@ -294,17 +298,27 @@ view replays the same steps.
 A protocol is `{stop, maxTime}`: `stop` is an event type or `"time"`, and `maxTime` lies
 between 0.5 and 60 s. A run ends at the first matching event or at `maxTime`.
 
-Block quantities are position, velocity, speed, acceleration, kinetic and potential energy.
-Acceleration is a backward finite difference of velocity over one sample, and the first
-sample repeats the second. A pulley records rope `displacement` and `speed` (positive
+Block quantities are position, velocity, speed, acceleration, kinetic and potential
+energy, and the contact `normal` and `friction` forces (N). Acceleration is a backward
+finite difference of velocity over one sample, and the first sample repeats the second.
+The contact force on a free body is measured from its momentum over the step before the
+sample: F = m Δv/h + m g ŷ, less any applied force and drag. It is split along the mean
+normal of the body's touching contact manifolds into `normal` (F·n̂) and `friction` (the
+rest, |F − (F·n̂) n̂|). A body touching nothing records 0 normal force. The first sample
+repeats the second, since no step precedes it. A pulley records rope `displacement` and `speed` (positive
 when the right weight goes down), `acceleration` (change in rope speed over the latest
 step), the mean rope force on each weight over the step (`tension` on the left,
 `rightTension`, 0 while slack), both weight heights (`leftY`, `rightY`) and the wheel's
 `wheelSpeed` at the rim. System quantities are total kinetic, potential and mechanical
 energy and linear momentum. Potential energy is m g y from y = 0, for pulley weights too,
 and the wheel's kinetic energy is M v_rim²/4. A ball's or cylinder's kinetic energy includes its rotation, using the cylinder's inertia about its current axis. A pendulum records `angle`
-(rad, from straight down), `omega` (rad/s), bob position, speed, rod `tension`, and its
-energies. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
+(rad, from straight down), `omega` (rad/s, the bob's swing rate about the pivot, so a
+rope's bob has one too), bob position, speed, link `tension` and its energies. The
+tension is the link's pull along the bob-to-pivot line, measured like a contact force from
+the momentum of the bob and rod over the step before the sample, positive when taut and
+near 0 while a rope is slack; its first sample repeats the second. A massive rod adds
+M L²ω²/6 of kinetic energy, its weight at its middle to the potential energy, and M v/2 to
+the momentum, with v the bob's velocity. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
 `extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system
 potential energy includes the elastic energy.
 

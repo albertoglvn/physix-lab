@@ -20,6 +20,7 @@ export const limits = {
   pivotHeight: [1, 20, 0.1],
   pendulumLength: [0.2, 10, 0.05],
   bobRadius: [0.05, 0.5, 0.01],
+  rodMass: [0, 20, 0.1],
   swing: [-170, 170, 1],
   stiffness: [1, 5000, 1],
   damping: [0, 200, 0.1],
@@ -118,6 +119,13 @@ export type Cylinder = Placement &
  * (x, pivotHeight, z). `angle` is the release angle from the downward vertical in degrees,
  * positive anticlockwise seen from +z; the bob starts at rest.
  */
+/**
+ * How a pendulum's bob hangs from its pivot: a `rod` holds the bob at the length and turns
+ * it with the swing; a `rope` only stops the bob going further than the length, so it goes
+ * slack when the bob moves inwards, and the bob does not turn.
+ */
+export type PendulumLink = "rod" | "rope";
+export const PENDULUM_LINKS: readonly PendulumLink[] = ["rod", "rope"];
 export type Pendulum = Placement & {
   kind: "pendulum";
   pivotHeight: number;
@@ -125,6 +133,9 @@ export type Pendulum = Placement & {
   mass: number;
   bobRadius: number;
   angle: number;
+  link: PendulumLink;
+  /** Mass of a uniform rod from the pivot to the bob's centre, kg; 0 for a rope. */
+  rodMass: number;
 };
 /**
  * A cube hung from a fixed anchor by a linear spring and dashpot, moving only along y.
@@ -170,6 +181,8 @@ export type Preset =
   | "collision"
   | "push"
   | "drag"
+  | "compound"
+  | "rope"
   | "blank";
 
 export const objectNames: Record<LabObject["kind"], string> = {
@@ -194,6 +207,8 @@ export const presetNames: Record<Preset, string> = {
   collision: "Collision track",
   push: "Pushed block",
   drag: "Falling through air",
+  compound: "Compound pendulum",
+  rope: "Slack rope",
   blank: "Untitled experiment",
 };
 
@@ -401,6 +416,8 @@ export function makeObject(
         mass: 1,
         bobRadius: 0.2,
         angle: 20,
+        link: "rod",
+        rodMass: 0,
       };
     case "spring":
       return {
@@ -559,6 +576,16 @@ export function makeScene(preset: Preset): LabScene {
   } else if (preset === "pendulum") {
     // Inside the small-angle range, so both period references apply.
     scene.objects = [{ ...makeObject("pendulum", "pendulum-1"), angle: 8 }];
+  } else if (preset === "compound") {
+    // A 2 kg rod carrying a 1 kg bob, which shortens the period, inside the small-angle range.
+    scene.objects = [
+      { ...makeObject("pendulum", "pendulum-1"), angle: 8, rodMass: 2 },
+    ];
+  } else if (preset === "rope") {
+    // Released above the pivot, the bob falls straight down until the rope pulls taut.
+    scene.objects = [
+      { ...makeObject("pendulum", "pendulum-1"), angle: 120, link: "rope" },
+    ];
   } else if (preset === "spring") {
     scene.objects = [makeObject("spring", "spring-1")];
   } else if (preset === "launcher") {
@@ -655,6 +682,17 @@ function parseSurface(input: Record<string, unknown>): Surface {
   return surface;
 }
 
+/** A pendulum's link; scenes saved before links hang their bob on a massless rod. */
+function parseLink(input: Record<string, unknown>) {
+  const link = input.link ?? "rod";
+  if (!PENDULUM_LINKS.includes(link as PendulumLink))
+    throw new Error(`link must be one of ${PENDULUM_LINKS.join(", ")}.`);
+  const rodMass = optional(input, "rodMass", limits.rodMass, 0);
+  if (link === "rope" && rodMass > 0)
+    throw new Error("A rope has no mass; set rodMass to 0 or use a rod.");
+  return { link: link as PendulumLink, rodMass };
+}
+
 /** Launch velocity and the optional applied force of a free body. */
 function parseLaunch(input: Record<string, unknown>): Launch {
   const launch: Launch = {
@@ -746,6 +784,7 @@ function parseObject(input: unknown): LabObject {
         mass: numeric(object, "mass", limits.mass),
         bobRadius: numeric(object, "bobRadius", limits.bobRadius),
         angle: numeric(object, "angle", limits.swing),
+        ...parseLink(object),
       };
     case "spring":
       return {

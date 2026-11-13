@@ -151,6 +151,7 @@ const FIELDS: Record<
     ["mass", "mass", "m", "kg", limits.mass],
     ["bobRadius", "bob radius", "r", "m", limits.bobRadius],
     ["pivotHeight", "pivot height", "H", "m", limits.pivotHeight],
+    ["rodMass", "rod mass", "M", "kg", limits.rodMass],
   ],
   spring: [
     ["mass", "mass", "m", "kg", limits.mass],
@@ -244,6 +245,13 @@ export function sweepVariables(scene: LabScene): SweepVariable[] {
         continue;
       // A body without its own friction leaves the surface's coefficient in charge.
       if (isBody(part) && field === "friction" && part.friction === undefined)
+        continue;
+      // A rope has no mass to vary.
+      if (
+        part.kind === "pendulum" &&
+        field === "rodMass" &&
+        part.link === "rope"
+      )
         continue;
       variables.push(
         variable(

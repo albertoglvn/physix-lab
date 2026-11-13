@@ -1,4 +1,8 @@
-import type { ColliderDesc, RigidBody } from "@dimforge/rapier3d-compat";
+import type {
+  Collider,
+  ColliderDesc,
+  RigidBody,
+} from "@dimforge/rapier3d-compat";
 import {
   dragCoefficients,
   forceOver,
@@ -405,14 +409,33 @@ export type SimulationOptions = {
   timeStep?: number;
 };
 
+/**
+ * Contact force on a body over the last step, in newtons: its size, its part along the
+ * contact normal and its part across it.
+ */
+export type ContactForce = { normal: number; friction: number; total: number };
+
 export type Simulation = {
   readonly rapierVersion: string;
   readonly timeStep: number;
   readonly solverIterations: number;
   readonly time: number;
   step: (count?: number) => void;
-  /** The rigid body of a block, ball, pendulum bob or spring cube. */
+  /**
+   * The rigid body of a block, ball, pendulum bob or spring cube. The position and velocity
+   * are those of the part's centre, the bob's for a pendulum with a massive rod.
+   */
   block: (id: string) => BlockState | undefined;
+  /**
+   * The contact force on a free body over the last step: m Δv / h less gravity and the
+   * applied and drag forces, split along the mean normal of its contacts.
+   */
+  contact: (id: string) => ContactForce | undefined;
+  /**
+   * The force a pendulum's rod or rope exerted on the swinging body over the last step,
+   * m (Δv/h) − m g for the bob and rod together; undefined before the first step.
+   */
+  linkForce: (id: string) => Vec3 | undefined;
   pulley: (id: string) => PulleyState | undefined;
   dispose: () => void;
 };
@@ -441,6 +464,26 @@ export async function createSimulation(
   const blocks = new Map<string, RigidBody>();
   const pulleys = new Map<string, Rope>();
   const springs: { spring: Spring; body: RigidBody }[] = [];
+  /**
+   * Free bodies with their collider, the force this code added in the step (applied and
+   * drag) and, after the step, the contact force read from the change in momentum.
+   */
+  const touching = new Map<
+    string,
+    {
+      collider: Collider;
+      body: RigidBody;
+      mass: number;
+      added: Vec3;
+      before?: Vec3;
+      force?: Vec3;
+    }
+  >();
+  /** Pendulum bodies with their total mass, and the link force of the last step. */
+  const swinging = new Map<
+    string,
+    { body: RigidBody; mass: number; before?: Vec3; force?: Vec3 }
+  >();
   /** Free bodies under an applied force or air drag, with their drag coefficients. */
   const driven: {
     part: Body;
@@ -538,7 +581,12 @@ export async function createSimulation(
     });
   }
 
-  /** Hinges the bob to a fixed pivot about z: a rigid, massless rod. */
+  /**
+   * Hangs the bob from a fixed pivot. A rod is a revolute joint about z; its mass, if any,
+   * is a collider-free mass at the rod's middle with the inertia M L²/12 of a thin rod, so
+   * the body has M L²/3 more about the pivot. A rope is a rope joint between the pivot and
+   * the bob's centre.
+   */
   function hinge(pendulum: Pendulum, bob: RigidBody) {
     const pivot = world.createRigidBody(
       rapier.RigidBodyDesc.fixed().setTranslation(
@@ -548,16 +596,45 @@ export async function createSimulation(
       ),
     );
     const theta = radians(pendulum.angle);
+    const toPivot = {
+      x: -pendulum.length * Math.sin(theta),
+      y: pendulum.length * Math.cos(theta),
+      z: 0,
+    };
+    if (pendulum.link === "rope") {
+      world.createImpulseJoint(
+        rapier.JointData.rope(
+          pendulum.length,
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 0, z: 0 },
+        ),
+        pivot,
+        bob,
+        true,
+      );
+      return;
+    }
+    if (pendulum.rodMass > 0) {
+      const inertia = (pendulum.rodMass * pendulum.length ** 2) / 12;
+      world.createCollider(
+        rapier.ColliderDesc.ball(0.01)
+          .setTranslation(toPivot.x / 2, toPivot.y / 2, 0)
+          .setCollisionGroups(0)
+          .setMassProperties(
+            pendulum.rodMass,
+            { x: 0, y: 0, z: 0 },
+            { x: inertia, y: inertia, z: inertia },
+            upright,
+          ),
+        bob,
+      );
+    }
     world.createImpulseJoint(
-      rapier.JointData.revolute(
-        { x: 0, y: 0, z: 0 },
-        {
-          x: -pendulum.length * Math.sin(theta),
-          y: pendulum.length * Math.cos(theta),
-          z: 0,
-        },
-        { x: 0, y: 0, z: 1 },
-      ),
+      rapier.JointData.revolute({ x: 0, y: 0, z: 0 }, toPivot, {
+        x: 0,
+        y: 0,
+        z: 1,
+      }),
       pivot,
       bob,
       true,
@@ -602,7 +679,7 @@ export async function createSimulation(
           springs.push({ spring: object, body });
         }
         const free = isBody(object);
-        world.createCollider(
+        const collider = world.createCollider(
           surface(
             shape(object),
             free && object.friction !== undefined
@@ -612,7 +689,20 @@ export async function createSimulation(
           ).setMass(object.mass),
           body,
         );
-        if (object.kind === "pendulum") hinge(object, body);
+        if (free)
+          touching.set(object.id, {
+            collider,
+            body,
+            mass: object.mass,
+            added: { x: 0, y: 0, z: 0 },
+          });
+        if (object.kind === "pendulum") {
+          hinge(object, body);
+          swinging.set(object.id, {
+            body,
+            mass: object.mass + (object.link === "rod" ? object.rodMass : 0),
+          });
+        }
         if (free && (object.force || hasDrag(scene)))
           driven.push({
             part: object,
@@ -666,26 +756,97 @@ export async function createSimulation(
             quadratic,
             timeStep,
           );
+          const added = {
+            x: applied.x + drag.x,
+            y: applied.y + drag.y,
+            z: drag.z,
+          };
+          touching.get(part.id)!.added = added;
           body.resetForces(false);
-          body.addForce(
-            { x: applied.x + drag.x, y: applied.y + drag.y, z: drag.z },
-            true,
-          );
+          body.addForce(added, true);
         }
         for (const rope of pulleys.values()) moveRope(rope);
+        for (const part of swinging.values()) part.before = part.body.linvel();
+        for (const part of touching.values()) part.before = part.body.linvel();
         world.step();
+        // m Δv / h = m g + the forces this code added + the constraint or contact force.
+        const reaction = (
+          part: { body: RigidBody; mass: number; before?: Vec3 },
+          added: Vec3,
+        ) => {
+          const { x, y, z } = part.body.linvel();
+          const before = part.before!;
+          return {
+            x: (part.mass * (x - before.x)) / timeStep - added.x,
+            y:
+              part.mass * ((y - before.y) / timeStep + scene.gravity) - added.y,
+            z: (part.mass * (z - before.z)) / timeStep - added.z,
+          };
+        };
+        for (const part of swinging.values())
+          part.force = reaction(part, { x: 0, y: 0, z: 0 });
+        for (const part of touching.values())
+          part.force = reaction(part, part.added);
       }
       ticks += count;
     },
     block(id) {
       const body = blocks.get(id);
-      if (body)
-        return {
-          position: body.translation(),
-          rotation: body.rotation(),
-          velocity: body.linvel(),
-          angularVelocity: body.angvel(),
-        };
+      if (!body) return;
+      const position = body.translation();
+      const angularVelocity = body.angvel();
+      const com = body.worldCom();
+      const velocity = body.linvel();
+      // A massive rod moves the centre of mass off the bob: report the bob's own velocity.
+      const r = {
+        x: position.x - com.x,
+        y: position.y - com.y,
+        z: position.z - com.z,
+      };
+      if (r.x || r.y || r.z) {
+        const w = angularVelocity;
+        velocity.x += w.y * r.z - w.z * r.y;
+        velocity.y += w.z * r.x - w.x * r.z;
+        velocity.z += w.x * r.y - w.y * r.x;
+      }
+      return {
+        position,
+        rotation: body.rotation(),
+        velocity,
+        angularVelocity,
+      };
+    },
+    contact(id) {
+      const part = touching.get(id);
+      const force = part?.force;
+      if (!part || !force) return;
+      // The contact normals of the last step; several touching parts share their mean.
+      const sum = { x: 0, y: 0, z: 0 };
+      world.contactPairsWith(part.collider, (other) => {
+        world.contactPair(part.collider, other, (manifold) => {
+          if (manifold.numContacts() === 0) return;
+          const n = manifold.normal();
+          // Orient each normal along the push, so opposite faces do not cancel.
+          const sign =
+            n.x * force.x + n.y * force.y + n.z * force.z < 0 ? -1 : 1;
+          sum.x += sign * n.x;
+          sum.y += sign * n.y;
+          sum.z += sign * n.z;
+        });
+      });
+      const length = Math.hypot(sum.x, sum.y, sum.z);
+      const size = Math.hypot(force.x, force.y, force.z);
+      if (length === 0) return { normal: 0, friction: 0, total: size };
+      const normal =
+        (force.x * sum.x + force.y * sum.y + force.z * sum.z) / length;
+      return {
+        normal,
+        friction: Math.sqrt(Math.max(0, size * size - normal * normal)),
+        total: size,
+      };
+    },
+    linkForce(id) {
+      return swinging.get(id)?.force;
     },
     pulley(id) {
       return pulleys.get(id)?.state;
@@ -696,6 +857,8 @@ export async function createSimulation(
       blocks.clear();
       pulleys.clear();
       springs.length = 0;
+      touching.clear();
+      swinging.clear();
       world.free();
     },
   };

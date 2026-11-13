@@ -103,6 +103,73 @@ export function slope(
   return (n * stv - st * sv) / denominator;
 }
 
+/** Mean of a column's finite values over [from, to], or undefined with fewer than 3. */
+export function mean(
+  run: MotionRun,
+  key: string,
+  from: number,
+  to: number,
+): number | undefined {
+  const column = run.series.columns[key];
+  if (!column) return;
+  let n = 0;
+  let sum = 0;
+  run.series.t.forEach((t, index) => {
+    const v = column[index];
+    if (t < from || t > to || !Number.isFinite(v)) return;
+    n++;
+    sum += v;
+  });
+  return n < 3 ? undefined : sum / n;
+}
+
+/**
+ * The contact normal and friction forces on a sliding body, read as their means over a
+ * window of the run (LAB_PLAN.md §4.1). The engine's forces are measured from the body's
+ * momentum over each step, split along the contact normal.
+ */
+function contactReferences(
+  body: Body,
+  values: { normal: number; friction: number },
+  formulas: { normal: string; friction: string },
+  window: (run: MotionRun) => [number, number] | undefined,
+  assumptions: string[],
+  broken: string | undefined,
+): Reference[] {
+  const read = (name: string) => (run: MotionRun) => {
+    const span = window(run);
+    return span && mean(run, `${body.id}.${name}`, span[0], span[1]);
+  };
+  const common = {
+    target: body.id,
+    unit: "N",
+    assumptions,
+    broken,
+    tolerance: 0.01,
+    floor: 0.01,
+  };
+  return [
+    {
+      ...common,
+      id: `${body.id}.contact.N`,
+      label: "Contact normal force",
+      symbol: "N",
+      formula: formulas.normal,
+      value: values.normal,
+      measure: read("normal"),
+    },
+    {
+      ...common,
+      id: `${body.id}.contact.F`,
+      label: "Friction force",
+      symbol: "F_f",
+      formula: formulas.friction,
+      value: values.friction,
+      measure: read("friction"),
+    },
+  ];
+}
+
 /** Half-extents of a part's footprint along x and z, or undefined for the pulley. */
 function footprint(part: LabObject): [number, number] | undefined {
   if (isBody(part)) return [bodyHalf(part), bodyHalf(part)];
@@ -162,6 +229,24 @@ function inclineReferences(
   ];
   const end = (run: MotionRun) =>
     eventTime(run, "leaves_ramp", block.id) ?? run.stop.t;
+  const weight = block.mass * g;
+  const contact = contactReferences(
+    block,
+    {
+      normal: weight * Math.cos(tilt),
+      friction: slides ? mu * weight * Math.cos(tilt) : weight * Math.sin(tilt),
+    },
+    {
+      normal: "N = m g cos θ",
+      friction: slides ? "F_f = μ m g cos θ" : "F_f = m g sin θ, held by grip",
+    },
+    (run) => {
+      const to = end(run) - 0.02;
+      return to > 0.3 ? [0.15, to] : undefined;
+    },
+    [...assumptions, "Read as the mean over the time on the ramp."],
+    broken,
+  );
   const references: Reference[] = [
     {
       id: `${block.id}.incline.a`,
@@ -197,7 +282,7 @@ function inclineReferences(
       event: "leaves_ramp",
       measure: (run) => eventTime(run, "leaves_ramp", block.id),
     });
-  return references;
+  return [...references, ...contact];
 }
 
 /**
@@ -277,21 +362,50 @@ function rollingReferences(
 /** Largest release angle, in degrees, the small-angle period is taken to describe. */
 export const SMALL_ANGLE = 10;
 
-/** Moment of inertia of a pendulum about its pivot: the bob as a solid sphere. */
-export const pendulumInertia = (pendulum: Pendulum) =>
-  pendulum.mass * pendulum.length ** 2 +
-  0.4 * pendulum.mass * pendulum.bobRadius ** 2;
+/**
+ * Moment of inertia of a pendulum about its pivot. On a rod, the bob is a solid sphere that
+ * turns with the swing and a uniform rod of mass M adds M L²/3; on a rope, the bob does not
+ * turn, so it counts as a point mass.
+ */
+export function pendulumInertia(pendulum: Pendulum) {
+  const { mass: m, length: L } = pendulum;
+  if (pendulum.link === "rope") return m * L * L;
+  return (
+    m * L * L +
+    0.4 * m * pendulum.bobRadius ** 2 +
+    (pendulum.rodMass * L * L) / 3
+  );
+}
 
-/** Small-angle period of a pendulum, 2π √(I / (m g L)). */
+/** Gravity's lever about the pivot per unit g and sin θ: m L plus M L/2 for a rod. */
+export const pendulumLever = (pendulum: Pendulum) =>
+  pendulum.length *
+  (pendulum.mass + (pendulum.link === "rod" ? pendulum.rodMass / 2 : 0));
+
+/** Small-angle period of a pendulum, 2π √(I / ((m L + M L/2) g)). */
 export function smallAnglePeriod(pendulum: Pendulum, gravity: number) {
   return (
     2 *
     Math.PI *
-    Math.sqrt(
-      pendulumInertia(pendulum) / (pendulum.mass * gravity * pendulum.length),
-    )
+    Math.sqrt(pendulumInertia(pendulum) / (pendulumLever(pendulum) * gravity))
   );
 }
+
+/**
+ * Pull of the link on the bob and rod at the bottom of the swing, (m + M) g + (m L + M L/2) ω²,
+ * with ω² = 2 (m L + M L/2) g (1 − cos θ₀) / I from energy.
+ */
+export function bottomTension(pendulum: Pendulum, gravity: number) {
+  const lever = pendulumLever(pendulum);
+  const rod = pendulum.link === "rod" ? pendulum.rodMass : 0;
+  const w2 =
+    (2 * lever * gravity * (1 - Math.cos(radians(pendulum.angle)))) /
+    pendulumInertia(pendulum);
+  return (pendulum.mass + rod) * gravity + lever * w2;
+}
+
+/** Threshold below which a rope's measured tension counts as slack, N. */
+const SLACK = 0.05;
 
 /** Period at any release angle: the small-angle period times (2/π) K(sin(θ₀/2)). */
 export function exactPeriod(pendulum: Pendulum, gravity: number) {
@@ -322,13 +436,24 @@ function pendulumReferences(pendulum: Pendulum, scene: LabScene): Reference[] {
   if (pendulum.angle === 0 || scene.gravity === 0) return [];
   const g = scene.gravity;
   const id = pendulum.id;
+  const rope = pendulum.link === "rope";
   const assumptions = [
-    `Released from rest at ${pendulum.angle}° on a rigid, massless rod of ${pendulum.length} m.`,
-    `The bob is a solid sphere, so I = m L² + (2/5) m r² about the pivot.`,
-    "Frictionless hinge; no air drag.",
+    rope
+      ? `Released from rest at ${pendulum.angle}° on a massless rope of ${pendulum.length} m.`
+      : pendulum.rodMass > 0
+        ? `Released from rest at ${pendulum.angle}° on a rigid, uniform rod of ${pendulum.length} m and ${pendulum.rodMass} kg.`
+        : `Released from rest at ${pendulum.angle}° on a rigid, massless rod of ${pendulum.length} m.`,
+    rope
+      ? "The bob does not turn on a rope, so I = m L² about the pivot."
+      : pendulum.rodMass > 0
+        ? "The bob is a solid sphere and the rod a thin rod, so I = m L² + (2/5) m r² + M L²/3 about the pivot."
+        : "The bob is a solid sphere, so I = m L² + (2/5) m r² about the pivot.",
+    rope ? "No air drag." : "Frictionless hinge; no air drag.",
   ];
+  if (rope && Math.abs(pendulum.angle) > 90) return slackRope(pendulum, g);
   const measure = (run: MotionRun) => recordedPeriod(run, `${id}.angle`);
   const large = Math.abs(pendulum.angle) > SMALL_ANGLE;
+  const period = exactPeriod(pendulum, g);
   return [
     {
       id: `${id}.pendulum.T0`,
@@ -336,7 +461,7 @@ function pendulumReferences(pendulum: Pendulum, scene: LabScene): Reference[] {
       label: "Small-angle period",
       symbol: "T₀",
       unit: "s",
-      formula: "T₀ = 2π √(I / (m g L))",
+      formula: "T₀ = 2π √(I / ((m L + M L/2) g))",
       value: smallAnglePeriod(pendulum, g),
       assumptions: [
         ...assumptions,
@@ -356,7 +481,7 @@ function pendulumReferences(pendulum: Pendulum, scene: LabScene): Reference[] {
       symbol: "T",
       unit: "s",
       formula: "T = (2/π) T₀ K(sin(θ₀/2))",
-      value: exactPeriod(pendulum, g),
+      value: period,
       assumptions: [
         ...assumptions,
         "K is the complete elliptic integral of the first kind.",
@@ -364,6 +489,110 @@ function pendulumReferences(pendulum: Pendulum, scene: LabScene): Reference[] {
       tolerance: 0.005,
       floor: 0,
       measure,
+    },
+    {
+      id: `${id}.pendulum.Tmax`,
+      target: id,
+      label: "Link tension at the bottom",
+      symbol: "T_max",
+      unit: "N",
+      formula:
+        "T_max = (m + M) g + (m L + M L/2) ω², ω² = 2 (m L + M L/2) g (1 − cos θ₀) / I",
+      value: bottomTension(pendulum, g),
+      assumptions: [
+        ...assumptions,
+        "The link's pull along the bob-to-pivot line, read as the largest sample over the first period.",
+      ],
+      tolerance: 0.01,
+      floor: 0,
+      measure: (run) => {
+        if (run.stop.t < period / 2) return;
+        const column = run.series.columns[`${id}.tension`];
+        let best: number | undefined;
+        run.series.t.forEach((t, index) => {
+          const v = column?.[index];
+          if (t <= period && Number.isFinite(v)) best = Math.max(best ?? v, v);
+        });
+        return best;
+      },
+    },
+  ];
+}
+
+/**
+ * A bob released above its pivot on a rope falls straight down, slack, through 2 L |cos θ₀|
+ * until the rope pulls taut. The jerk removes the speed along the rope and keeps the speed
+ * across it, |sin θ₀| of the fall speed.
+ */
+function slackRope(pendulum: Pendulum, g: number): Reference[] {
+  const id = pendulum.id;
+  const L = pendulum.length;
+  const cos0 = Math.cos(radians(pendulum.angle));
+  const sin0 = Math.abs(Math.sin(radians(pendulum.angle)));
+  const assumptions = [
+    `Released from rest at ${pendulum.angle}° on a massless rope of ${pendulum.length} m, above the pivot, so the rope is slack.`,
+    "Free fall until the rope is taut; the jerk is perfectly inelastic along the rope.",
+    "No air drag.",
+  ];
+  // The bob's height below the pivot when the rope pulls taut.
+  const drop = L * Math.abs(cos0);
+  const columns = (run: MotionRun) => ({
+    x: run.series.columns[`${id}.x`],
+    y: run.series.columns[`${id}.y`],
+    speed: run.series.columns[`${id}.speed`],
+    tension: run.series.columns[`${id}.tension`],
+  });
+  /** The last sample before the rope first pulls, carried by free fall to the taut height. */
+  const taut = (run: MotionRun) => {
+    const { y, speed, tension } = columns(run);
+    if (!y || !speed || !tension) return;
+    const first = tension.findIndex((v, index) => index > 0 && v >= SLACK);
+    if (first < 1) return;
+    const last = first - 1;
+    const fall = y[last] - (pendulum.pivotHeight - drop);
+    const v = speed[last];
+    return run.series.t[last] + (-v + Math.sqrt(v * v + 2 * g * fall)) / g;
+  };
+  return [
+    {
+      id: `${id}.rope.t`,
+      target: id,
+      label: "Time until the rope is taut",
+      symbol: "t",
+      unit: "s",
+      formula: "t = √(−4 L cos θ₀ / g)",
+      value: Math.sqrt((-4 * L * cos0) / g),
+      assumptions: [
+        ...assumptions,
+        "Read from the last slack sample, carried by free fall to the taut height.",
+      ],
+      tolerance: 0.005,
+      floor: 0,
+      measure: taut,
+    },
+    {
+      id: `${id}.rope.v`,
+      target: id,
+      label: "Speed after the rope pulls taut",
+      symbol: "v",
+      unit: "m/s",
+      formula: "v = |sin θ₀| √(−4 g L cos θ₀)",
+      value: sin0 * Math.sqrt(-4 * g * L * cos0),
+      assumptions: [
+        ...assumptions,
+        "Read 0.05 s after the rope pulls taut, carried by energy back to the taut height.",
+      ],
+      tolerance: 0.005,
+      floor: 0,
+      measure: (run) => {
+        const at = taut(run);
+        const { y, speed, tension } = columns(run);
+        if (at === undefined || !y || !speed || !tension) return;
+        const index = run.series.t.findIndex((t) => t >= at + 0.05);
+        if (index < 0 || !(tension[index] >= SLACK)) return;
+        const rise = y[index] - (pendulum.pivotHeight - drop);
+        return Math.sqrt(speed[index] ** 2 + 2 * g * rise);
+      },
     },
   ];
 }
@@ -442,6 +671,18 @@ function frictionReferences(block: Block, scene: LabScene): Reference[] {
     CONTACT_MODEL,
   ];
   const restTime = (run: MotionRun) => eventTime(run, "rest", block.id);
+  const weight = block.mass * g;
+  const contact = contactReferences(
+    block,
+    { normal: weight, friction: mu * weight },
+    { normal: "N = m g", friction: "F_f = μ m g" },
+    (run) => {
+      const t = restTime(run);
+      return t === undefined ? undefined : [0.1 * t, 0.9 * t];
+    },
+    [...assumptions, "Read as the mean over the middle 80 % of the slide."],
+    broken,
+  );
   return [
     {
       id: `${block.id}.friction.d`,
@@ -478,6 +719,7 @@ function frictionReferences(block: Block, scene: LabScene): Reference[] {
       event: "rest",
       measure: restTime,
     },
+    ...contact,
   ];
 }
 
@@ -937,6 +1179,29 @@ function pushReferences(body: Body, scene: LabScene): Reference[] {
           : Math.abs(valueAt(run, `${body.id}.x`, t) - body.x);
       },
     });
+  if (duration >= 0.25 && normal > 0)
+    list.push(
+      ...contactReferences(
+        body,
+        {
+          normal,
+          friction: a !== 0 ? mu * normal : Math.abs(force.x),
+        },
+        {
+          normal: "N = m g − F_y",
+          friction:
+            a !== 0 ? "F_f = μ (m g − F_y)" : "F_f = |Fₓ|, held by grip",
+        },
+        (run) => {
+          const margin = 0.1 * duration;
+          return run.stop.t >= force.end
+            ? [force.start + margin, force.end - margin]
+            : undefined;
+        },
+        [...assumptions, "Read as the mean over the middle 80 % of the push."],
+        broken,
+      ),
+    );
   return list;
 }
 

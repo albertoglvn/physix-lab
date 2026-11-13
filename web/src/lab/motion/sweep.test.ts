@@ -120,6 +120,14 @@ describe("sweep variables", () => {
     ).toBe(2);
   });
 
+  it("offers a rod's mass but not a rope's", () => {
+    const rod = sweepVariables(makeScene("compound")).map((item) => item.path);
+    expect(rod).toContain("pendulum-1.rodMass");
+    const rope = sweepVariables(makeScene("rope")).map((item) => item.path);
+    expect(rope).not.toContain("pendulum-1.rodMass");
+    expect(rope).toContain("pendulum-1.length");
+  });
+
   it("keeps a block on its ramp when the angle, length or block size changes", () => {
     for (const [path, value] of [
       ["ramp-1.angle", 42],

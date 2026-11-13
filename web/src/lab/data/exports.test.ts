@@ -170,6 +170,21 @@ describe("methods summary", () => {
     expect(text).not.toMatch(/undefined|NaN|false/);
   });
 
+  it("states each pendulum's link and how forces are measured", async () => {
+    const compound = makeScene("compound");
+    const swing = await runProtocol(compound, { stop: "time", maxTime: 0.5 });
+    const text = methodsSummary(swing, []);
+    expect(text).toContain(
+      "pendulum-1 hangs on a rigid rod of 3 m and 2 kg (I = M L²/3 about the pivot)",
+    );
+    expect(text).toContain("contact forces and link tension are measured");
+    const rope = makeScene("rope");
+    const fall = await runProtocol(rope, { stop: "time", maxTime: 0.5 });
+    expect(methodsSummary(fall, [])).toContain(
+      "pendulum-1 hangs on a massless rope of 3 m",
+    );
+  });
+
   it("formats steps and differences", () => {
     expect(formatStep(1 / 120)).toBe("1/120 s");
     expect(formatStep(0.003)).toBe("0.003 s");

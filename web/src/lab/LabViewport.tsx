@@ -235,7 +235,34 @@ function cylinderMesh(
   };
 }
 
-/** A pivot, a rod and a bob; the rod follows the bob the engine moves. */
+/** Points along a rope from the pivot to the bob, in the pendulum's frame. */
+const ROPE_POINTS = 24;
+
+/**
+ * Lays a rope of `length` between the pivot and the bob. A slack rope hangs below its
+ * chord as a parabola with the sag s that gives it the length, L ≈ c + 8 s²/(3 c).
+ */
+export function ropePoints(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  length: number,
+): { x: number; y: number }[] {
+  const chord = Math.hypot(to.x - from.x, to.y - from.y);
+  const slack = Math.max(0, length - chord);
+  const sag = chord > 1e-6 ? Math.sqrt((3 * chord * slack) / 8) : length / 2;
+  return Array.from({ length: ROPE_POINTS }, (_, index) => {
+    const u = index / (ROPE_POINTS - 1);
+    return {
+      x: from.x + u * (to.x - from.x),
+      y: from.y + u * (to.y - from.y) - 4 * sag * u * (1 - u),
+    };
+  });
+}
+
+/**
+ * A pivot, a link and a bob; the link follows the bob the engine moves. A rod is a bar,
+ * thicker when it has mass; a rope is a line that sags when slack.
+ */
 function pendulumMesh(
   object: Pendulum,
   palette: ViewportPalette,
@@ -248,17 +275,27 @@ function pendulumMesh(
   pivot.position.y = object.pivotHeight + 0.07;
   const hub = solid(new THREE.SphereGeometry(0.06, 16, 12), palette.hub);
   hub.position.y = object.pivotHeight;
+  const thickness = object.rodMass > 0 ? 0.045 : 0.018;
   const rod = solid(
-    new THREE.CylinderGeometry(0.018, 0.018, 1, 8),
+    new THREE.CylinderGeometry(thickness, thickness, 1, 8),
     palette.rope,
   );
+  const rope = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(ROPE_POINTS * 3), 3),
+    ),
+    new THREE.LineBasicMaterial({ color: palette.rope }),
+  );
+  const link = object.link === "rope" ? rope : rod;
+  disposeTree(object.link === "rope" ? rod : rope);
   const bob = solid(
     new THREE.SphereGeometry(object.bobRadius, 28, 18),
     palette.bob,
   );
   const outline = cage(object.bobRadius, palette.partEdge);
   bob.add(outline);
-  root.add(pivot, hub, rod, bob);
+  root.add(pivot, hub, link, bob);
   const initial = initialBlockState(object, gravity);
   return {
     root,
@@ -268,6 +305,20 @@ function pendulumMesh(
       const dx = position.x - object.x;
       const dy = object.pivotHeight - position.y;
       bob.position.set(dx, position.y, position.z - object.z);
+      if (object.link === "rope") {
+        const points = ropePoints(
+          { x: 0, y: object.pivotHeight },
+          { x: dx, y: position.y },
+          object.length,
+        );
+        const buffer = rope.geometry.getAttribute(
+          "position",
+        ) as THREE.BufferAttribute;
+        points.forEach(({ x, y }, index) => buffer.setXYZ(index, x, y, 0));
+        buffer.needsUpdate = true;
+        rope.geometry.computeBoundingSphere();
+        return;
+      }
       rod.scale.y = Math.hypot(dx, dy);
       rod.position.set(dx / 2, object.pivotHeight - dy / 2, 0);
       rod.rotation.z = Math.atan2(dx, dy);
@@ -333,8 +384,7 @@ function springMesh(
 
 function disposeTree(object: THREE.Object3D) {
   object.traverse((part) => {
-    if (!(part instanceof THREE.Mesh || part instanceof THREE.LineSegments))
-      return;
+    if (!(part instanceof THREE.Mesh || part instanceof THREE.Line)) return;
     part.geometry.dispose();
     const materials: THREE.Material[] = Array.isArray(part.material)
       ? part.material

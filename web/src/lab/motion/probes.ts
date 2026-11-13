@@ -302,6 +302,8 @@ const BODY_QUANTITIES = [
   ["acceleration", "Acceleration", "a", "m/s²"],
   ["kinetic", "Kinetic energy", "K", "J"],
   ["potential", "Potential energy", "U", "J"],
+  ["normal", "Contact normal force", "N", "N"],
+  ["friction", "Contact friction force", "F_f", "N"],
 ] as const;
 const PULLEY_QUANTITIES = [
   ["displacement", "Displacement", "s", "m"],
@@ -321,7 +323,7 @@ const PENDULUM_QUANTITIES = [
   ["x", "Bob X position", "x", "m"],
   ["y", "Bob height", "y", "m"],
   ["speed", "Bob speed", "v", "m/s"],
-  ["tension", "Rod tension", "T", "N"],
+  ["tension", "Link tension", "T", "N"],
   ["kinetic", "Kinetic energy", "K", "J"],
   ["potential", "Potential energy", "U", "J"],
 ] as const;
@@ -344,7 +346,9 @@ const ENGINE_COLUMNS = new Set([
   "vy",
   "vz",
   "speed",
-  "omega",
+  "normal",
+  "friction",
+  "tension",
 ]);
 const SYSTEM_QUANTITIES = [
   ["kinetic", "Kinetic energy", "K", "J"],
@@ -402,8 +406,9 @@ export function sceneQuantities(scene: LabScene): Quantity[] {
 
 /**
  * Samples every probe at `rate` from a running simulation and watches for events on every
- * step. Acceleration is a backward finite difference of velocity over one sample interval;
- * the first sample repeats the second.
+ * step. Acceleration is a backward finite difference of velocity over one sample interval.
+ * Contact forces and link tension are the engine's over the step before each sample. The
+ * first sample of each repeats the second, since no step precedes it.
  */
 export function createRecorder(
   scene: LabScene,
@@ -474,8 +479,14 @@ export function createRecorder(
       push(`${id}.acceleration`, acceleration);
       push(`${id}.kinetic`, k);
       push(`${id}.potential`, u);
-      const column = series.columns[`${id}.acceleration`];
-      if (column.length === 2) column[0] = column[1];
+      const contact = simulation.contact(id);
+      push(`${id}.normal`, contact?.normal ?? Number.NaN);
+      push(`${id}.friction`, contact?.friction ?? Number.NaN);
+      for (const name of ["acceleration", "normal", "friction"]) {
+        const column = series.columns[`${id}.${name}`];
+        if (column.length === 2 && Number.isNaN(column[0]))
+          column[0] = column[1];
+      }
       kinetic += k;
       potential += u;
       momentum[0] += block.mass * v.x;
@@ -487,28 +498,45 @@ export function createRecorder(
       if (!state) continue;
       const { position: p, velocity: v } = state;
       const id = pendulum.id;
-      const theta = Math.atan2(p.x - pendulum.x, pendulum.pivotHeight - p.y);
-      const omega = state.angularVelocity?.z ?? 0;
+      const dx = p.x - pendulum.x;
+      const dy = p.y - pendulum.pivotHeight;
+      const r2 = dx * dx + dy * dy;
+      const theta = Math.atan2(dx, -dy);
+      // The swing rate from the bob's motion about the pivot, so a rope's bob, which does
+      // not turn, has one too.
+      const omega = (dx * v.y - dy * v.x) / r2;
       const speed = Math.hypot(v.x, v.y, v.z);
       const spin = 0.4 * pendulum.mass * pendulum.bobRadius ** 2;
-      const k = 0.5 * pendulum.mass * speed * speed + 0.5 * spin * omega ** 2;
-      const u = pendulum.mass * g * p.y;
+      const turn = state.angularVelocity?.z ?? 0;
+      // A massive rod turns with the bob about the pivot, its centre at half the bob's height.
+      const rod = pendulum.link === "rod" ? pendulum.rodMass : 0;
+      const k =
+        0.5 * pendulum.mass * speed * speed +
+        0.5 * spin * turn ** 2 +
+        0.5 * ((rod * r2) / 3) * omega ** 2;
+      const u =
+        g * (pendulum.mass * p.y + rod * ((p.y + pendulum.pivotHeight) / 2));
+      const link = simulation.linkForce(id);
       push(`${id}.angle`, theta);
       push(`${id}.omega`, omega);
       push(`${id}.x`, p.x);
       push(`${id}.y`, p.y);
       push(`${id}.speed`, speed);
+      // The link's pull along the bob-to-pivot line: positive when taut.
       push(
         `${id}.tension`,
-        pendulum.mass * (g * Math.cos(theta) + omega * omega * pendulum.length),
+        link ? -(link.x * dx + link.y * dy) / Math.sqrt(r2) : Number.NaN,
       );
+      const tension = series.columns[`${id}.tension`];
+      if (tension.length === 2 && Number.isNaN(tension[0]))
+        tension[0] = tension[1];
       push(`${id}.kinetic`, k);
       push(`${id}.potential`, u);
       kinetic += k;
       potential += u;
-      momentum[0] += pendulum.mass * v.x;
-      momentum[1] += pendulum.mass * v.y;
-      momentum[2] += pendulum.mass * v.z;
+      momentum[0] += (pendulum.mass + rod / 2) * v.x;
+      momentum[1] += (pendulum.mass + rod / 2) * v.y;
+      momentum[2] += (pendulum.mass + rod / 2) * v.z;
     }
     for (const spring of springs) {
       const state = simulation.block(spring.id);

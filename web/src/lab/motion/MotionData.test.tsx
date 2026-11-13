@@ -67,7 +67,7 @@ describe("motion data dock", () => {
       <MotionData {...props({ time: run.stop.t })} />,
     );
     expect(html).not.toContain("Pending");
-    expect(html.match(/data-tone="ok"[^>]*>Δ /g)).toHaveLength(2);
+    expect(html.match(/data-tone="ok"[^>]*>Δ /g)).toHaveLength(4);
     expect(html).toContain("a = g (sin θ − μ cos θ)");
   });
 

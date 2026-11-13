@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { makeObject, makeScene, type LabScene, type Pulley } from "./scene";
+import {
+  makeObject,
+  makeScene,
+  type LabScene,
+  type Pendulum,
+  type Pulley,
+} from "./scene";
 import {
   atwood,
   createSimulation,
@@ -77,6 +83,98 @@ describe("mechanics simulation", () => {
     }
     expect(() => simulation.step()).toThrow("disposed");
     expect(() => simulation.dispose()).not.toThrow();
+  });
+});
+
+describe("contact and link forces", () => {
+  it("measures the contact forces on a sliding and a resting block", async () => {
+    const scene = makeScene("friction");
+    const simulation = await createSimulation(scene);
+    try {
+      expect(simulation.contact("block-1")).toBeUndefined();
+      expect(simulation.linkForce("block-1")).toBeUndefined();
+      simulation.step(30);
+      const sliding = simulation.contact("block-1")!;
+      // m = 2 kg, μ = 0.35: N = m g and kinetic friction μ m g.
+      expect(sliding.normal).toBeCloseTo(2 * 9.81, 2);
+      expect(sliding.friction).toBeCloseTo(0.35 * 2 * 9.81, 2);
+      simulation.step(5 * 120);
+      const resting = simulation.contact("block-1")!;
+      expect(resting.normal).toBeCloseTo(2 * 9.81, 3);
+      expect(resting.friction).toBeLessThan(1e-3);
+      expect(simulation.contact("nothing")).toBeUndefined();
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("splits the contact force on an incline along the ramp's normal", async () => {
+    const scene = makeScene("incline");
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(60);
+      const { normal, friction } = simulation.contact("block-1")!;
+      const tilt = (26 * Math.PI) / 180;
+      expect(normal).toBeCloseTo(2 * 9.81 * Math.cos(tilt), 2);
+      expect(friction).toBeCloseTo(0.2 * 2 * 9.81 * Math.cos(tilt), 2);
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("pulls a rod pendulum's bob and rod at the bottom of the swing", async () => {
+    const scene = makeScene("compound");
+    const pendulum = scene.objects[0] as Pendulum;
+    const simulation = await createSimulation(scene);
+    try {
+      expect(simulation.linkForce(pendulum.id)).toBeUndefined();
+      let best = 0;
+      for (let i = 0; i < 240; i++) {
+        simulation.step();
+        const { position: p } = simulation.block(pendulum.id)!;
+        const f = simulation.linkForce(pendulum.id)!;
+        const dx = pendulum.x - p.x;
+        const dy = pendulum.pivotHeight - p.y;
+        best = Math.max(best, (f.x * dx + f.y * dy) / Math.hypot(dx, dy));
+        // The bob stays on its circle.
+        expect(Math.hypot(dx, dy)).toBeCloseTo(pendulum.length, 4);
+      }
+      const { mass: m, rodMass: M, length: L, bobRadius: r } = pendulum;
+      const inertia = m * L * L + 0.4 * m * r * r + (M * L * L) / 3;
+      const lever = m * L + (M * L) / 2;
+      const w2 =
+        (2 * lever * 9.81 * (1 - Math.cos((pendulum.angle * Math.PI) / 180))) /
+        inertia;
+      expect(best / ((m + M) * 9.81 + lever * w2)).toBeCloseTo(1, 4);
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("lets a rope go slack and keeps the bob from turning", async () => {
+    const scene = makeScene("rope");
+    const pendulum = scene.objects[0] as Pendulum;
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(30);
+      // Released above the pivot, the bob is falling freely a quarter second in.
+      const slack = simulation.linkForce(pendulum.id)!;
+      expect(Math.hypot(slack.x, slack.y, slack.z)).toBeLessThan(0.01);
+      expect(simulation.block(pendulum.id)!.velocity.y).toBeCloseTo(
+        -9.81 * 0.25,
+        2,
+      );
+      simulation.step(120);
+      const state = simulation.block(pendulum.id)!;
+      const r = Math.hypot(
+        state.position.x - pendulum.x,
+        state.position.y - pendulum.pivotHeight,
+      );
+      expect(r).toBeCloseTo(pendulum.length, 3);
+      expect(Math.abs(state.angularVelocity!.z)).toBeLessThan(1e-6);
+    } finally {
+      simulation.dispose();
+    }
   });
 });
 

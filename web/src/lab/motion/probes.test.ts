@@ -95,6 +95,43 @@ describe("motion probes", () => {
     expect(units[`${SYSTEM}.px`]).toBe("kg·m/s");
   });
 
+  it("records contact forces and link tension from the first sample", async () => {
+    const friction = makeScene("friction");
+    const slide = await runProtocol(friction, { stop: "time", maxTime: 0.5 });
+    const normal = slide.series.columns["block-1.normal"];
+    const grip = slide.series.columns["block-1.friction"];
+    expect(normal.every(Number.isFinite)).toBe(true);
+    expect(normal[0]).toBe(normal[1]);
+    expect(normal[10]).toBeCloseTo(2 * 9.81, 2);
+    expect(grip[10]).toBeCloseTo(0.35 * 2 * 9.81, 2);
+    const units = Object.fromEntries(
+      sceneQuantities(friction).map(({ key, unit, source }) => [
+        key,
+        [unit, source],
+      ]),
+    );
+    expect(units["block-1.normal"]).toEqual(["N", "rapier"]);
+    const compound = makeScene("compound");
+    const swing = await runProtocol(compound, { stop: "time", maxTime: 1 });
+    const tension = swing.series.columns["pendulum-1.tension"];
+    expect(tension.every(Number.isFinite)).toBe(true);
+    // At release the rod and bob pull (m + M) g cos θ₀ along the rod.
+    expect(tension[1]).toBeCloseTo(3 * 9.81 * Math.cos((8 * Math.PI) / 180), 1);
+  });
+
+  it("keeps a compound pendulum's energy and reads the swing rate of a rope", async () => {
+    const compound = makeScene("compound");
+    const swing = await runProtocol(compound, { stop: "time", maxTime: 2 });
+    const energy = swing.series.columns[`${SYSTEM}.energy`];
+    const spread = Math.max(...energy) - Math.min(...energy);
+    expect(spread / Math.abs(energy[0])).toBeLessThan(1e-3);
+    const rope = makeScene("rope");
+    const fall = await runProtocol(rope, { stop: "time", maxTime: 1.5 });
+    const omega = fall.series.columns["pendulum-1.omega"];
+    // Taut and swinging after the jerk at about 0.78 s.
+    expect(Math.abs(omega[omega.length - 1])).toBeGreaterThan(1);
+  });
+
   it("stops a bounce on its first rebound and a collision after both speeds settle", () => {
     expect(availableStops(makeScene("bounce"))).toEqual(
       expect.arrayContaining(["floor_contact", "bounce", "rest"]),

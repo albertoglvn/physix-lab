@@ -49,6 +49,7 @@ import {
   withMaterial,
   OBJECT_LIMIT,
   objectNames,
+  PENDULUM_LINKS,
   parseScene,
   presetNames,
   replaceObject,
@@ -140,6 +141,8 @@ const TEMPLATE_NOTES: Record<Preset, string> = {
   collision: "Two steel balls meeting head on",
   push: "Block pushed by 10 N for 1 s",
   drag: "Ball falling through air",
+  compound: "Pendulum on a 2 kg rod",
+  rope: "Bob released above the pivot on a rope",
   blank: "Empty floor",
 };
 
@@ -606,6 +609,38 @@ function ObjectFields({
           {...range(limits.bobRadius)}
           onCommit={(bobRadius) => onChange({ ...object, bobRadius })}
         />
+        <label className="lab-select lab-select--inline">
+          <span>Link</span>
+          <select
+            className="px-input"
+            value={object.link}
+            onChange={(event) => {
+              const link = PENDULUM_LINKS.find(
+                (option) => option === event.target.value,
+              );
+              // A rope has no mass of its own.
+              if (link)
+                onChange({
+                  ...object,
+                  link,
+                  rodMass: link === "rope" ? 0 : object.rodMass,
+                });
+            }}
+          >
+            <option value="rod">Rigid rod</option>
+            <option value="rope">Rope</option>
+          </select>
+        </label>
+        {object.link === "rod" && (
+          <UnitInput
+            label="Rod mass"
+            dimension="mass"
+            unit="kg"
+            value={object.rodMass}
+            {...range(limits.rodMass)}
+            onCommit={(rodMass) => onChange({ ...object, rodMass })}
+          />
+        )}
       </div>
     );
   if (object.kind === "spring")

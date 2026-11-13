@@ -19,6 +19,7 @@ import {
   SCENE_VERSION,
   withMaterial,
   type Ball,
+  type Pendulum,
   type Preset,
   type Pulley,
 } from "./scene";
@@ -37,6 +38,8 @@ describe("mechanics scene contract", () => {
     "collision",
     "push",
     "drag",
+    "compound",
+    "rope",
     "blank",
   ])("round-trips %s", (preset) => {
     const scene = makeScene(preset);
@@ -236,6 +239,31 @@ describe("mechanics scene contract", () => {
     expect(() =>
       parseScene({ ...scene, objects: [{ ...bare, wheelMass: 21 }] }),
     ).toThrow("wheelMass must be a number between 0 and 20.");
+  });
+
+  it("hangs an older pendulum on a massless rod and checks its link", () => {
+    const base = makeScene("blank");
+    const bare: Partial<Pendulum> = makeObject("pendulum", "pendulum-1");
+    delete bare.link;
+    delete bare.rodMass;
+    expect(parseScene({ ...base, objects: [bare] }).objects[0]).toMatchObject({
+      link: "rod",
+      rodMass: 0,
+    });
+    const heavy = { ...bare, rodMass: 2 };
+    expect(parseScene({ ...base, objects: [heavy] }).objects[0]).toMatchObject({
+      link: "rod",
+      rodMass: 2,
+    });
+    expect(() =>
+      parseScene({ ...base, objects: [{ ...bare, link: "chain" }] }),
+    ).toThrow("link must be one of rod, rope.");
+    expect(() =>
+      parseScene({ ...base, objects: [{ ...heavy, link: "rope" }] }),
+    ).toThrow("A rope has no mass");
+    expect(() =>
+      parseScene({ ...base, objects: [{ ...bare, rodMass: 21 }] }),
+    ).toThrow("rodMass must be a number between 0 and 20.");
   });
 
   it("rejects a pendulum or spring that would reach the floor or anchor", () => {

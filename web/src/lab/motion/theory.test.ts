@@ -6,6 +6,7 @@ import {
   radians,
   type Ball,
   type LabScene,
+  type Pendulum,
   type Pulley,
   type Preset,
   type Ramp,
@@ -53,18 +54,20 @@ describe("closed-form references", () => {
   });
 
   it.each<[Preset, number]>([
-    ["incline", 2],
-    ["friction", 2],
+    ["incline", 4],
+    ["friction", 4],
     ["projectile", 2],
     ["pulley", 3],
     ["rolling", 2],
-    ["pendulum", 2],
+    ["pendulum", 3],
     ["spring", 1],
     ["launcher", 4],
     ["bounce", 3],
     ["collision", 2],
-    ["push", 3],
+    ["push", 5],
     ["drag", 2],
+    ["compound", 3],
+    ["rope", 2],
   ])(
     "matches the %s template within tolerance at the default step",
     async (preset, count) => {
@@ -207,14 +210,22 @@ describe("closed-form references", () => {
       part.kind === "ramp" ? { ...part, friction: 0.95 } : part,
     );
     const references = referencesFor(scene);
-    expect(references.map(({ id }) => id)).toEqual(["block-1.incline.a"]);
-    const [reference] = references;
+    expect(references.map(({ id }) => id)).toEqual([
+      "block-1.incline.a",
+      "block-1.contact.N",
+      "block-1.contact.F",
+    ]);
+    const [reference, , grip] = references;
     expect(reference.value).toBe(0);
     expect(reference.formula).toMatch("tan θ ≤ μ");
+    // Static friction holds the weight's component down the slope.
+    expect(grip.value).toBeCloseTo(2 * 9.81 * Math.sin(radians(26)), 12);
     const run = await runProtocol(scene, { stop: "time", maxTime: 2 });
     const comparison = compare(reference, run);
     expect(comparison.relative).toBe(false);
     expect(comparison.within).toBe(true);
+    for (const contact of references.slice(1))
+      expect(compare(contact, run).within, contact.id).toBe(true);
   });
 
   it("flags scenes that leave a reference's assumptions", () => {
@@ -344,6 +355,66 @@ describe("closed-form references", () => {
         objects: [{ ...wide.objects[0], angle: 0 }],
       }),
     ).toEqual([]);
+  });
+
+  it("adds a massive rod's inertia and lever to the period and the tension", async () => {
+    const compound = makeScene("compound");
+    const wide = {
+      ...compound,
+      objects: [{ ...compound.objects[0], angle: 30 } as Pendulum],
+    };
+    const [m, M, L, r] = [1, 2, 3, 0.2];
+    const inertia = m * L * L + 0.4 * m * r * r + (M * L * L) / 3;
+    const lever = m * L + (M * L) / 2;
+    expect(byId(wide, "pendulum.T0").value).toBeCloseTo(
+      2 * Math.PI * Math.sqrt(inertia / (lever * 9.81)),
+      12,
+    );
+    const tension = byId(wide, "pendulum.Tmax");
+    expect(tension.value).toBeCloseTo(
+      3 * 9.81 +
+        (2 * lever * lever * 9.81 * (1 - Math.cos(radians(30)))) / inertia,
+      12,
+    );
+    const run = await runProtocol(wide, { stop: "time", maxTime: 8 });
+    for (const suffix of ["pendulum.T", "pendulum.Tmax"]) {
+      const { within, delta } = compare(byId(wide, suffix), run);
+      expect(within, `${suffix} Δ ${delta}`).toBe(true);
+    }
+  });
+
+  it("swings a taut rope like a point bob and times a slack one", async () => {
+    const rope = makeScene("rope");
+    const taut = {
+      ...rope,
+      objects: [{ ...rope.objects[0], angle: 60 } as Pendulum],
+    };
+    // A rope's bob does not turn: I = m L², and T_max = m g (3 − 2 cos θ₀).
+    expect(byId(taut, "pendulum.T0").value).toBeCloseTo(
+      2 * Math.PI * Math.sqrt(3 / 9.81),
+      12,
+    );
+    expect(byId(taut, "pendulum.Tmax").value).toBeCloseTo(9.81 * 2, 12);
+    const swing = await runProtocol(taut, { stop: "time", maxTime: 10 });
+    for (const suffix of ["pendulum.T", "pendulum.Tmax"])
+      expect(compare(byId(taut, suffix), swing).within, suffix).toBe(true);
+    // Released at 120°: no period, a free fall of 2 L |cos θ₀| = L, then the jerk.
+    const ids = referencesFor(rope).map(({ id }) => id);
+    expect(ids).toEqual(["pendulum-1.rope.t", "pendulum-1.rope.v"]);
+    expect(byId(rope, "rope.t").value).toBeCloseTo(Math.sqrt(6 / 9.81), 12);
+    expect(byId(rope, "rope.v").value).toBeCloseTo(
+      Math.sqrt(0.75) * Math.sqrt(2 * 9.81 * 3),
+      12,
+    );
+    const fine = await runProtocol(
+      rope,
+      { stop: "time", maxTime: 1.5 },
+      { timeStep: 1 / 480, rate: 240 },
+    );
+    for (const id of ["rope.t", "rope.v"]) {
+      const { delta } = compare(byId(rope, id), fine);
+      expect(Math.abs(delta ?? 1), id).toBeLessThan(1e-3);
+    }
   });
 
   it("predicts the damped spring period and flags overdamping", async () => {
