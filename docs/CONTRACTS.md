@@ -517,12 +517,13 @@ returns `{error: "engine_unavailable", message, share_url}`, so the lab can run 
 
 ### Chart view
 
-`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v2.html`
-(`mcp/sites/chartView.mjs`) in their tool `_meta`, as `ui.resourceUri` (MCP Apps) and
-`openai/outputTemplate` (ChatGPT). The Worker lists it with `resources/list` and serves it
-with `resources/read` as `text/html;profile=mcp-app`: one self-contained page with no
-network access (`connectDomains` and `resourceDomains` are empty) whose links open only the
-Worker's own origin. The view reads the tool result from `ui/notifications/tool-result` or
+`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v3.html`
+(`mcp/sites/chartView.mjs`) in their tool `_meta`, as `ui.resourceUri` and its flat form
+`ui/resourceUri` (MCP Apps). The Worker lists it with `resources/list` and serves it with
+`resources/read` as `text/html;profile=mcp-app`, both with the same `_meta.ui`: one
+self-contained page with no network access (`connectDomains` and `resourceDomains` are
+empty), the Worker's origin as its `domain`, and links that open only that origin. The
+resource carries only MCP Apps keys, no `openai/widget*` aliases. The view reads the tool result from `ui/notifications/tool-result` or
 `window.openai`. A run shows the theory check, one line chart per graph with the theory
 curve dashed, a table per graph and the events. A stress comparison shows the hotspot von
 Mises stress of each case as a bar. Each result has a button that opens its `share_url`.

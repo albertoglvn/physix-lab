@@ -6,7 +6,7 @@
  * graphs the result's `_meta` carries. Change the URI when the page changes incompatibly,
  * since hosts cache it by URI.
  */
-export const CHART_VIEW_URI = "ui://physix/chart-v2.html";
+export const CHART_VIEW_URI = "ui://physix/chart-v3.html";
 export const CHART_VIEW_MIME = "text/html;profile=mcp-app";
 
 /** Runs inside the view's iframe; it is serialized into the page, so it uses no imports. */

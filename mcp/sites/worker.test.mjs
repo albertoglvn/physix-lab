@@ -270,7 +270,8 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
   );
   const uri = byName.simulate_scene._meta.ui.resourceUri;
   assert.match(uri, /^ui:\/\//);
-  assert.equal(byName.simulate_scene._meta["openai/outputTemplate"], uri);
+  assert.equal(byName.simulate_scene._meta["ui/resourceUri"], uri);
+  assert.equal("openai/outputTemplate" in byName.simulate_scene._meta, false);
   assert.equal(byName.compare_stress._meta.ui.resourceUri, uri);
   assert.equal(byName.build_scene._meta, undefined);
 
@@ -283,6 +284,7 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
     resources.result.resources.map((resource) => resource.uri),
     [uri],
   );
+  assert.equal(resources.result.resources[0]._meta.ui.domain, site);
   const read = await (
     await rpc("resources/read", { uri }, { signedIn: false })
   ).json();
@@ -295,7 +297,10 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
     connectDomains: [],
     resourceDomains: [],
   });
-  assert.deepEqual(view._meta["openai/widgetCSP"].redirect_domains, [site]);
+  // Only the MCP Apps keys: no ChatGPT-specific widget aliases.
+  assert.deepEqual(Object.keys(view._meta), ["ui"]);
+  assert.equal(view._meta.ui.domain, site);
+  assert.equal(view._meta.ui.prefersBorder, true);
   const missing = await (
     await rpc("resources/read", { uri: "ui://physix/none.html" })
   ).json();

@@ -30,10 +30,13 @@ const domain = Object.entries(reference.families).map(([family, entry]) => ({
   hole_radii_m: entry.results.map((row) => row.radius_m),
 }));
 
-/** Tool `_meta` that shows a result in the chat chart view (MCP Apps and its ChatGPT alias). */
+/**
+ * Tool `_meta` that shows a result in the chat chart view: the MCP Apps key, its flat form
+ * that the MCP Apps SDK also writes for older hosts, and ChatGPT's status text.
+ */
 const chartView = (invoking, invoked) => ({
   ui: { resourceUri: CHART_VIEW_URI },
-  "openai/outputTemplate": CHART_VIEW_URI,
+  "ui/resourceUri": CHART_VIEW_URI,
   "openai/toolInvocation/invoking": invoking,
   "openai/toolInvocation/invoked": invoked,
 });
@@ -249,26 +252,25 @@ async function simulateSceneResult(args, origin) {
   };
 }
 
-/** The chart view as an MCP Apps resource. Links open the lab on this Worker's origin. */
+/**
+ * The chart view's MCP Apps `_meta`: no network access, and this Worker's origin as the
+ * view's dedicated domain. Links open the lab on that origin through the host.
+ */
+const chartViewMeta = (origin) => ({
+  ui: {
+    prefersBorder: true,
+    domain: origin,
+    csp: { connectDomains: [], resourceDomains: [] },
+  },
+});
+
+/** The chart view as an MCP Apps resource. */
 function chartResource(origin) {
   return {
     uri: CHART_VIEW_URI,
     mimeType: CHART_VIEW_MIME,
     text: CHART_VIEW_HTML,
-    _meta: {
-      ui: {
-        prefersBorder: true,
-        csp: { connectDomains: [], resourceDomains: [] },
-      },
-      "openai/widgetDescription":
-        "Shows the graphs and theory checks of a Physix motion run, or a bar chart of a stress comparison, with a button that opens the Physix lab.",
-      "openai/widgetPrefersBorder": true,
-      "openai/widgetCSP": {
-        connect_domains: [],
-        resource_domains: [],
-        redirect_domains: [origin],
-      },
-    },
+    _meta: chartViewMeta(origin),
   };
 }
 
@@ -467,7 +469,10 @@ async function handleMcp(request) {
             uri: CHART_VIEW_URI,
             name: "chart-view",
             title: "Physix chart view",
+            description:
+              "Shows the graphs and theory checks of a Physix motion run, or a bar chart of a stress comparison, with a button that opens the Physix lab.",
             mimeType: CHART_VIEW_MIME,
+            _meta: chartViewMeta(new URL(request.url).origin),
           },
         ],
       },
