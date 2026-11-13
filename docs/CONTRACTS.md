@@ -19,6 +19,7 @@ consumer in the same change.
 | Motion sweep | `physix.sweep/1` | `web/src/lab/motion/sweep.ts`, `sweepPool.ts` | `sweep.test.ts`, `sweepExport.test.ts` |
 | Line probe | `physix.probe/1` | `physics/probe.py`, `web/src/lab/stress/probe.ts` | `tests/fixtures/line_probe_v1.json` |
 | Share link | `physix.share/1` | `web/src/share.ts`, `mcp/sites/worker.mjs` | `share.test.ts`, `lab/shared.test.ts`, `worker.test.mjs` |
+| Scene request | `physix.scene-request/1` | `web/src/lab/buildScene.ts` | `buildScene.test.ts`, `worker.test.mjs` |
 
 ## Units and coordinates
 
@@ -421,6 +422,46 @@ the set-up only: runs, solves and results are recomputed when it opens.
 The hosted `compare_stress` tool adds `share_url` to each result. The link points to the
 `/` page of the same origin and opens that result's `case`, so a student can open in the lab
 the exact case that a chat reports.
+
+## Scene request (`physix.scene-request/1`)
+
+A scene request describes a Motion problem by the values that matter and leaves the rest to
+the lab's defaults. `buildScene` (`web/src/lab/buildScene.ts`) turns it into a validated
+`physix.lab/2` scene, and the hosted `build_scene` tool calls it.
+
+- `template` names a starting scene, default `blank`. `name`, `gravity`, `floorFriction`,
+  `airDensity` and `linearDrag` override the template's values.
+- `objects`, when given, replaces the template's parts. Each part needs a `kind` and may
+  give an `id` (default `<kind>-<n>`) and any of that kind's numeric fields. Every field it
+  leaves out takes the default of a newly added part in the lab.
+- A block, ball or cylinder may also give:
+  - `material`, which sets friction and restitution from the library and keeps the mass;
+    explicit fields override it;
+  - `launch: {speed, elevation}` in place of `vx` and `vy`;
+  - `force: {x, y, start, end}`;
+  - `on_ramp: {ramp, fraction}`, which places it at rest on the surface of a ramp in the
+    same request, as the lab does. `fraction` runs from 0 at the top to 1 at the foot
+    (default 0.23). The part must fit within the ramp's length and width, and must not
+    also give `x`, `y`, `z`, `vx`, `vy`, `rotation` or `launch`.
+- A pendulum may give `link`; a rope defaults to no rod mass.
+
+Unknown fields are rejected. Each part is validated alone, so an error names it as
+`objects[i]`, and then the whole scene is validated with `parseScene`. Errors are
+`SceneRequestError` with a `field` path such as `objects[1].on_ramp.fraction`. The result
+is `{scene, defaults}`, where `defaults` lists, for each part ID, the fields taken from
+defaults.
+
+`motionDomain()` describes the request for agents: conventions, templates, materials, and
+each kind's fields with their units, limits and defaults. `sceneRequestSchema()` is the
+JSON Schema of a request. A test checks both against the lab's part defaults.
+
+### Hosted scene (`physix.hosted-scene/1`)
+
+`build_scene` returns `{schema, source: "scene_builder", scene, defaults, share_url,
+simulated: false, note}`. The scene is validated but not simulated. The lab simulates it in
+the browser, with its graphs, when the link opens. An invalid request returns
+`{error: "invalid_scene", message, field?}` with `isError`. `describe_domain` adds
+`motion`, the output of `motionDomain()`, beside the stress domain.
 
 ## Experiment (`physix.experiment/1`)
 

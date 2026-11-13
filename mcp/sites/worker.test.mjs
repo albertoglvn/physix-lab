@@ -41,7 +41,7 @@ test("supports current Sites discovery and legacy MCP initialization", async () 
   const list = await rpc("tools/list", {}, { signedIn: false });
   assert.deepEqual(
     (await list.json()).result.tools.map(({ name }) => name),
-    ["describe_domain", "compare_stress"],
+    ["describe_domain", "compare_stress", "build_scene"],
   );
 });
 
@@ -105,6 +105,72 @@ test("links each compared case to the identical case in the lab", async () => {
   assert.equal(query.get("study"), "stress");
   assert.match(query.get("case"), /^[A-Za-z0-9_-]+$/);
   assert.deepEqual(await decodeShare(query.get("case")), result.case);
+});
+
+async function build(args) {
+  const reply = await rpc("tools/call", {
+    name: "build_scene",
+    arguments: args,
+  });
+  return (await reply.json()).result;
+}
+
+test("describes the motion domain for build_scene", async () => {
+  const reply = await rpc("tools/call", { name: "describe_domain" });
+  const { motion } = (await reply.json()).result.structuredContent;
+  assert.equal(motion.scene_version, "physix.lab/2");
+  assert.deepEqual(motion.parts.ramp.angle, {
+    unit: "deg",
+    min: 5,
+    max: 55,
+    default: 26,
+    about: "incline; it rises towards −x",
+  });
+  assert.ok(motion.templates.incline);
+  assert.ok(motion.materials.ice);
+});
+
+test("builds a motion scene and links to it in the lab", async () => {
+  const reply = await build({
+    name: "Block on a 30 degree incline",
+    objects: [
+      { kind: "ramp", angle: 30, friction: 0.25 },
+      { kind: "block", mass: 5, on_ramp: { ramp: "ramp-1" } },
+    ],
+  });
+  const result = reply.structuredContent;
+  assert.equal(reply.isError, undefined);
+  assert.equal(result.source, "scene_builder");
+  assert.equal(result.simulated, false);
+  assert.equal(result.scene.version, "physix.lab/2");
+  const [ramp, block] = result.scene.objects;
+  assert.equal(ramp.angle, 30);
+  assert.equal(block.rotation, -30);
+  assert.deepEqual(result.defaults["block-1"], ["size", "restitution"]);
+  const url = new URL(result.share_url);
+  assert.equal(url.origin, site);
+  const query = new URLSearchParams(url.hash.replace(/^#\/lab\?/, ""));
+  assert.equal(query.get("study"), "motion");
+  assert.deepEqual(await decodeShare(query.get("scene")), result.scene);
+});
+
+test("reports the field of an invalid scene request", async () => {
+  for (const [args, field] of [
+    [{ objects: [{ kind: "ball", mass: 500 }] }, "objects[0].mass"],
+    [{ objects: [{ kind: "rocket" }] }, "objects[0].kind"],
+    [{ objects: [{ kind: "ramp", colour: "red" }] }, "objects[0].colour"],
+    [
+      { objects: [{ kind: "block", on_ramp: { ramp: "ramp-9" } }] },
+      "objects[0].on_ramp.ramp",
+    ],
+    [{ template: "rocket" }, "template"],
+    [{ gravity: "high" }, "gravity"],
+  ]) {
+    const result = await build(args);
+    assert.equal(result.isError, true, JSON.stringify(args));
+    assert.equal(result.structuredContent.error, "invalid_scene");
+    assert.equal(result.structuredContent.field, field);
+  }
 });
 
 test("returns explicit errors for unsupported and malformed experiments", async () => {

@@ -78,12 +78,23 @@ blocks.
 
 ## Hosted Physix in ChatGPT
 
-The hosted plugin offers `describe_domain` and `compare_stress` only. They return cached
-scikit-fem reference results for the example plate and L-bracket at the listed hole radii,
-scaled linearly by `load_multiplier`; the source is `fem_reference` or
-`fem_reference_scaled`. Each `compare_stress` result carries a `share_url`. Give the student
-that link for each case you report, so they can open the identical case in the Physix lab.
-Never edit the link or build one by hand.
+The hosted plugin offers `describe_domain`, `compare_stress` and `build_scene`. Call
+`describe_domain` first: it lists the stress domain and, under `motion`, the scene
+conventions, templates, part kinds, fields, units, limits and defaults.
+
+- `compare_stress` returns cached scikit-fem reference results for the example plate and
+  L-bracket at the listed hole radii, scaled linearly by `load_multiplier`. The source is
+  `fem_reference` or `fem_reference_scaled`.
+- `build_scene` turns a mechanics problem into a lab scene. Pick the closest template or
+  list the parts, and give only the values the problem states, in SI units and degrees.
+  Use `on_ramp` to rest a body on a ramp and `launch` for a speed and an elevation. If it
+  returns `invalid_scene`, fix the named `field` and call again. Tell the student which
+  defaults the result lists when they matter, such as a block's size on a ramp. The scene
+  is not simulated: do not quote results from it. The lab simulates it and draws its graphs
+  when the link opens.
+
+Every result carries a `share_url`. Give the student that link for each case or scene you
+report, so they can open it in the Physix lab. Never edit a link or build one by hand.
 
 ## 5. Report
 

@@ -1,8 +1,15 @@
 import reference from "./reference-stress.json" with { type: "json" };
+import {
+  buildScene,
+  motionDomain,
+  SceneRequestError,
+  sceneRequestSchema,
+} from "../../web/src/lab/buildScene.ts";
 
 const VERSION = "2026-07-28";
 const PREVIOUS_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const MAX_REQUEST_BYTES = 16_384;
+const MAX_SHARE_CHARS = 8192;
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const identityHeader = "oai-authenticated-user-id";
 const personalPlugins = "https://chatgpt.com/plugins?view=personal";
@@ -15,9 +22,9 @@ const domain = Object.entries(reference.families).map(([family, entry]) => ({
 const tools = [
   {
     name: "describe_domain",
-    title: "List supported stress experiments",
+    title: "List supported experiments",
     description:
-      "Return the exact hosted plate and L-bracket geometries, supported hole radii and load directions for 2D static plane-stress experiments. Use this before changing geometry.",
+      "Return what Physix supports. Stress: the exact hosted plate and L-bracket geometries, supported hole radii and load directions for 2D static plane-stress experiments. Motion: the scene conventions, templates, part kinds with their fields, units, limits and defaults, and materials for build_scene. Call this before comparing stress or building a scene.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -72,6 +79,18 @@ const tools = [
       openWorldHint: false,
     },
   },
+  {
+    name: "build_scene",
+    title: "Build a motion experiment",
+    description:
+      "Build a rigid-body motion experiment (blocks, balls and cylinders on ramps or the floor, Atwood pulleys, pendulums, springs, launches, applied forces, air drag) in the Physix lab and return a share_url that opens it. Give only the values the problem states; every other field takes the lab default, and the result lists which defaults were used. The scene is validated, not simulated: the lab simulates it in the browser and plots its graphs when the link opens. Give the share_url to the user unchanged.",
+    inputSchema: sceneRequestSchema(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+  },
 ];
 
 function object(value) {
@@ -110,12 +129,41 @@ async function encodeShare(value) {
     .replace(/=+$/, "");
 }
 
-async function shareUrl(origin, caseData) {
-  const query = new URLSearchParams({
-    study: "stress",
-    case: await encodeShare(caseData),
-  });
+async function shareUrl(origin, study, value) {
+  const payload = await encodeShare(value);
+  if (payload.length > MAX_SHARE_CHARS) return null;
+  const key = study === "motion" ? "scene" : "case";
+  const query = new URLSearchParams({ study, [key]: payload });
   return `${origin}/#/lab?${query}`;
+}
+
+async function buildSceneResult(args, origin) {
+  let built;
+  try {
+    built = buildScene(args);
+  } catch (error) {
+    if (!(error instanceof SceneRequestError)) throw error;
+    return {
+      error: "invalid_scene",
+      message: error.message,
+      ...(error.field ? { field: error.field } : {}),
+    };
+  }
+  const url = await shareUrl(origin, "motion", built.scene);
+  if (!url)
+    return {
+      error: "invalid_scene",
+      message: "The scene is too large for a share link; use fewer parts.",
+    };
+  return {
+    schema: "physix.hosted-scene/1",
+    source: "scene_builder",
+    scene: built.scene,
+    defaults: built.defaults,
+    share_url: url,
+    simulated: false,
+    note: "The scene is validated but not simulated. The Physix lab simulates it in the browser and plots its graphs when the share_url opens.",
+  };
 }
 
 async function compareStress(args, origin) {
@@ -173,7 +221,7 @@ async function compareStress(args, origin) {
       radius_m: row.radius_m,
       load_multiplier: scale,
       case: caseData,
-      share_url: await shareUrl(origin, caseData),
+      share_url: await shareUrl(origin, "stress", caseData),
       source: scale === 1 ? "fem_reference" : "fem_reference_scaled",
       reference_case_id: row.reference_case_id,
       mesh: row.mesh,
@@ -296,7 +344,7 @@ async function handleMcp(request) {
         capabilities: { tools: {} },
         serverInfo: { name: "physix", title: "Physix", version: "1.0.0" },
         instructions:
-          "Call describe_domain before comparing supported stress cases. Each compared case carries a share_url that opens the identical case in the Physix lab.",
+          "Call describe_domain first. compare_stress returns cached reference stress results; build_scene builds a motion experiment. Both return share_url links that open the identical case or scene in the Physix lab; give them to the user unchanged.",
       },
     });
   }
@@ -318,12 +366,15 @@ async function handleMcp(request) {
       families: domain,
       load_multiplier: { min: 0.01, max: 4, default: 1 },
       solver: reference.solver,
+      motion: motionDomain(),
     };
   } else if (params.name === "describe_domain") {
     result = {
       error: "invalid_request",
       message: "describe_domain takes no arguments.",
     };
+  } else if (params.name === "build_scene") {
+    result = await buildSceneResult(args, new URL(request.url).origin);
   } else if (params.name === "compare_stress") {
     result = await compareStress(args, new URL(request.url).origin);
   } else {

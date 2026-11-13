@@ -50,8 +50,8 @@ describe("share links", () => {
     );
   });
 
-  it("opens the case a hosted compare_stress result links to", async () => {
-    // Variable path: the hosted worker is plain JavaScript outside this project.
+  /** Calls a hosted tool; the Worker is plain JavaScript outside this project. */
+  async function hosted(name: string, args: unknown) {
     const path = new URL("../../../mcp/sites/worker.mjs", import.meta.url).href;
     const worker = (await import(/* @vite-ignore */ path)) as {
       default: { fetch: (request: Request, env: unknown) => Promise<Response> };
@@ -67,18 +67,28 @@ describe("share links", () => {
           jsonrpc: "2.0",
           id: 1,
           method: "tools/call",
-          params: {
-            name: "compare_stress",
-            arguments: {
-              family: "plate",
-              cases: [{ radius_m: 0.016, load_multiplier: 2 }],
-            },
-          },
+          params: { name, arguments: args },
         }),
       }),
       {},
     );
-    const { results } = (await reply.json()).result.structuredContent;
+    return (await reply.json()).result.structuredContent;
+  }
+
+  it("opens the scene a hosted build_scene result links to", async () => {
+    const built = (await hosted("build_scene", {
+      objects: [{ kind: "spring", stiffness: 200, offset: 0.3 }],
+    })) as { scene: unknown; share_url: string };
+    const opened = await loadShared(locate(built.share_url));
+    expect(opened.error).toBeUndefined();
+    expect(opened.scene).toEqual(built.scene);
+  });
+
+  it("opens the case a hosted compare_stress result links to", async () => {
+    const { results } = await hosted("compare_stress", {
+      family: "plate",
+      cases: [{ radius_m: 0.016, load_multiplier: 2 }],
+    });
     const [result] = results as { case: unknown; share_url: string }[];
     const opened = await loadShared(locate(result.share_url));
     expect(opened.error).toBeUndefined();
