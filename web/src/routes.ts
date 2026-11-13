@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { presetNames, type Preset } from "./lab/scene";
+import { MAX_SHARE_CHARS } from "./share";
 
 /**
  * Hash routes. `#/` is the home page and `#/lab` is the only workspace; its query selects
@@ -15,6 +16,10 @@ export type LabLocation = {
   template?: Preset;
   example?: StressExample;
   sheet?: LabSheet;
+  /** An encoded shared Motion scene (`physix.share/1`). */
+  scene?: string;
+  /** An encoded shared Stress case (`physix.share/1`). */
+  case?: string;
 };
 
 export type HashLocation = { path: string; query: URLSearchParams };
@@ -35,6 +40,8 @@ const isPreset = (value: string | null | undefined): value is Preset =>
   !!value && Object.hasOwn(presetNames, value);
 const isExample = (value: string | null | undefined): value is StressExample =>
   value === "plate" || value === "bracket";
+const isShare = (value: string | null | undefined): value is string =>
+  !!value && value.length <= MAX_SHARE_CHARS && /^[A-Za-z0-9_-]+$/.test(value);
 const isSheet = (value: string | null | undefined): value is LabSheet =>
   SHEETS.includes(value as LabSheet);
 
@@ -47,10 +54,18 @@ export function labHash(location: LabLocation): string {
     query.set("example", location.example);
   if (location.study === "stress" && location.sheet)
     query.set("sheet", location.sheet);
+  if (location.study === "motion" && location.scene)
+    query.set("scene", location.scene);
+  if (location.study === "stress" && location.case)
+    query.set("case", location.case);
   return `/lab?${query}`;
 }
 
-/** Reads the lab query; unknown values fall back to the motion study. */
+/**
+ * Reads the lab query; unknown values fall back to the motion study. A shared `scene` or
+ * `case` is kept only when it is well-formed base64url within the share length limit; the
+ * lab decodes and validates it.
+ */
 export function parseLabQuery(query: URLSearchParams): LabLocation {
   const study: Study = query.get("study") === "stress" ? "stress" : "motion";
   const location: LabLocation = { study };
@@ -60,6 +75,10 @@ export function parseLabQuery(query: URLSearchParams): LabLocation {
   if (study === "motion" && isPreset(template)) location.template = template;
   if (study === "stress" && isExample(example)) location.example = example;
   if (study === "stress" && isSheet(sheet)) location.sheet = sheet;
+  const scene = query.get("scene");
+  const shared = query.get("case");
+  if (study === "motion" && isShare(scene)) location.scene = scene;
+  if (study === "stress" && isShare(shared)) location.case = shared;
   return location;
 }
 

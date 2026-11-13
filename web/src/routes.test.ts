@@ -14,6 +14,38 @@ const lab = (hash: string): LabLocation => {
   return parseLabQuery(query);
 };
 
+describe("shared lab links", () => {
+  it("keeps a well-formed shared value for its own study", () => {
+    expect(lab("/lab?study=motion&scene=ab_C-9")).toEqual({
+      study: "motion",
+      scene: "ab_C-9",
+    });
+    expect(lab("/lab?study=stress&case=xyz")).toEqual({
+      study: "stress",
+      case: "xyz",
+    });
+    expect(lab("/lab?study=motion&case=xyz")).toEqual({ study: "motion" });
+    expect(lab("/lab?study=stress&scene=xyz")).toEqual({ study: "stress" });
+  });
+
+  it("drops malformed or oversized shared values", () => {
+    expect(lab("/lab?study=stress&case=a%2Bb")).toEqual({ study: "stress" });
+    expect(lab("/lab?study=stress&case=")).toEqual({ study: "stress" });
+    expect(lab(`/lab?study=motion&scene=${"a".repeat(8193)}`)).toEqual({
+      study: "motion",
+    });
+  });
+
+  it("writes the shared value into the hash", () => {
+    expect(labHash({ study: "stress", case: "abc" })).toBe(
+      "/lab?study=stress&case=abc",
+    );
+    expect(labHash({ study: "motion", scene: "abc", case: "x" })).toBe(
+      "/lab?study=motion&scene=abc",
+    );
+  });
+});
+
 describe("hash parsing", () => {
   it("splits the path from the query and trims trailing slashes", () => {
     expect(parseHash("").path).toBe("/");

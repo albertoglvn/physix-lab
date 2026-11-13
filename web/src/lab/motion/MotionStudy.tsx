@@ -14,6 +14,7 @@ import {
   ArrowUpDown,
   Keyboard,
   LayoutTemplate,
+  Link,
   ListTree,
   Pause,
   Play,
@@ -63,6 +64,7 @@ import {
   type Ramp,
 } from "../scene";
 import { createSimulation, TIME_STEP, type Simulation } from "../simulation";
+import { sceneShareUrl } from "../shared";
 import { useShortcuts } from "../shortcuts";
 import { useHistory } from "../state/history";
 import { Dock } from "../ui/Dock";
@@ -786,6 +788,8 @@ function ObjectFields({
 export type MotionStudyProps = {
   active: boolean;
   template?: Preset;
+  /** A validated scene from a share link; it replaces the template. */
+  initialScene?: LabScene;
   onStudyChange: (study: Study) => void;
 };
 
@@ -793,9 +797,10 @@ export type MotionStudyProps = {
 export function MotionStudy({
   active,
   template = "incline",
+  initialScene,
   onStudyChange,
 }: MotionStudyProps) {
-  const history = useHistory(() => makeScene(template));
+  const history = useHistory(() => initialScene ?? makeScene(template));
   const scene = history.value;
   const [selected, setSelected] = useState<string | null>(() =>
     firstPart(scene),
@@ -1414,6 +1419,24 @@ export function MotionStudy({
           label: "Export data",
           icon: <Download size={15} />,
           onSelect: () => setSheet("export"),
+        },
+        {
+          label: "Copy share link",
+          icon: <Link size={15} />,
+          onSelect: () => {
+            void sceneShareUrl(scene)
+              .then((url) => navigator.clipboard.writeText(url))
+              .then(
+                () =>
+                  toasts.push({
+                    tone: "ok",
+                    message:
+                      "Share link copied. It opens this scene; runs are recomputed.",
+                  }),
+                (error: unknown) =>
+                  toasts.push({ tone: "bad", message: message(error) }),
+              );
+          },
         },
         {
           label: "Reset camera",

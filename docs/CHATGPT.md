@@ -26,6 +26,10 @@ owner shares it. Public plugin directory distribution requires OpenAI review.
   scales the reference load, stress and displacement. Geometry, material and
   boundary conditions stay fixed for each radius. Values are reference-mesh
   summaries, with the reference case ID, solver version, and mesh size.
+- Each `compare_stress` result has a `share_url`. The link opens that exact case in the
+  Physix lab, where the student can see the stress field, probe it, and check it with FEM.
+  The case travels in the URL fragment (`physix.share/1` in `docs/CONTRACTS.md`), so the
+  Worker stores nothing and the host never receives it.
 - Hosted tools expose cached scikit-fem results and their linear scaling. Arbitrary
   geometry, new FEM meshes, optimization, and motion are available through their
   existing local tools or browser lab within each workflow's scope.

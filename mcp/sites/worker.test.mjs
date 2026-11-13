@@ -82,6 +82,31 @@ test("compares bounded cases and scales the reference under a positive load", as
   assert.notEqual(other.reference_case_id, reference.reference_case_id);
 });
 
+async function decodeShare(text) {
+  const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  const stream = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("deflate-raw"));
+  return JSON.parse(await new Response(stream).text());
+}
+
+test("links each compared case to the identical case in the lab", async () => {
+  const reply = await compare({
+    family: "bracket",
+    cases: [{ radius_m: 0.006, load_multiplier: 0.5 }],
+  });
+  const [result] = reply.structuredContent.results;
+  const url = new URL(result.share_url);
+  assert.equal(url.origin, site);
+  assert.equal(url.pathname, "/");
+  assert.equal(url.search, "");
+  const query = new URLSearchParams(url.hash.replace(/^#\/lab\?/, ""));
+  assert.equal(query.get("study"), "stress");
+  assert.match(query.get("case"), /^[A-Za-z0-9_-]+$/);
+  assert.deepEqual(await decodeShare(query.get("case")), result.case);
+});
+
 test("returns explicit errors for unsupported and malformed experiments", async () => {
   for (const [caseData, error] of [
     [{ radius_m: 0.013 }, "unsupported_case"],

@@ -6,6 +6,7 @@ import {
   Home,
   Keyboard,
   LayoutTemplate,
+  Link,
   PenLine,
   Ruler,
   ShieldCheck,
@@ -59,6 +60,7 @@ import {
   useLabPanels,
   type StatusTone,
 } from "../LabFrame";
+import { caseShareUrl } from "../shared";
 import { useShortcuts } from "../shortcuts";
 import { useHistory } from "../state/history";
 import { Dock } from "../ui/Dock";
@@ -113,6 +115,8 @@ export type StressStudyProps = {
   active: boolean;
   example?: StressExample;
   sheet?: LabSheet;
+  /** A validated case from a share link; it replaces the example. */
+  initialCase?: Case;
   onStudyChange: (study: Study) => void;
 };
 
@@ -121,15 +125,20 @@ export function StressStudy({
   active,
   example = "plate",
   sheet: initialSheet,
+  initialCase,
   onStudyChange,
 }: StressStudyProps) {
-  const history = useHistory<Case>(() =>
-    example === "bracket" ? exampleBracket() : examplePlate(),
+  const history = useHistory<Case>(
+    () =>
+      initialCase ??
+      (example === "bracket" ? exampleBracket() : examplePlate()),
   );
   const c = history.value;
-  const [name, setName] = useState(
-    example === "bracket" ? "L-bracket study" : "Plate study",
-  );
+  const [name, setName] = useState(() => {
+    const family = initialCase?.family ?? example;
+    const label = family === "bracket" ? "L-bracket study" : "Plate study";
+    return initialCase ? `Shared ${label.toLowerCase()}` : label;
+  });
   const [field, setField] = useState<FieldKey>("von_mises");
   const [invalidField, setInvalidField] = useState<string | null>(null);
   const [sheet, setSheet] = useState<StressSheet>(initialSheet ?? null);
@@ -445,6 +454,28 @@ export function StressStudy({
           label: "Use from an agent",
           icon: <Bot size={15} />,
           onSelect: () => setSheet("agent"),
+        },
+        {
+          label: "Copy share link",
+          icon: <Link size={15} />,
+          onSelect: () => {
+            void caseShareUrl(c)
+              .then((url) => navigator.clipboard.writeText(url))
+              .then(
+                () =>
+                  toasts.push({
+                    tone: "ok",
+                    message:
+                      "Share link copied. It opens this part; results are recomputed.",
+                  }),
+                (error: unknown) =>
+                  toasts.push({
+                    tone: "bad",
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  }),
+              );
+          },
         },
         {
           label: "Keyboard shortcuts",

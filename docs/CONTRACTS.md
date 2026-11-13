@@ -18,6 +18,7 @@ consumer in the same change.
 | Experiment | `physix.experiment/1` | `web/src/lab/state/experiment.ts` | `exports.test.ts` |
 | Motion sweep | `physix.sweep/1` | `web/src/lab/motion/sweep.ts`, `sweepPool.ts` | `sweep.test.ts`, `sweepExport.test.ts` |
 | Line probe | `physix.probe/1` | `physics/probe.py`, `web/src/lab/stress/probe.ts` | `tests/fixtures/line_probe_v1.json` |
+| Share link | `physix.share/1` | `web/src/share.ts`, `mcp/sites/worker.mjs` | `share.test.ts`, `lab/shared.test.ts`, `worker.test.mjs` |
 
 ## Units and coordinates
 
@@ -398,6 +399,28 @@ M L²ω²/6 of kinetic energy, its weight at its middle to the potential energy,
 the momentum, with v the bob's velocity. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
 `extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system
 potential energy includes the elastic energy.
+
+## Share link (`physix.share/1`)
+
+A share link opens the lab on one set-up, carried in the URL fragment so that no server
+stores it and the payload never reaches the host:
+
+- `#/lab?study=motion&scene=<payload>` holds a `physix.lab/2` scene.
+- `#/lab?study=stress&case=<payload>` holds a `physix.case/1` case.
+
+The payload is the UTF-8 JSON of the scene or case, compressed with raw deflate (RFC 1951,
+`CompressionStream("deflate-raw")`) and written in unpadded base64url. It holds at most 8192
+characters and inflates to at most 65536 bytes. The route keeps a payload only when it fits
+that alphabet and length. The lab inflates it, then validates the scene with the scene
+parser or the case with `parseCase` (`web/src/physics/parseCase.ts`). `parseCase` mirrors the
+limits of `case_from_dict` and `validate_case`, runs the client geometry checks, and accepts
+clamped parts only. A link that fails opens the default study with a notice. A link holds
+the set-up only: runs, solves and results are recomputed when it opens.
+
+**Copy share link** in either study's menu writes the link for the current scene or case.
+The hosted `compare_stress` tool adds `share_url` to each result. The link points to the
+`/` page of the same origin and opens that result's `case`, so a student can open in the lab
+the exact case that a chat reports.
 
 ## Experiment (`physix.experiment/1`)
 

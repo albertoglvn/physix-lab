@@ -76,6 +76,15 @@ baseline and the best candidates are then re-solved with FEM. Claim an improveme
 Always give the baseline value, the selected value and the relative change from the `fem`
 blocks.
 
+## Hosted Physix in ChatGPT
+
+The hosted plugin offers `describe_domain` and `compare_stress` only. They return cached
+scikit-fem reference results for the example plate and L-bracket at the listed hole radii,
+scaled linearly by `load_multiplier`; the source is `fem_reference` or
+`fem_reference_scaled`. Each `compare_stress` result carries a `share_url`. Give the student
+that link for each case you report, so they can open the identical case in the Physix lab.
+Never edit the link or build one by hand.
+
 ## 5. Report
 
 State the source, the model or solver version, and the timing boundary of every number.

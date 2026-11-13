@@ -33,7 +33,7 @@ const tools = [
     name: "compare_stress",
     title: "Compare stress experiments",
     description:
-      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. This tool returns stress summaries and does not create a new mesh or simulate motion.",
+      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. Each result includes a share_url that opens the identical case in the Physix lab; give it to the user unchanged. This tool returns stress summaries and does not create a new mesh or simulate motion.",
     inputSchema: {
       type: "object",
       required: ["family", "cases"],
@@ -92,7 +92,33 @@ function toolResult(data) {
   };
 }
 
-function compareStress(args) {
+/**
+ * Share links (`physix.share/1`, docs/CONTRACTS.md): the case as raw-deflate JSON in
+ * unpadded base64url, in the URL fragment of the lab, so the link opens the identical case
+ * in the browser without server storage. `web/src/share.ts` reads the same encoding.
+ */
+async function encodeShare(value) {
+  const stream = new Blob([JSON.stringify(value)])
+    .stream()
+    .pipeThrough(new CompressionStream("deflate-raw"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+async function shareUrl(origin, caseData) {
+  const query = new URLSearchParams({
+    study: "stress",
+    case: await encodeShare(caseData),
+  });
+  return `${origin}/#/lab?${query}`;
+}
+
+async function compareStress(args, origin) {
   if (
     !onlyKeys(args, ["family", "cases"]) ||
     typeof args.family !== "string" ||
@@ -147,6 +173,7 @@ function compareStress(args) {
       radius_m: row.radius_m,
       load_multiplier: scale,
       case: caseData,
+      share_url: await shareUrl(origin, caseData),
       source: scale === 1 ? "fem_reference" : "fem_reference_scaled",
       reference_case_id: row.reference_case_id,
       mesh: row.mesh,
@@ -269,7 +296,7 @@ async function handleMcp(request) {
         capabilities: { tools: {} },
         serverInfo: { name: "physix", title: "Physix", version: "1.0.0" },
         instructions:
-          "Call describe_domain before comparing supported stress cases.",
+          "Call describe_domain before comparing supported stress cases. Each compared case carries a share_url that opens the identical case in the Physix lab.",
       },
     });
   }
@@ -298,7 +325,7 @@ async function handleMcp(request) {
       message: "describe_domain takes no arguments.",
     };
   } else if (params.name === "compare_stress") {
-    result = compareStress(args);
+    result = await compareStress(args, new URL(request.url).origin);
   } else {
     return rpcError(id, -32602, "Unknown Physix tool.");
   }
