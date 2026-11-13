@@ -115,6 +115,71 @@ export interface VerifyResponse extends PredictionResponse {
   surrogate_field?: FieldPayload;
 }
 
+/** Mesh presets the solver offers, coarse to fine. */
+export const MESH_PRESETS = ["fast", "reference", "fine"] as const;
+export type MeshPreset = (typeof MESH_PRESETS)[number];
+
+/** A ConvergenceReport between one level and the next finer one. */
+export interface LevelChange {
+  hotspot_rel: number;
+  field_rel_l2: number;
+  coarse_nodes: number;
+  fine_nodes: number;
+  hotspot_tolerance: number;
+  field_tolerance: number;
+  converged: boolean;
+}
+
+export interface ConvergenceLevel {
+  preset: MeshPreset;
+  nodes: number;
+  elements: number;
+  /** sqrt(solid area / elements), in metres. */
+  element_size: number;
+  hotspot: HotspotSummary & {
+    stress_concentration: number;
+    exclusion_band: number;
+  };
+  /** Von Mises stress at each probe, in Pa. */
+  probes: number[];
+  solve_ms: number;
+  to_finer: LevelChange | null;
+  passes: boolean;
+}
+
+export type ConvergenceKind =
+  "monotonic" | "oscillatory" | "divergent" | "converged";
+
+/** Richardson extrapolation and grid convergence index (relative) from three levels. */
+export interface RichardsonFit {
+  kind: ConvergenceKind;
+  order: number | null;
+  order_used: number | null;
+  safety_factor: number;
+  extrapolated: number | null;
+  error_fine: number;
+  gci_fine: number;
+  ratio_fine: number;
+  ratio_coarse: number;
+}
+
+export interface ConvergenceResponse {
+  schema: "physix.convergence/1";
+  source: "fem";
+  case_id: string;
+  solver: { name: string; version: string; element: string };
+  presets: Record<string, Record<string, number>>;
+  levels: ConvergenceLevel[];
+  hotspot: RichardsonFit;
+  probes: (RichardsonFit & { x: number; y: number })[];
+  promoted: MeshPreset | null;
+  hotspot_tolerance: number;
+  field_tolerance: number;
+  gci_safety_factor: number;
+  hotspot_rule: string;
+  timing: { total_ms: number; boundary: string; browser_ms?: number };
+}
+
 export interface OptimizeVariable {
   path: string;
   min: number;
@@ -262,9 +327,20 @@ export const api = {
       include_field?: boolean;
       include_mesh?: boolean;
       prediction?: unknown;
+      mesh_preset?: MeshPreset;
     } = {},
     signal?: AbortSignal,
   ) => request<VerifyResponse>("/api/verify", { case: c, ...opts }, signal),
+  convergence: (
+    c: Case,
+    opts: { presets?: MeshPreset[]; probes?: { x: number; y: number }[] } = {},
+    signal?: AbortSignal,
+  ) =>
+    request<ConvergenceResponse>(
+      "/api/convergence",
+      { case: c, ...opts },
+      signal,
+    ),
   optimize: (
     body: {
       case: Case;

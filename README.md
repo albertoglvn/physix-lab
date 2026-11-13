@@ -55,6 +55,12 @@ baseline and finalists. The homepage stress previews are the reference-mesh von 
 rasters for `physics.examples.example_plate()` and `example_bracket()`, with their own
 peak-based colour scales. The ordinary web build connects to the local Python API.
 
+In the lab, a Stress sweep varies one hole or bracket dimension. The ensemble screens each
+point, FEM solves the points the fallback policy rejects, and you can check any screened
+point with FEM. Each point shows its source. The mesh convergence sheet solves the part on
+three meshes and reports Richardson extrapolation and the grid convergence index. It then
+offers the finest mesh within tolerance as the mesh for later FEM checks.
+
 The same models run in three places:
 
 - **Agents:** an MCP server with `describe_domain`, `predict_stress`, `verify_with_solver` and

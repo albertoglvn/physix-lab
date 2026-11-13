@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -15,6 +17,8 @@ from data.raster import COLS, ROWS, solid_mask
 from model.ensemble import ensemble_statistics
 from physics.case import Case, case_from_dict
 from physics.examples import bracket_dict, plate_dict
+
+CONVERGENCE_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "convergence_v1.json"
 
 
 class FakeEnsemble:
@@ -227,3 +231,50 @@ def test_optimize_respects_bounds_constraints_and_verifies(tmp_path) -> None:
         assert out["improvement"]["relative_change"] < 0
     again = svc.optimize(request)
     assert again["selected"]["variables"] == sel["variables"]  # seeded and deterministic
+
+
+def test_convergence_reports_levels_provenance_and_promotion(tmp_path) -> None:
+    svc = make_service(tmp_path)
+    case = plate_dict()
+    out = svc.convergence(case, probes=[{"x": 0.01, "y": 0.02}])
+    assert out["schema"] == "physix.convergence/1" and out["source"] == "fem"
+    assert out["case_id"] == case_from_dict(case).case_id()
+    assert [level["preset"] for level in out["levels"]] == ["fast", "reference", "fine"]
+    assert set(out["presets"]) == {"fast", "reference", "fine"}
+    assert out["promoted"] in ("fast", "reference", "fine")
+    assert out["hotspot"]["kind"] in ("monotonic", "oscillatory", "divergent", "converged")
+    assert len(out["probes"]) == 1 and len(out["levels"][0]["probes"]) == 1
+    assert out["timing"]["total_ms"] > 0
+    # The shared fixture the web sheet renders has the service's layout.
+    fixture = json.loads(CONVERGENCE_FIXTURE.read_text(encoding="utf-8"))
+    assert set(fixture["study"]) <= set(out)
+    assert set(fixture["study"]["levels"][0]) == set(out["levels"][0])
+    assert set(fixture["study"]["hotspot"]) == set(out["hotspot"])
+    assert set(fixture["study"]["probes"][0]) == set(out["probes"][0])
+    assert fixture["solver"] == out["solver"]
+    # The promoted level then serves as the verification mesh.
+    v = svc.verify(case, mesh_preset=out["promoted"])
+    assert v["solver"]["mesh_preset"] == out["promoted"]
+    assert (
+        v["solver"]["nodes"]
+        == out["levels"][[level["preset"] for level in out["levels"]].index(out["promoted"])][
+            "nodes"
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "field"),
+    [
+        ({"presets": ["fast", "fast", "fine"]}, "presets"),
+        ({"presets": ["fast", "reference", 3]}, "presets"),
+        ({"probes": [{"x": 0.01}]}, "probes"),
+        ({"probes": [{"x": -1.0, "y": 0.0}]}, "probes"),
+    ],
+)
+def test_convergence_rejects_invalid_requests(tmp_path, kwargs, field) -> None:
+    svc = make_service(tmp_path)
+    out = svc.convergence(plate_dict(), **kwargs)
+    assert out["error"] == "invalid_request" and out["field"] == field
+    assert svc.convergence({"family": "plate"})["error"] == "invalid_case"
+    assert svc.verify(plate_dict(), mesh_preset="huge")["field"] == "mesh_preset"

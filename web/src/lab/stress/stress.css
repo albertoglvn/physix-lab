@@ -195,3 +195,26 @@
   border-color: var(--px-ink);
   color: var(--px-ink);
 }
+
+/* Stress sweep and convergence study sheets. */
+.lab-stress-study {
+  display: grid;
+  gap: 12px;
+}
+.lab-stress-results {
+  display: grid;
+  gap: 10px;
+}
+.lab-stress-results .lab-table td:nth-child(n + 6) {
+  white-space: normal;
+  text-align: left;
+}
+.lab-stress-check {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.lab-plot-whiskers line {
+  stroke-width: 1.25;
+  opacity: 0.7;
+}

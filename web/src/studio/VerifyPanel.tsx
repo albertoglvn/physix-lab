@@ -8,6 +8,7 @@ import {
   api,
   ApiError,
   fieldComponent,
+  type MeshPreset,
   type VerifyResponse,
 } from "../api/client";
 import type { SurrogatePrediction } from "../inference/engine";
@@ -39,6 +40,7 @@ export function VerifyPanel({
   browser,
   onInvalid,
   onResult,
+  meshPreset,
   ref,
 }: {
   c: Case;
@@ -46,6 +48,8 @@ export function VerifyPanel({
   online: boolean;
   browser: boolean;
   onInvalid: (field: string | null) => void;
+  /** A mesh preset to solve with instead of the service default, such as a promoted one. */
+  meshPreset?: MeshPreset;
   /** Called with each finished check, so the lab can reuse the solver field. */
   onResult?: (run: VerifyRun) => void;
   ref?: Ref<VerifyHandle>;
@@ -65,6 +69,7 @@ export function VerifyPanel({
       const data = await api.verify(c, {
         include_field: true,
         include_mesh: true,
+        ...(meshPreset ? { mesh_preset: meshPreset } : {}),
       });
       setRun({
         forCase: key,

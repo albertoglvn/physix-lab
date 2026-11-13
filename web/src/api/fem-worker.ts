@@ -36,7 +36,12 @@ def request(path, data):
     if path == "/api/verify":
         response = service.verify(
             body["case"], prediction=body.get("prediction"),
-            include_field=bool(body.get("include_field")), include_mesh=bool(body.get("include_mesh"))
+            include_field=bool(body.get("include_field")), include_mesh=bool(body.get("include_mesh")),
+            mesh_preset=body.get("mesh_preset")
+        )
+    elif path == "/api/convergence":
+        response = service.convergence(
+            body["case"], presets=body.get("presets"), probes=body.get("probes")
         )
     elif path == "/api/optimize":
         response = service.optimize(body)
@@ -52,6 +57,8 @@ def request(path, data):
         timing["browser_ms"] = 1000 * (time.perf_counter() - started)
         if path == "/api/optimize":
             timing["boundary"] = "browser worker, includes FEM verification"
+        elif path == "/api/convergence":
+            timing["boundary"] = "browser worker, three solves and comparisons"
     return json.dumps(_clean(response), allow_nan=False)
 `;
 

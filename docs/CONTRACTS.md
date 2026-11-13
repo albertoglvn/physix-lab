@@ -133,7 +133,8 @@ disagreement and solver discretisation error are reported separately and never c
 | `GET /api/domain` | | Case schema summary, materials, surrogate domain and examples |
 | `GET /api/examples` | | Named example cases |
 | `POST /api/predict` | `{case, include_field?, force_fem?, include_mesh?}` | Prediction response |
-| `POST /api/verify` | `{case, prediction?, include_field?, include_mesh?}` | FEM response plus `discrepancy` |
+| `POST /api/verify` | `{case, prediction?, include_field?, include_mesh?, mesh_preset?}` | FEM response plus `discrepancy` |
+| `POST /api/convergence` | `{case, presets?, probes?}` | `physix.convergence/1` study |
 | `POST /api/optimize` | `{case, variables, objective?, constraints?, budget?, seed?}` | `physix.optimize/1` report |
 
 Validation errors return HTTP 422, solver failures 500, and unknown routes 404. Every
@@ -190,6 +191,82 @@ trace. `verified_improvement` is true only when the selected design is FEM-feasi
 FEM-better than the FEM baseline.
 
 MCP tools use the same service functions and return the same JSON.
+
+### Mesh preset override
+
+`mesh_preset` on `/api/verify` is one of `fast`, `reference` or `fine` and replaces the
+service default for that solve only. The response's `solver.mesh_preset` names the mesh
+used. An unknown name returns 422 with `field: "mesh_preset"`.
+
+### Convergence study (`physix.convergence/1`)
+
+The study solves the case on three distinct presets (default `fast`, `reference`, `fine`).
+`probes` holds up to eight `{x, y}` points in metres, each strictly inside the solid.
+`levels` run from coarse to fine, sorted by element size `h = sqrt(solid area / elements)`
+in metres. Each level holds:
+
+- `preset`, `nodes`, `elements` and `element_size`;
+- `hotspot`: the service hotspot on the mesh basis, in Pa;
+- `probes`: von Mises at each probe, in Pa;
+- `solve_ms`;
+- `to_finer`: the convergence report against the next finer level, with `hotspot_rel` and
+  `field_rel_l2` (von Mises on a fixed grid of points inside the solid), or null on the
+  finest level;
+- `passes`.
+
+A coarser level passes when both changes are within 2%. The finest level passes when its
+hotspot GCI is within 2%. `promoted` is the finest passing level, or null.
+
+`hotspot`, and each `probes` entry (with its `x` and `y`), follow Celik et al. (2008) for
+three levels with unequal ratios. The fields are:
+
+- `kind`: `monotonic`, `oscillatory`, `divergent` or `converged`.
+- `order`: the observed order p, from fixed-point iteration; null when undefined.
+- `order_used`: min(p, 2) for monotonic convergence; otherwise the formal order 2 of P2
+  elements.
+- `safety_factor`: 1.25 for monotonic convergence, else 3.
+- `extrapolated`: the Richardson value in Pa for monotonic convergence (the fine value when
+  `converged`), else null.
+- `error_fine`: the relative change between the two finest levels.
+- `gci_fine`: the relative fine-grid convergence index.
+- `ratio_fine` and `ratio_coarse`: the refinement ratios r21 and r32.
+
+The response adds `source: "fem"`, `case_id`, `solver`, the settings of each preset,
+`hotspot_tolerance`, `field_tolerance`, `gci_safety_factor`, `hotspot_rule` and `timing`
+(three solves and comparisons, excluding transport). Invalid presets or probes return 422,
+and solver failures return 500. The browser worker serves the same route.
+`tests/fixtures/convergence_v1.json` holds the study of the canonical plate with two probes,
+with solve times zeroed. The service test checks its layout, and the web sheet renders it.
+
+The lab's convergence sheet takes its probes at a quarter, half and three quarters along
+the current line probe. It keeps only points more than 2% of the width inside the solid.
+While the student keeps the promoted mesh adopted, it passes that mesh as `mesh_preset` to
+FEM checks of the same case.
+
+### Stress sweep (`physix.stress-sweep/1`)
+
+A Stress sweep varies one variable from the optimizer's set, using its paths. It takes up
+to 41 values in metres, evenly spaced with both ends included. Each point records its
+source and its sweep value in metres:
+
+- `surrogate`: the in-browser ensemble accepted the point.
+- `fem_fallback`: the point was solved with a forced FEM predict. This happens when the
+  ensemble rejected it (`out_of_domain`, `high_disagreement` or `non_finite_prediction`),
+  when the part is taller than the model frame (`outside_frame`), or when no model is loaded
+  (`model_unavailable`).
+- `fem`: the student checked a screened point; the screen is kept.
+
+A point whose geometry is invalid, or that needs FEM while the solver is offline, has no
+value and gives the reason. FEM points use the solver's raster hotspot when the case fits
+the frame, so they compare with the surrogate on the same mask. The surrogate error,
+|surrogate − FEM| / FEM, is reported only over those raster-basis points. Ensemble
+disagreement is drawn as a ±1σ whisker on surrogate points and is never combined with
+solver error.
+
+The CSV export starts with `#` lines for the schema, family, variable, point count, model
+id and disagreement threshold, the hotspot rule and the source meanings. Its columns are
+`point, x, x_unit, source, hotspot, hotspot_x, hotspot_y, basis, surrogate_hotspot,
+disagreement, fem_hotspot, mesh_preset, unit, note`, with lengths in m and stresses in Pa.
 
 ## Motion scene (`physix.lab/2`)
 

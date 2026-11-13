@@ -1,6 +1,8 @@
 import {
   Bot,
+  ChartScatter,
   FileBadge,
+  Grid3x3,
   Home,
   Keyboard,
   LayoutTemplate,
@@ -10,6 +12,7 @@ import {
   SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
+import { api } from "../../api/client";
 import { useMemo, useRef, useState } from "react";
 import type { Case } from "../../physics/case";
 import {
@@ -65,6 +68,14 @@ import { Sheet } from "../ui/Sheet";
 import { toasts } from "../ui/toastStore";
 import { safetyFactor } from "./compare";
 import { HOTSPOT_RULE, ktReferences, measuredKt } from "./concentration";
+import { convergenceCsv, studyProbes } from "./convergence";
+import {
+  ConvergenceSheet,
+  referencePreset,
+  useConvergence,
+} from "./ConvergenceSheet";
+import { stressSweepCsv, type StressSweepDeps } from "./stressSweep";
+import { StressSweepSheet, useStressSweep } from "./StressSweepSheet";
 import { defaultLines, type ProbeLine } from "./probe";
 import { signedPct, StressProbe } from "./StressProbe";
 import { stressSummary } from "./summary";
@@ -76,7 +87,7 @@ const REASONS: Record<string, string> = {
   non_finite_prediction: "non-finite prediction",
 };
 
-type StressSheet = LabSheet | "keys" | null;
+type StressSheet = LabSheet | "keys" | "sweep" | "convergence" | null;
 
 type DockView = "summary" | "probe" | "fem";
 
@@ -131,6 +142,8 @@ export function StressStudy({
   const verify = useRef<VerifyHandle>(null);
   const health = useHealth();
   const engine = useEngine();
+  const sweep = useStressSweep();
+  const convergence = useConvergence();
   const sur = useSurrogate(engine.engine, c);
   const pred = sur.pred;
   const shownCase = sur.forCase ?? c;
@@ -156,6 +169,18 @@ export function StressStudy({
       : null;
   const line = "custom" in probe ? probe.custom : preset!.line;
   const fem = femRun?.forCase === JSON.stringify(c) ? femRun.data : null;
+  const studyPoints = useMemo(() => studyProbes(c, line), [c, line]);
+  const meshPreset = referencePreset(convergence.run, c);
+  const loaded = engine.engine;
+  const sweepDeps: StressSweepDeps = useMemo(
+    () => ({
+      predict: loaded ? (next) => loaded.predict(next) : null,
+      solve: health.online
+        ? (next) => api.predict(next, { force_fem: true })
+        : null,
+    }),
+    [loaded, health.online],
+  );
   const showLine = drawing || (panels.dockOpen && dockView === "probe");
 
   const edit = (next: Case, group?: string) => {
@@ -272,6 +297,47 @@ export function StressStudy({
               <small>
                 {c.family === "plate" ? "Plate" : "L-bracket"} ·{" "}
                 {c.geometry.holes.length} holes
+              </small>
+            </button>
+          </li>
+        </ul>
+      ),
+    },
+    {
+      id: "studies",
+      label: "Studies",
+      icon: <ChartScatter size={18} aria-hidden="true" />,
+      content: (close) => (
+        <ul className="px-pick-list">
+          <li>
+            <button
+              type="button"
+              className="px-pick"
+              onClick={() => {
+                setSheet("sweep");
+                close();
+              }}
+            >
+              <ChartScatter size={15} aria-hidden="true" />
+              Parameter sweep
+              <small>surrogate screen, FEM where needed</small>
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              className="px-pick"
+              onClick={() => {
+                setSheet("convergence");
+                close();
+              }}
+            >
+              <Grid3x3 size={15} aria-hidden="true" />
+              Mesh convergence
+              <small>
+                {meshPreset
+                  ? `reference mesh: ${meshPreset}`
+                  : "three meshes, Richardson and GCI"}
               </small>
             </button>
           </li>
@@ -439,6 +505,57 @@ export function StressStudy({
           >
             <div className="lab-stress">
               <AgentPanel c={c} />
+            </div>
+          </Sheet>
+          <Sheet
+            open={sheet === "sweep"}
+            title="Stress sweep"
+            wide
+            onClose={closeSheet}
+          >
+            <div className="lab-stress">
+              <StressSweepSheet
+                c={c}
+                state={sweep}
+                deps={sweepDeps}
+                modelReady={engine.status === "ready"}
+                online={health.online}
+                onExport={(run) =>
+                  download(
+                    `${slug(name)}-stress-sweep.csv`,
+                    stressSweepCsv(run.base, run.spec, run.points, {
+                      modelId: engine.engine?.manifest.model_id ?? null,
+                      threshold,
+                    }),
+                    "text/csv",
+                  )
+                }
+              />
+            </div>
+          </Sheet>
+          <Sheet
+            open={sheet === "convergence"}
+            title="Mesh convergence"
+            wide
+            onClose={closeSheet}
+          >
+            <div className="lab-stress">
+              <ConvergenceSheet
+                c={c}
+                state={convergence}
+                probes={studyPoints}
+                probeLabel={
+                  preset ? `${preset.label.toLowerCase()} probe` : "drawn line"
+                }
+                online={health.online}
+                onExport={(study) =>
+                  download(
+                    `${slug(name)}-convergence.csv`,
+                    convergenceCsv(study),
+                    "text/csv",
+                  )
+                }
+              />
             </div>
           </Sheet>
           <ShortcutsSheet open={sheet === "keys"} onClose={closeSheet} />
@@ -749,6 +866,7 @@ export function StressStudy({
               pred={sur.forCase === c ? pred : null}
               online={health.online}
               browser={health.source === "browser"}
+              meshPreset={meshPreset}
               onResult={setFemRun}
               onInvalid={(field) => {
                 setInvalidField(field);

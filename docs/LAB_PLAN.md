@@ -6,9 +6,8 @@ with theory, varies parameters, and exports evidence that holds up in a report o
 keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the style rules, and
 this plan cites it wherever the UI changes.
 
-Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator, simulated-pulley, materials, forces-and-drag, links-and-contact-forces,
-run-history and grids-and-perturbations slices; each phase lists its own status. The
+Status: in progress. Phases 0 to 3 are done; each phase lists its own status. Phase 4 has
+not started. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
@@ -840,7 +839,58 @@ Determinism behaves as documented in §4.1.
   - Tests cover grid enumeration and the 400-point and 400-run caps, specs and identities
     for one-variable sweeps, clamped draws, the same perturbed grid on one runner and on three,
     and a CSV and JSON round trip.
-- *Still to do in Phase 3:* Stress sweeps with the convergence study sheet.
+
+*Status, Stress sweeps and the convergence study (done):*
+
+- The Stress rail gains **Studies**, which opens two sheets: **Parameter sweep** and **Mesh
+  convergence**.
+- A Stress sweep varies one hole or bracket dimension over up to 41 values. The ensemble
+  screens each point. Points the fallback policy rejects, points too tall for the model
+  frame, and every point when no model is loaded are solved with FEM as `fem_fallback`. Any
+  screened point can be checked with FEM, and it becomes `fem` with its screen kept.
+- Each point shows its source as a badge and a marker. Surrogate markers are hollow, with
+  ±1σ ensemble whiskers; solver markers are filled. The status line reports the largest
+  surrogate-versus-FEM hotspot error over raster-basis points. The CSV export
+  (`physix.stress-sweep/1`) records sources, the model id and the threshold.
+- The convergence study (`physics.convergence.convergence_study`) solves the `fast`,
+  `reference` and `fine` presets. It follows Celik et al. (2008) for three levels with
+  unequal ratios: the observed order p, Richardson extrapolation with p capped at the
+  formal order 2, and the fine-grid GCI. The safety factor is 1.25 for monotonic
+  convergence. Oscillatory or divergent changes use Fs = 3 with the formal order and get
+  no extrapolation.
+- A level passes when the change to the next finer level is within 2% for both the hotspot
+  and the field. The finest level passes when its GCI is within 2%. The sheet plots the
+  hotspot and up to three line-probe points against element size, with the Richardson
+  limit and the GCI band. It promotes the finest passing level, and while the student
+  keeps it adopted, FEM checks of the part use that mesh (`mesh_preset` on
+  `/api/verify`).
+- The study runs in the Python service (`POST /api/convergence`) and in the Pyodide worker.
+  It offers copyable methods text and a CSV export.
+- *Exit evidence, measured* (AMD Ryzen 9 7940HS, Python service, scikit-fem, one warm run):
+  - Canonical plate: 1022, 1857 and 4344 elements (h = 3.90, 2.89 and 1.89 mm) gave hotspots
+    of 34.098, 33.922 and 33.913 MPa.
+    - The convergence is monotonic, with an observed order of 10.2, capped at 2.
+    - The Richardson limit is 33.906 MPa and the fine GCI is 0.024%. All three levels pass,
+      and the fine level is promoted.
+    - The solves took 268, 597 and 1784 ms (2.68 s in all).
+  - Canonical bracket: 812, 1418 and 2880 elements (h = 3.26, 2.47 and 1.73 mm) gave
+    176.34, 176.51 and 175.25 MPa.
+    - The changes do not decrease (0.096%, then 0.72%), so the study reports no
+      extrapolation.
+    - The formal-order GCI with Fs = 3 is 2.09%, above the 2% tolerance, so the fine level
+      fails. The reference level passes (0.72% hotspot and 0.50% field change to fine) and
+      is promoted.
+    - The re-entrant corner of the bracket is the expected mesh-sensitive hotspot, which is
+      why its study is weaker than the plate's.
+  - Tests cover:
+    - manufactured orders 1, 1.5 and 2 on unequal ratios, the order cap, and the
+      oscillatory, divergent and converged cases;
+    - the plate study's ordering and promotion, a forced failure that promotes the
+      reference level, and probe and preset validation;
+    - the service and HTTP routes, and the `mesh_preset` override;
+    - every sweep source path, abort, the summary, the CSV, the sheets' rendering, and a
+      shared `convergence_v1.json` fixture checked by Python and rendered by the web
+      sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

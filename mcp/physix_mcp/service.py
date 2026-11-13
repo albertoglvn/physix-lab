@@ -40,14 +40,17 @@ from data.raster import (
 from model.calibrate import decide
 from model.ensemble import field_errors
 from physics.case import Case, CaseValidationError, case_from_dict
+from physics.convergence import STUDY_PRESETS, convergence_study
 from physics.examples import bracket_dict, plate_dict
 from physics.geometry import solid_area
 from physics.materials import MATERIALS, YIELD_STRENGTH
+from physics.mesh import MESH_PRESETS
 from physics.solver import SOLVER_NAME, SOLVER_VERSION, solve_unit
 
 log = logging.getLogger("physix")
 
 PREDICTION_SCHEMA = "physix.prediction/1"
+CONVERGENCE_SCHEMA = "physix.convergence/1"
 DEFAULT_EXPORTS = Path("model/exports")
 
 
@@ -179,9 +182,9 @@ class PhysixService:
         stages["total_ms"] = 1e3 * (time.perf_counter() - t0)
         return stages, result, mask
 
-    def _fem(self, case: Case) -> dict[str, Any]:
+    def _fem(self, case: Case, preset: str | None = None) -> dict[str, Any]:
         t0 = time.perf_counter()
-        unit = solve_unit(case, self.fem_preset)
+        unit = solve_unit(case, preset or self.fem_preset)
         sol = unit.combine()
         out: dict[str, Any] = {"unit": unit, "solution": sol}
         if fits_frame(case):
@@ -235,6 +238,7 @@ class PhysixService:
         fem: dict[str, Any],
         include_field: bool,
         include_mesh: bool = False,
+        preset: str | None = None,
     ) -> dict[str, Any]:
         sol = fem["solution"]
         unit = fem["unit"]
@@ -257,7 +261,7 @@ class PhysixService:
             "solver": {
                 "name": SOLVER_NAME,
                 "version": SOLVER_VERSION,
-                "mesh_preset": self.fem_preset,
+                "mesh_preset": preset or self.fem_preset,
                 "nodes": int(unit.mesh.n_nodes),
                 "elements": int(len(unit.mesh.triangles)),
                 "element": "P2 triangle",
@@ -394,22 +398,31 @@ class PhysixService:
         prediction: dict[str, Any] | None = None,
         include_field: bool = False,
         include_mesh: bool = False,
+        mesh_preset: str | None = None,
     ) -> dict[str, Any]:
         """Solve the identical case with FEM and report the discrepancy to a prediction.
 
         Without ``prediction``, the surrogate is run on the same case and compared field by
         field (regardless of the fallback policy, so the comparison is always available).
+        ``mesh_preset`` overrides the service preset, for example with the level a
+        convergence study promoted.
         """
         try:
             case = case_from_dict(case_data)
         except CaseValidationError as exc:
             return _error(exc)
+        if mesh_preset is not None and mesh_preset not in MESH_PRESETS:
+            return {
+                "error": "invalid_request",
+                "message": f"unknown mesh preset {mesh_preset!r}",
+                "field": "mesh_preset",
+            }
         try:
             with self._lock:
-                fem = self._fem(case)
+                fem = self._fem(case, mesh_preset)
         except Exception as exc:
             return {"error": "solver_failed", "message": f"{type(exc).__name__}: {exc}"}
-        resp = self._fem_response(case, "fem", fem, include_field, include_mesh)
+        resp = self._fem_response(case, "fem", fem, include_field, include_mesh, preset=mesh_preset)
         discrepancy: dict[str, Any] = {}
         if prediction is not None:
             pred_id = prediction.get("case_id")
@@ -461,6 +474,65 @@ class PhysixService:
                 )
         resp["discrepancy"] = discrepancy
         return resp
+
+    # --------------------------------------------------------------- convergence
+    def convergence(
+        self,
+        case_data: dict[str, Any],
+        presets: list[str] | None = None,
+        probes: list[Any] | None = None,
+    ) -> dict[str, Any]:
+        """Solve the case at three mesh presets and report a convergence study.
+
+        ``probes`` are up to eight points ``{"x", "y"}`` in metres inside the solid, whose
+        von Mises stress is reported at every level. See
+        :func:`physics.convergence.convergence_study` for the pass rule and the promoted level.
+        """
+        try:
+            case = case_from_dict(case_data)
+        except CaseValidationError as exc:
+            return _error(exc)
+        names = list(presets) if presets is not None else list(STUDY_PRESETS)
+        if not all(isinstance(n, str) for n in names):
+            return {
+                "error": "invalid_request",
+                "message": "presets must be preset names",
+                "field": "presets",
+            }
+        points: list[tuple[float, float]] = []
+        for k, probe in enumerate(probes or []):
+            try:
+                points.append((float(probe["x"]), float(probe["y"])))
+            except (TypeError, KeyError, ValueError):
+                return {
+                    "error": "invalid_request",
+                    "message": f"probe {k + 1} must be an object with x and y in metres",
+                    "field": "probes",
+                }
+        t0 = time.perf_counter()
+        try:
+            with self._lock:
+                study = convergence_study(case, tuple(names), points)
+        except ValueError as exc:
+            field = "probes" if "probe" in str(exc) else "presets"
+            return {"error": "invalid_request", "message": str(exc), "field": field}
+        except Exception as exc:
+            return {"error": "solver_failed", "message": f"{type(exc).__name__}: {exc}"}
+        return {
+            "schema": CONVERGENCE_SCHEMA,
+            "source": "fem",
+            "case_id": case.case_id(),
+            "solver": {"name": SOLVER_NAME, "version": SOLVER_VERSION, "element": "P2 triangle"},
+            "presets": {
+                level.preset: MESH_PRESETS[level.preset].to_dict() for level in study.levels
+            },
+            **study.to_dict(),
+            "hotspot_rule": "maximum von Mises outside the support exclusion band, mesh basis",
+            "timing": {
+                "total_ms": 1e3 * (time.perf_counter() - t0),
+                "boundary": "three server-side solves and comparisons, excludes transport",
+            },
+        }
 
     # ------------------------------------------------------------------ optimize
     def optimize(self, request: dict[str, Any]) -> dict[str, Any]:
