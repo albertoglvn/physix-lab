@@ -237,7 +237,7 @@ export function defaultProtocol(scene: LabScene): Protocol {
     };
   }
   const moving = scene.objects.some(
-    (part) => isBody(part) && (part.vx !== 0 || part.vy !== 0),
+    (part) => isBody(part) && (part.vx !== 0 || part.vy !== 0 || !!part.force),
   );
   const stop =
     (["pulley_stop", "leaves_ramp", "bounce", "floor_contact"] as const).find(

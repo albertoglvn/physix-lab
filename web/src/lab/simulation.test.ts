@@ -3,6 +3,7 @@ import { makeObject, makeScene, type LabScene, type Pulley } from "./scene";
 import {
   atwood,
   createSimulation,
+  dragStepForce,
   initialPulleyState,
   PULLEY_RADIUS,
   PULLEY_TRAVEL,
@@ -76,6 +77,47 @@ describe("mechanics simulation", () => {
     }
     expect(() => simulation.step()).toThrow("disposed");
     expect(() => simulation.dispose()).not.toThrow();
+  });
+});
+
+describe("applied forces and air drag", () => {
+  it("makes one engine step follow the exact drag solution", () => {
+    const h = 0.05;
+    const v = { x: 3, y: -2, z: 0 };
+    const a = { x: 0, y: -9.81, z: 0 };
+    expect(dragStepForce(v, a, 2, 0, 0, h)).toEqual({ x: 0, y: 0, z: 0 });
+    // Linear drag only: v(h) = v e^(−kh) + a (1 − e^(−kh))/k.
+    const k = 0.8 / 2;
+    const f = dragStepForce(v, a, 2, 0.8, 0, h);
+    const next = (vi: number, ai: number, fi: number) => vi + h * (ai + fi / 2);
+    const exact = (vi: number, ai: number) =>
+      vi * Math.exp(-k * h) + (ai * -Math.expm1(-k * h)) / k;
+    expect(next(v.x, a.x, f.x)).toBeCloseTo(exact(v.x, a.x), 12);
+    expect(next(v.y, a.y, f.y)).toBeCloseTo(exact(v.y, a.y), 12);
+    // At terminal speed quadratic drag cancels gravity.
+    const c = 0.05;
+    const terminal = Math.sqrt((2 * 9.81) / c);
+    const hold = dragStepForce({ x: 0, y: -terminal, z: 0 }, a, 2, 0, c, h);
+    expect(hold.y).toBeCloseTo(2 * 9.81, 9);
+    expect(Math.abs(hold.x)).toBe(0);
+  });
+
+  it("reaches the closed-form speeds under a push and under quadratic drag", async () => {
+    const push = await createSimulation(makeScene("push"));
+    push.step(120);
+    // (10 − 0.35 · 2 · 9.81) / 2 m/s² for 1 s, to within the engine's first step.
+    expect(push.block("block-1")!.velocity.x).toBeCloseTo(1.5665, 2);
+    push.dispose();
+    const scene = makeScene("drag");
+    const drop = await createSimulation(scene);
+    drop.step(120);
+    const c = 0.5 * 1.2 * 0.47 * Math.PI * 0.09;
+    const terminal = Math.sqrt((0.5 * 9.81) / c);
+    expect(-drop.block("ball-1")!.velocity.y).toBeCloseTo(
+      terminal * Math.tanh(9.81 / terminal),
+      4,
+    );
+    drop.dispose();
   });
 });
 

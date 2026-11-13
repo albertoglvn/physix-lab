@@ -193,9 +193,11 @@ MCP tools use the same service functions and return the same JSON.
 
 ## Motion scene (`physix.lab/2`)
 
-`{version, name, gravity, floorFriction, objects}`. `gravity` is in m/s² (0 to 30) and
-acts along −y. The floor is the plane y = 0. At most 32 objects, each with a unique `id`, a
-`kind` and a placement `x`, `z` in metres. Angles are in degrees and everything else is SI.
+`{version, name, gravity, floorFriction, airDensity, linearDrag, objects}`. `gravity` is in
+m/s² (0 to 30) and acts along −y. The floor is the plane y = 0. `airDensity` (kg/m³, 0 to 5)
+and `linearDrag` (N·s/m, 0 to 10) are optional and default to 0, a vacuum. At most 32
+objects, each with a unique `id`, a `kind` and a placement `x`, `z` in metres. Angles are in
+degrees and everything else is SI.
 
 | Kind | Fields | Notes |
 | --- | --- | --- |
@@ -208,14 +210,19 @@ acts along −y. The floor is the plane y = 0. At most 32 objects, each with a u
 | `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
 
 `vx` and `vy` are the initial velocity in m/s. `vy` is optional and defaults to 0, so a
-launcher is any free body with both set. A body on a ramp starts at rest. The surface
-fields of a free body (block, ball or cylinder) are:
+launcher is any free body with both set. A body on a ramp starts at rest. A free body may
+also carry `force: {x, y, start, end}`: a constant force in newtons (−500 to 500 per
+component) held at its centre of mass from `start` up to `end` seconds (0 to 60, with
+`end` after `start`). Each step applies the force averaged over the part of the step it
+covers, so the impulse is (x, y)·(end − start) at any step. The surface fields of a free
+body (block, ball or cylinder) are:
 
 | Field | Meaning |
 | --- | --- |
 | `restitution` | Coefficient of restitution e, 0 to 1. Optional, default 0. |
 | `friction` | The body's own Coulomb coefficient, 0 to 2. Optional; without it the surface's coefficient applies. |
 | `material` | Optional label for a library entry: `wood`, `steel`, `rubber`, `ice` or `felt`. Choosing one copies its friction and restitution; the mass stays as set. |
+| `dragCoefficient` | Quadratic drag coefficient C_d, 0 to 2. Optional; without it a ball takes 0.47, a block 1.05 and a cylinder 1.2. |
 
 | Material | μ | e | Density (kg/m³, shown for reference) |
 | --- | --- | --- | --- |
@@ -243,6 +250,16 @@ at 1/120 s). Scenes saved before restitution and per-body friction parse unchang
 behave as before against the floor and ramps, but the parsed scene gains `vy` and
 `restitution`, so its run identity changes. A pendulum's moment of inertia about the
 pivot is m L² + 2/5 m r².
+Air drag acts on free bodies only, at the centre, as F = −(b + c |v|) v with b =
+`linearDrag` and c = ½ ρ C_d A. The frontal area A is π r² for a ball, s² for a block and
+2 r L for a cylinder, whatever the body's orientation; drag adds no torque. Each step holds
+the force that makes the engine's update match the exact solution of v′ = a − k v over the
+step, with k = (b + c |v|)/m and |v| taken at the step's predicted midpoint, so a body's
+terminal speed √(m g / c) is exact and its velocity follows the closed forms to about 10⁻⁶.
+Positions keep the engine's first-order error. A body resting on the floor under linear
+drag feels a small spurious lift of about m g k h / 2. Scenes saved before air and forces
+parse unchanged; the parsed scene gains `airDensity` and `linearDrag`, so its run identity
+changes.
 Each spring force is held over one step. The elastic part is read at a lead position
 y + h·v·(N−1)/(2N), with N = 8 solver substeps, and the damper at the mean of the step's
 start and end velocities. Under these rules the undamped engine period matches 2π √(m/k),
@@ -312,7 +329,7 @@ One variable of a Motion scene varied over a list of values, with one headless
 | --- | --- |
 | `id` | `sha256:` of the canonical JSON of `{schema, scene, spec}`. Equal designs share an id. |
 | `scene` | The base scene (`physix.lab/2`) before any value is applied |
-| `spec.variable` | `gravity`, `floorFriction` or `<object id>.<field>`, in the scene's own unit (degrees for angles, SI otherwise) |
+| `spec.variable` | `gravity`, `floorFriction`, `airDensity`, `linearDrag`, `<object id>.<field>` or `<object id>.force.<x, y, start or end>`, in the scene's own unit (degrees for angles, SI otherwise). A body's `dragCoefficient` is offered when the scene has air. |
 | `spec.values` | At most 200 values inside the variable's limits |
 | `spec.metric` | `{kind: "reference", id}` (the measured side of a closed-form reference), `{kind: "probe", key, stat}` with `stat` in `final`, `max`, `min` and `mean`, or `{kind: "stop_time"}` |
 | `spec.noise` | `null`, or `{sigma, resolution}` in the metric's SI unit |

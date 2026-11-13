@@ -10,6 +10,7 @@ import { finiteMean, meanPeriod } from "../data/period";
 import { MAX_SEED, stream } from "../data/random";
 import {
   blockOnRamp,
+  dragCoefficientOf,
   isBody,
   limits,
   oscillatorProblem,
@@ -36,7 +37,10 @@ export const MAX_REPEATS = 20;
 export const MAX_READINGS = 400;
 
 export type SweepVariable = {
-  /** `gravity`, `floorFriction` or `<object id>.<field>`. */
+  /**
+   * A scene field (`gravity`, `floorFriction`, `airDensity`, `linearDrag`),
+   * `<object id>.<field>` or `<object id>.force.<x|y|start|end>`.
+   */
   path: string;
   label: string;
   symbol: string;
@@ -166,14 +170,75 @@ const variable = (
   [min, max, step]: Range,
 ): SweepVariable => ({ path, label, symbol, unit, min, max, step });
 
+const SCENE_FIELDS = [
+  "gravity",
+  "floorFriction",
+  "airDensity",
+  "linearDrag",
+] as const;
+type SceneField = (typeof SCENE_FIELDS)[number];
+const isSceneField = (path: string): path is SceneField =>
+  (SCENE_FIELDS as readonly string[]).includes(path);
+
+const FORCE_FIELDS: [
+  field: string,
+  label: string,
+  symbol: string,
+  unit: string,
+  range: Range,
+][] = [
+  ["x", "force x", "Fₓ", "N", limits.force],
+  ["y", "force y", "F_y", "N", limits.force],
+  ["start", "force start", "t₀", "s", limits.forceTime],
+  ["end", "force end", "t₁", "s", limits.forceTime],
+];
+
+/** The object, field and, for a force, its component named by a sweep path. */
+function locate(scene: LabScene, path: string) {
+  const force = /^(.*)\.force\.(x|y|start|end)$/.exec(path);
+  const dot = path.lastIndexOf(".");
+  const id = force ? force[1] : path.slice(0, dot);
+  return {
+    part: scene.objects.find((item) => item.id === id),
+    field: force ? "force" : path.slice(dot + 1),
+    component: force?.[2] as "x" | "y" | "start" | "end" | undefined,
+  };
+}
+
 /** Variables a sweep can vary in this scene. Bodies on a ramp keep their ramp placement. */
 export function sweepVariables(scene: LabScene): SweepVariable[] {
   const variables: SweepVariable[] = [
     variable("gravity", "Gravity", "g", "m/s²", limits.gravity),
     variable("floorFriction", "Floor friction", "μ", "", limits.friction),
+    variable("airDensity", "Air density", "ρ", "kg/m³", limits.airDensity),
+    variable("linearDrag", "Linear drag", "b", "N·s/m", limits.linearDrag),
   ];
   for (const part of scene.objects) {
     const onRamp = isBody(part) && startingRamp(part, scene);
+    if (isBody(part)) {
+      // C_d matters only in air; a body without its own uses its shape's value.
+      if (scene.airDensity > 0)
+        variables.push(
+          variable(
+            `${part.id}.dragCoefficient`,
+            `${part.id} drag coefficient`,
+            "C_d",
+            "",
+            limits.dragCoefficient,
+          ),
+        );
+      if (part.force)
+        for (const [field, label, symbol, unit, range] of FORCE_FIELDS)
+          variables.push(
+            variable(
+              `${part.id}.force.${field}`,
+              `${part.id} ${label}`,
+              symbol,
+              unit,
+              range,
+            ),
+          );
+    }
     for (const [field, label, symbol, unit, range] of FIELDS[part.kind]) {
       if (onRamp && (field === "y" || field === "vx" || field === "vy"))
         continue;
@@ -196,12 +261,13 @@ export function sweepVariables(scene: LabScene): SweepVariable[] {
 
 /** The current value of a variable in the scene. */
 export function sweepValueOf(scene: LabScene, path: string): number {
-  if (path === "gravity" || path === "floorFriction") return scene[path];
-  const dot = path.lastIndexOf(".");
-  const part = scene.objects.find((item) => item.id === path.slice(0, dot));
-  const value = (part as Record<string, unknown> | undefined)?.[
-    path.slice(dot + 1)
-  ];
+  if (isSceneField(path)) return scene[path];
+  const { part, field, component } = locate(scene, path);
+  if (part && isBody(part)) {
+    if (component) return part.force?.[component] ?? Number.NaN;
+    if (field === "dragCoefficient") return dragCoefficientOf(part);
+  }
+  const value = (part as Record<string, unknown> | undefined)?.[field];
   return typeof value === "number" ? value : Number.NaN;
 }
 
@@ -220,11 +286,16 @@ export function applySweepValue(
     throw new RangeError(
       `${known.label} must be between ${known.min} and ${known.max}${known.unit ? ` ${known.unit}` : ""}.`,
     );
-  if (path === "gravity" || path === "floorFriction")
-    return { ...scene, [path]: value };
-  const dot = path.lastIndexOf(".");
-  const part = scene.objects.find((item) => item.id === path.slice(0, dot))!;
-  const next = { ...part, [path.slice(dot + 1)]: value } as LabObject;
+  if (isSceneField(path)) return { ...scene, [path]: value };
+  const { part: found, field, component } = locate(scene, path);
+  const part = found!;
+  let next = { ...part, [field]: value } as LabObject;
+  if (component && isBody(part) && part.force) {
+    const force = { ...part.force, [component]: value };
+    if (force.end <= force.start)
+      throw new RangeError("A force must end after it starts.");
+    next = { ...part, force };
+  }
   if (next.kind === "pendulum" || next.kind === "spring") {
     const problem = oscillatorProblem(next, scene.gravity);
     if (problem) throw new RangeError(problem);

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   blockOnRamp,
   densityMass,
+  dragCoefficientOf,
+  dragCoefficients,
   findRampPlacement,
+  forceOver,
+  frontalArea,
   launchOf,
   launchVelocity,
   makeObject,
@@ -31,6 +35,8 @@ describe("mechanics scene contract", () => {
     "launcher",
     "bounce",
     "collision",
+    "push",
+    "drag",
     "blank",
   ])("round-trips %s", (preset) => {
     const scene = makeScene(preset);
@@ -101,6 +107,75 @@ describe("mechanics scene contract", () => {
     expect(parseScene(objects({ friction: 0.3 })).objects[0]).toMatchObject({
       friction: 0.3,
     });
+  });
+
+  it("parses air, drag coefficients and applied forces, and refuses bad ones", () => {
+    const scene = makeScene("push");
+    const plain = JSON.parse(JSON.stringify(scene));
+    delete plain.airDensity;
+    delete plain.linearDrag;
+    const parsed = parseScene(plain);
+    expect(parsed.airDensity).toBe(0);
+    expect(parsed.linearDrag).toBe(0);
+    expect(parsed.objects[0]).toMatchObject({
+      force: { x: 10, y: 0, start: 0, end: 1 },
+    });
+    const withForce = (force: unknown) =>
+      parseScene({ ...plain, objects: [{ ...plain.objects[0], force }] });
+    expect(() => withForce({ x: 10, y: 0, start: 1, end: 1 })).toThrow(
+      "A force must end after it starts.",
+    );
+    expect(() => withForce({ x: 900, y: 0, start: 0, end: 1 })).toThrow(
+      "force.x must be a number between -500 and 500.",
+    );
+    expect(() => withForce({ x: 1, y: 0, start: 0 })).toThrow(/force\.end/);
+    expect(() => parseScene({ ...plain, airDensity: -1 })).toThrow(
+      /airDensity/,
+    );
+    const air = makeScene("drag");
+    const drag = JSON.parse(JSON.stringify(air));
+    drag.objects[0].dragCoefficient = 3;
+    expect(() => parseScene(drag)).toThrow(/dragCoefficient/);
+    drag.objects[0].dragCoefficient = 0.3;
+    expect(parseScene(drag).objects[0]).toMatchObject({
+      dragCoefficient: 0.3,
+    });
+  });
+
+  it("derives drag from the shape, the air and the body's coefficient", () => {
+    const scene = { ...makeScene("blank"), airDensity: 1.2, linearDrag: 0.1 };
+    const ball = { ...makeObject("ball", "ball-1"), radius: 0.3 } as Ball;
+    expect(frontalArea(ball)).toBeCloseTo(Math.PI * 0.09, 12);
+    expect(dragCoefficientOf(ball)).toBe(0.47);
+    const { linear, quadratic } = dragCoefficients(ball, scene);
+    expect(linear).toBe(0.1);
+    expect(quadratic).toBeCloseTo(0.5 * 1.2 * 0.47 * Math.PI * 0.09, 12);
+    expect(dragCoefficientOf({ ...ball, dragCoefficient: 0.2 })).toBe(0.2);
+    const block = makeObject("block", "block-1");
+    if (block.kind !== "block") throw new Error("Expected a block.");
+    expect(frontalArea(block)).toBeCloseTo(block.size ** 2, 12);
+    const cylinder = makeObject("cylinder", "cylinder-1");
+    if (cylinder.kind !== "cylinder") throw new Error("Expected a cylinder.");
+    expect(frontalArea(cylinder)).toBeCloseTo(
+      2 * cylinder.radius * cylinder.length,
+      12,
+    );
+  });
+
+  it("spreads a force over the part of each step it covers", () => {
+    const body = { vx: 0, vy: 0, force: { x: 12, y: -6, start: 0.5, end: 1 } };
+    expect(forceOver(body, 0.4, 0.05)).toEqual({ x: 0, y: 0 });
+    expect(forceOver(body, 0.5, 0.25)).toEqual({ x: 12, y: -6 });
+    const edge = forceOver(body, 0.48, 0.04);
+    expect(edge.x).toBeCloseTo(6, 12);
+    expect(edge.y).toBeCloseTo(-3, 12);
+    expect(forceOver({ vx: 0, vy: 0 }, 0, 0.01)).toEqual({ x: 0, y: 0 });
+    // The impulse is exact whatever the step.
+    for (const h of [1 / 120, 0.07, 0.3]) {
+      let impulse = 0;
+      for (let t = 0; t < 2; t += h) impulse += forceOver(body, t, h).x * h;
+      expect(impulse).toBeCloseTo(6, 9);
+    }
   });
 
   it("parses a cylinder and refuses one without its length", () => {

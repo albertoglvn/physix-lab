@@ -12,7 +12,14 @@ import {
 } from "../scene";
 import { defaultProtocol } from "./probes";
 import { runProtocol } from "./run";
-import { compare, curvesFor, referencesFor, type Reference } from "./theory";
+import {
+  compare,
+  curvesFor,
+  linearDragFlight,
+  quadraticDrop,
+  referencesFor,
+  type Reference,
+} from "./theory";
 
 const byId = (scene: LabScene, suffix: string) => {
   const reference = referencesFor(scene).find(({ id }) => id.endsWith(suffix));
@@ -56,6 +63,8 @@ describe("closed-form references", () => {
     ["launcher", 4],
     ["bounce", 3],
     ["collision", 2],
+    ["push", 3],
+    ["drag", 2],
   ])(
     "matches the %s template within tolerance at the default step",
     async (preset, count) => {
@@ -73,6 +82,107 @@ describe("closed-form references", () => {
       }
     },
   );
+
+  it("solves the drag closed forms", () => {
+    const g = 9.81;
+    // Without drag the fall is free; tiny c recovers √(2 g h).
+    const free = quadraticDrop(5, 1, 1e-9, g);
+    expect(free.time).toBeCloseTo(Math.sqrt(10 / g), 4);
+    expect(free.speed).toBeCloseTo(Math.sqrt(2 * g * 5), 4);
+    const heavy = quadraticDrop(1000, 1, 0.1, g);
+    expect(heavy.speed).toBeCloseTo(heavy.terminal, 9);
+    const flight = linearDragFlight(4, 3, 2, 0.5, g);
+    const k = 0.5;
+    const y =
+      2 +
+      ((3 + g / k) * -Math.expm1(-k * flight.time)) / k -
+      (g * flight.time) / k;
+    expect(y).toBeCloseTo(0, 9);
+    expect(flight.range).toBeCloseTo(
+      (4 * -Math.expm1(-k * flight.time)) / k,
+      12,
+    );
+    const slow = linearDragFlight(4, 0, 2, 1e-7, g);
+    expect(slow.time).toBeCloseTo(Math.sqrt(4 / g), 5);
+  });
+
+  it("matches a launch through linear drag and flags the drag-free formulas", async () => {
+    const launcher = makeScene("launcher");
+    const scene: LabScene = {
+      ...launcher,
+      linearDrag: 0.5,
+      objects: [{ ...(launcher.objects[0] as Ball), restitution: 0 }],
+    };
+    const references = referencesFor(scene);
+    expect(references.map(({ id }) => id)).toEqual([
+      "ball-1.drag.t",
+      "ball-1.drag.r",
+    ]);
+    const run = await runProtocol(scene, defaultProtocol(scene));
+    for (const reference of references)
+      expect(compare(reference, run).within, reference.id).toBe(true);
+    expect(curvesFor(scene).map(({ key }) => key)).toEqual(
+      expect.arrayContaining(["ball-1.x", "ball-1.y", "ball-1.vy"]),
+    );
+    // Both drag laws at once have no closed form: the usual flight is kept but flagged.
+    const both = referencesFor({ ...scene, airDensity: 1.2 });
+    expect(both.length).toBeGreaterThan(0);
+    for (const reference of both)
+      expect(reference.broken).toMatch(/Air drag acts on ball-1/);
+    // So is a friction slide in air, and the collision of a pushed ball.
+    const friction = referencesFor({
+      ...makeScene("friction"),
+      airDensity: 1.2,
+    });
+    expect(friction[0].broken).toMatch(/Air drag/);
+    expect(curvesFor({ ...makeScene("friction"), airDensity: 1.2 })).toEqual(
+      [],
+    );
+    const collision = makeScene("collision");
+    const striker = collision.objects[0] as Ball;
+    collision.objects[0] = {
+      ...striker,
+      force: { x: 1, y: 0, start: 0, end: 0.5 },
+    };
+    expect(
+      referencesFor(collision).every((reference) => reference.broken),
+    ).toBe(true);
+  });
+
+  it("flags a push the sliding formulas do not cover", () => {
+    const push = makeScene("push");
+    const block = push.objects[0];
+    if (block.kind !== "block") throw new Error("Expected a block.");
+    const lifted = {
+      ...push,
+      objects: [{ ...block, force: { ...block.force!, y: 30 } }],
+    };
+    expect(referencesFor(lifted)[0].broken).toMatch(/lifts the body/);
+    const rolling = {
+      ...push,
+      objects: [
+        {
+          ...makeObject("ball", "ball-1", -6),
+          y: 0.5,
+          force: block.force,
+        },
+      ],
+    };
+    expect(referencesFor(rolling)[0].broken).toMatch(/would roll/);
+    const held = {
+      ...push,
+      objects: [{ ...block, force: { ...block.force!, x: 5 } }],
+    };
+    const [a, v] = referencesFor(held);
+    expect(a.value).toBe(0);
+    expect(v.value).toBe(0);
+    expect(referencesFor(held).some(({ id }) => id.endsWith("push.d"))).toBe(
+      false,
+    );
+    expect(referencesFor({ ...push, airDensity: 1.2 })[0].broken).toMatch(
+      /Air drag/,
+    );
+  });
 
   it("adds the wheel's inertia and both tensions to the Atwood references", async () => {
     const scene = makeScene("pulley");

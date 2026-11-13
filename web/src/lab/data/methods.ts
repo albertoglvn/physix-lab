@@ -2,7 +2,7 @@ import type { ConvergenceResult } from "../motion/convergence";
 import type { EventType } from "../motion/probes";
 import type { MotionRun } from "../motion/run";
 import { CONTACT_MODEL, type Comparison } from "../motion/theory";
-import { isBody, MATERIALS } from "../scene";
+import { dragCoefficientOf, hasDrag, isBody, MATERIALS } from "../scene";
 
 const PAST_EVENTS: Record<EventType, string> = {
   rest: "came to rest",
@@ -60,12 +60,38 @@ export function methodsSummary(
       return [`${part.id}${made} ${mu}e = ${part.restitution}`];
     }),
   ];
+  const bodies = scene.objects.filter(isBody);
+  const air = hasDrag(scene)
+    ? [
+        scene.airDensity > 0 &&
+          `quadratic drag ½ ρ C_d A v² in air of ρ = ${scene.airDensity} kg/m³ (${bodies
+            .map((part) => `${part.id} C_d = ${dragCoefficientOf(part)}`)
+            .join(", ")})`,
+        scene.linearDrag > 0 &&
+          `linear drag b v with b = ${scene.linearDrag} N·s/m`,
+      ].filter(Boolean)
+    : [];
+  const forces = bodies.flatMap((part) =>
+    part.force
+      ? [
+          `${part.id} (${part.force.x} N, ${part.force.y} N) from ${part.force.start} s to ${part.force.end} s`,
+        ]
+      : [],
+  );
   const sentences = [
     `The ${scene.name} scene was simulated with ${engine.name} ${engine.version} using a fixed step of ${formatStep(inputs.timeStep)} and ${engine.solverIterations} solver iterations, with g = ${scene.gravity} m/s², ${surfaces.join(", ")}.`,
     `Probes were sampled at ${inputs.rate} Hz; acceleration is a backward finite difference of velocity over one sample, and events are resolved to one step.`,
     `The run stopped ${stop}, at t = ${significant(run.stop.t)} s, within a ${inputs.protocol.maxTime} s limit.`,
     `Contact model: ${CONTACT_MODEL}`,
   ];
+  if (air.length)
+    sentences.push(
+      `Free bodies felt ${air.join(" and ")}, held over each step so the velocity follows the exact solution with |v| at the step's midpoint.`,
+    );
+  if (forces.length)
+    sentences.push(
+      `Applied forces, averaged over each step so the impulse is exact: ${forces.join("; ")}.`,
+    );
   const measured = comparisons.filter(
     (comparison) => comparison.measured !== undefined,
   );

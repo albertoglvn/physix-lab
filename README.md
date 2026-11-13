@@ -2,16 +2,17 @@
 
 Physix is a browser lab for university physics. Its mechanics workspace lets students build
 and run 3D experiments with blocks, balls, cylinders, ramps, friction, pulleys, pendulums,
-springs, launchers and collisions. Start the lab with
+springs, launchers, collisions, applied forces and air drag. Start the lab with
 `pnpm --filter @physix/web run dev`, then open <http://localhost:5173/#/lab>.
 
 ## Mechanics lab
 
 Start with an inclined plane, a friction track, an Atwood machine, a rolling ball, a
-pendulum, a spring oscillator, a 45° launcher, a bouncing ball, a collision track, or a
-blank scene. Edit starting conditions in the inspector, including each body's material
-(wood, steel, rubber, ice or felt), restitution and launch velocity, then run, pause,
-step, or reset the simulation. The
+pendulum, a spring oscillator, a 45° launcher, a bouncing ball, a collision track, a
+pushed block, a ball falling through air, or a blank scene. Edit starting conditions in
+the inspector, including each body's material (wood, steel, rubber, ice or felt),
+restitution, launch velocity, applied force and drag coefficient, and the scene's air
+density and linear drag, then run, pause, step, or reset the simulation. The
 **Scene JSON** editor imports and exports `physix.lab/2` scenes that agents can generate and
 run headlessly:
 

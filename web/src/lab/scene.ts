@@ -28,6 +28,11 @@ export const limits = {
   wheelMass: [0, 20, 0.1],
   restitution: [0, 1, 0.01],
   cylinderLength: [0.2, 3, 0.05],
+  airDensity: [0, 5, 0.01],
+  linearDrag: [0, 10, 0.01],
+  dragCoefficient: [0, 2, 0.01],
+  force: [-500, 500, 0.1],
+  forceTime: [0, 60, 0.01],
 } as const;
 
 /**
@@ -54,9 +59,16 @@ export type Surface = {
   material?: MaterialName;
   friction?: number;
   restitution: number;
+  /** Quadratic drag coefficient C_d; without it the shape's typical value applies. */
+  dragCoefficient?: number;
 };
-/** Launch velocity in the x–y plane, m/s. */
-export type Launch = { vx: number; vy: number };
+/**
+ * A constant force in the x–y plane, in newtons, held at the centre of mass from `start`
+ * up to `end` seconds. Its impulse is (x, y)·(end − start) whatever the time step.
+ */
+export type AppliedForce = { x: number; y: number; start: number; end: number };
+/** Launch velocity in the x–y plane, m/s, and an optional applied force. */
+export type Launch = { vx: number; vy: number; force?: AppliedForce };
 export type Block = Placement &
   Surface &
   Launch & {
@@ -132,11 +144,17 @@ export type LabObject =
   Block | Ramp | Pulley | Ball | Cylinder | Pendulum | Spring;
 /** Free rigid bodies: they rest on ramps, slide or roll, fall and collide. */
 export type Body = Block | Ball | Cylinder;
+/**
+ * `airDensity` (kg/m³) gives free bodies quadratic drag ½ ρ C_d A v², and `linearDrag`
+ * (N·s/m) adds b v. Both are 0 in vacuum and act on blocks, balls and cylinders only.
+ */
 export type LabScene = {
   version: typeof SCENE_VERSION;
   name: string;
   gravity: number;
   floorFriction: number;
+  airDensity: number;
+  linearDrag: number;
   objects: LabObject[];
 };
 export type Preset =
@@ -150,6 +168,8 @@ export type Preset =
   | "launcher"
   | "bounce"
   | "collision"
+  | "push"
+  | "drag"
   | "blank";
 
 export const objectNames: Record<LabObject["kind"], string> = {
@@ -172,6 +192,8 @@ export const presetNames: Record<Preset, string> = {
   launcher: "Launcher",
   bounce: "Bouncing ball",
   collision: "Collision track",
+  push: "Pushed block",
+  drag: "Falling through air",
   blank: "Untitled experiment",
 };
 
@@ -189,6 +211,47 @@ export function bodyVolume(body: Body) {
   if (body.kind === "ball") return (4 / 3) * Math.PI * body.radius ** 3;
   return Math.PI * body.radius ** 2 * body.length;
 }
+/** Typical drag coefficients: a sphere, a cube face-on and a long cylinder broadside. */
+export const DRAG_COEFFICIENTS = {
+  ball: 0.47,
+  block: 1.05,
+  cylinder: 1.2,
+} as const;
+/** The body's drag coefficient: its own, or its shape's typical value. */
+export const dragCoefficientOf = (body: Body) =>
+  body.dragCoefficient ?? DRAG_COEFFICIENTS[body.kind];
+/** Frontal area facing motion in the x–y plane, m²: the silhouette seen along the motion. */
+export const frontalArea = (body: Body) =>
+  body.kind === "ball"
+    ? Math.PI * body.radius ** 2
+    : body.kind === "block"
+      ? body.size ** 2
+      : 2 * body.radius * body.length;
+/**
+ * Drag on a body as F = −(b + c |v|) v: the scene's linear coefficient b in N·s/m and the
+ * quadratic coefficient c = ½ ρ C_d A in kg/m.
+ */
+export const dragCoefficients = (body: Body, scene: LabScene) => ({
+  linear: scene.linearDrag,
+  quadratic:
+    0.5 * scene.airDensity * dragCoefficientOf(body) * frontalArea(body),
+});
+/** The scene has air: some drag acts on free bodies. */
+export const hasDrag = (scene: LabScene) =>
+  scene.airDensity > 0 || scene.linearDrag > 0;
+/** The force acting on a body over [t, t + h), averaged over the step so the impulse is exact. */
+export function forceOver(body: Launch, t: number, h: number) {
+  const force = body.force;
+  if (!force) return { x: 0, y: 0 };
+  const overlap = Math.max(
+    0,
+    Math.min(force.end, t + h) - Math.max(force.start, t),
+  );
+  if (overlap === 0) return { x: 0, y: 0 };
+  const share = overlap / h;
+  return { x: force.x * share, y: force.y * share };
+}
+
 /** Rolling-inertia factor k in I = k m r² about the rolling axis; undefined for a block. */
 export const rollingFactor = (body: Body) =>
   body.kind === "ball" ? 2 / 5 : body.kind === "cylinder" ? 1 / 2 : undefined;
@@ -476,6 +539,8 @@ export function makeScene(preset: Preset): LabScene {
     name: presetNames[preset],
     gravity: 9.81,
     floorFriction: 0.35,
+    airDensity: 0,
+    linearDrag: 0,
     objects: [],
   };
   if (preset === "incline") {
@@ -505,6 +570,21 @@ export function makeScene(preset: Preset): LabScene {
   } else if (preset === "bounce") {
     const ball = { ...makeObject("ball", "ball-1"), radius: 0.2, y: 2.2 };
     scene.objects = [withMaterial(ball, "rubber")];
+  } else if (preset === "push") {
+    // 10 N for one second against μ = 0.35: the block speeds up, then slides to rest.
+    scene.objects = [
+      {
+        ...makeObject("block", "block-1", -6),
+        y: 0.5,
+        force: { x: 10, y: 0, start: 0, end: 1 },
+      },
+    ];
+  } else if (preset === "drag") {
+    // A light ball dropped 15 m through sea-level air nears its terminal speed.
+    scene.airDensity = 1.2;
+    scene.objects = [
+      { ...makeObject("ball", "ball-1"), radius: 0.3, mass: 0.5, y: 15.3 },
+    ];
   } else if (preset === "collision") {
     // Equal balls on a frictionless floor slide without spinning and meet centre to
     // centre, so the impact is one-dimensional and both speeds stay constant after it.
@@ -529,6 +609,7 @@ function numeric(
   input: Record<string, unknown>,
   key: string,
   range: readonly [number, number, number],
+  label = key,
 ): number {
   const value = input[key];
   const [min, max] = range;
@@ -538,7 +619,7 @@ function numeric(
     value < min ||
     value > max
   )
-    throw new Error(`${key} must be a number between ${min} and ${max}.`);
+    throw new Error(`${label} must be a number between ${min} and ${max}.`);
   return value;
 }
 
@@ -565,7 +646,32 @@ function parseSurface(input: Record<string, unknown>): Surface {
   if (material !== undefined) surface.material = material as MaterialName;
   if (input.friction !== undefined)
     surface.friction = numeric(input, "friction", limits.friction);
+  if (input.dragCoefficient !== undefined)
+    surface.dragCoefficient = numeric(
+      input,
+      "dragCoefficient",
+      limits.dragCoefficient,
+    );
   return surface;
+}
+
+/** Launch velocity and the optional applied force of a free body. */
+function parseLaunch(input: Record<string, unknown>): Launch {
+  const launch: Launch = {
+    vx: numeric(input, "vx", limits.velocity),
+    vy: optional(input, "vy", limits.velocity, 0),
+  };
+  if (input.force === undefined) return launch;
+  const force = record(input.force, "force");
+  const parsed = {
+    x: numeric(force, "x", limits.force, "force.x"),
+    y: numeric(force, "y", limits.force, "force.y"),
+    start: numeric(force, "start", limits.forceTime, "force.start"),
+    end: numeric(force, "end", limits.forceTime, "force.end"),
+  };
+  if (parsed.end <= parsed.start)
+    throw new Error("A force must end after it starts.");
+  return { ...launch, force: parsed };
 }
 
 function parseObject(input: unknown): LabObject {
@@ -589,8 +695,7 @@ function parseObject(input: unknown): LabObject {
         size: numeric(object, "size", limits.size),
         mass: numeric(object, "mass", limits.mass),
         rotation: numeric(object, "rotation", limits.rotation),
-        vx: numeric(object, "vx", limits.velocity),
-        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseLaunch(object),
         ...parseSurface(object),
       };
     case "ramp":
@@ -618,8 +723,7 @@ function parseObject(input: unknown): LabObject {
         y: numeric(object, "y", limits.height),
         radius: numeric(object, "radius", limits.radius),
         mass: numeric(object, "mass", limits.mass),
-        vx: numeric(object, "vx", limits.velocity),
-        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseLaunch(object),
         ...parseSurface(object),
       };
     case "cylinder":
@@ -630,8 +734,7 @@ function parseObject(input: unknown): LabObject {
         radius: numeric(object, "radius", limits.radius),
         length: numeric(object, "length", limits.cylinderLength),
         mass: numeric(object, "mass", limits.mass),
-        vx: numeric(object, "vx", limits.velocity),
-        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseLaunch(object),
         ...parseSurface(object),
       };
     case "pendulum":
@@ -705,6 +808,9 @@ export function parseScene(input: unknown): LabScene {
     name: scene.name.trim(),
     gravity,
     floorFriction: numeric(scene, "floorFriction", limits.friction),
+    // Optional, so scenes saved before air drag stay in vacuum.
+    airDensity: optional(scene, "airDensity", limits.airDensity, 0),
+    linearDrag: optional(scene, "linearDrag", limits.linearDrag, 0),
     objects,
   };
 }

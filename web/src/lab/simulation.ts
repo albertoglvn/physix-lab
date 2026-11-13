@@ -1,10 +1,14 @@
 import type { ColliderDesc, RigidBody } from "@dimforge/rapier3d-compat";
 import {
+  dragCoefficients,
+  forceOver,
+  hasDrag,
   isBody,
   parseScene,
   radians,
   rampHeight,
   springEquilibrium,
+  type Body,
   type LabObject,
   type Pendulum,
   type Pulley,
@@ -343,6 +347,46 @@ export function initialBlockState(part: BodyPart, gravity = 9.81): BlockState {
  * the pair, so such a body leaves the surface's coefficient in charge (up to the limit, 2).
  */
 export const NEUTRAL_FRICTION = 2;
+
+/**
+ * The force to hold over one step so that, with the engine's update v + h (a + f/m), the
+ * velocity follows the exact solution of v' = a − k v across the step. `a` is gravity plus
+ * any applied force per unit mass and k = (b + c |v|)/m. |v| is taken at the step's
+ * predicted midpoint, so the terminal speed √(m g / c) is exact and transients are second
+ * order in the step.
+ */
+export function dragStepForce(
+  velocity: Vec3,
+  accel: Vec3,
+  mass: number,
+  linear: number,
+  quadratic: number,
+  timeStep: number,
+): Vec3 {
+  const { x, y, z } = velocity;
+  const speed = Math.hypot(x, y, z);
+  if (linear === 0 && quadratic === 0) return { x: 0, y: 0, z: 0 };
+  const k0 = (linear + quadratic * speed) / mass;
+  const half = timeStep / 2;
+  const mid = Math.hypot(
+    x + (accel.x - k0 * x) * half,
+    y + (accel.y - k0 * y) * half,
+    z + (accel.z - k0 * z) * half,
+  );
+  const k = (linear + quadratic * mid) / mass;
+  if (k === 0) return { x: 0, y: 0, z: 0 };
+  const kh = k * timeStep;
+  const decay = Math.exp(-kh);
+  // (1 − e^(−kh))/k, written to keep its precision when kh is small.
+  const phi = -Math.expm1(-kh) / k;
+  const axis = (v: number, a: number) =>
+    (mass * (v * (decay - 1) + a * (phi - timeStep))) / timeStep;
+  return {
+    x: axis(x, accel.x),
+    y: axis(y, accel.y),
+    z: axis(z, accel.z),
+  };
+}
 /** A quarter turn about x: lays Rapier's y-axis cylinders along z. */
 const ALONG_Z = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
 
@@ -397,6 +441,13 @@ export async function createSimulation(
   const blocks = new Map<string, RigidBody>();
   const pulleys = new Map<string, Rope>();
   const springs: { spring: Spring; body: RigidBody }[] = [];
+  /** Free bodies under an applied force or air drag, with their drag coefficients. */
+  const driven: {
+    part: Body;
+    body: RigidBody;
+    linear: number;
+    quadratic: number;
+  }[] = [];
   let ticks = 0;
   let disposed = false;
 
@@ -562,6 +613,12 @@ export async function createSimulation(
           body,
         );
         if (object.kind === "pendulum") hinge(object, body);
+        if (free && (object.force || hasDrag(scene)))
+          driven.push({
+            part: object,
+            body,
+            ...dragCoefficients(object, scene),
+          });
         blocks.set(object.id, body);
       }
     }
@@ -592,6 +649,28 @@ export async function createSimulation(
           );
           body.resetForces(false);
           body.addForce({ x: 0, y: force, z: 0 }, true);
+        }
+        const t = (ticks + i) * timeStep;
+        for (const { part, body, linear, quadratic } of driven) {
+          const applied = forceOver(part, t, timeStep);
+          const accel = {
+            x: applied.x / part.mass,
+            y: applied.y / part.mass - scene.gravity,
+            z: 0,
+          };
+          const drag = dragStepForce(
+            body.linvel(),
+            accel,
+            part.mass,
+            linear,
+            quadratic,
+            timeStep,
+          );
+          body.resetForces(false);
+          body.addForce(
+            { x: applied.x + drag.x, y: applied.y + drag.y, z: drag.z },
+            true,
+          );
         }
         for (const rope of pulleys.values()) moveRope(rope);
         world.step();

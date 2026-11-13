@@ -7,7 +7,8 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator, simulated-pulley and materials slices; each phase lists its own status. The
+oscillator, simulated-pulley, materials and forces-and-drag slices; each phase lists its
+own status. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
@@ -716,7 +717,39 @@ Determinism behaves as documented in §4.1.
   closed forms within 2 × 10⁻⁷. A rolling cylinder on the 26° ramp with μ = 0.2 accelerates
   at 2.8674, 2.8658 and 2.8680 m/s² against 2.86695. With μ = 0.05 it slips at 3.8296,
   3.8432 and 3.8597 m/s² against 3.85956, converging with the step.
-- *Still to do in Phase 3:* rods, ropes, applied forces, drag, contact-force probes, run
+
+*Status, applied forces and air drag (done):*
+
+- A free body may carry `force: {x, y, start, end}`, held at its centre and averaged over
+  each step's overlap with the interval, so the impulse is exact at any step. The scene
+  gains `airDensity` and `linearDrag`, and a body an optional `dragCoefficient` (0.47 for a
+  ball, 1.05 for a block and 1.2 for a cylinder by default). Drag is translational,
+  F = −(b + c |v|) v with c = ½ ρ C_d A. Each step holds the force that makes the engine's
+  update follow the exact solution of v′ = a − k v, with |v| at the step's midpoint, so
+  velocities match the closed forms to about 10⁻⁶ and the terminal speed is exact.
+- New presets: a 2 kg block pushed by 10 N for 1 s on μ = 0.35, and a 0.3 m, 0.5 kg ball
+  dropped 15 m through sea-level air (ρ = 1.2 kg/m³). The 3D view draws the force as an
+  arrow until it ends.
+- References: the push's acceleration a = (Fₓ − μ (m g − F_y)) / m, its speed when the
+  force ends and the distance to rest a T²/2 + v²/(2 μ g); a quadratic-drag drop's fall
+  time (v_t/g) arcosh(e^(g h/v_t²)) and impact speed v_t √(1 − e^(−2 g h/v_t²)); and a
+  linear-drag launch's flight time and range. Drag-free references in a scene with air or
+  with a force are kept but flagged as broken, and their curves are hidden. Both drag laws
+  at once have no closed form. A round body pushed on a rough floor rolls, so its push is
+  flagged too.
+- Sweeps vary air density, linear drag, a body's drag coefficient and each force
+  component and time. The methods paragraph states the air and the forces.
+- *Exit evidence, measured* at steps of 1/120, 1/240 and 1/480 s (probe rate up to
+  240 Hz). The pushed block accelerates at 1.566503, 1.566532 and 1.566482 m/s² against
+  1.5665. Its speed when the force ends converges at first order (1.568157, 1.567259,
+  1.566827 m/s against 1.5665), and so does its distance to rest (1.142995, 1.141701,
+  1.141071 m against 1.1406). The falling ball lands at 7.810395, 7.810417 and 7.810416 m/s
+  against 7.810436 (v_t = 7.8433 m/s). Its fall time is 2.466667, 2.466667 and 2.464583 s
+  against 2.464969, resolved to the probe sample. The 45° launcher with b = 0.5 N·s/m flies
+  for 1.366667, 1.366667 and 1.364583 s against 1.364197 s, with range 8.184762,
+  8.180154 and 8.173665 m against 8.173401 m. Vertical speeds in free flight match
+  the exact solution to 10⁻⁶ at every step.
+- *Still to do in Phase 3:* rods, ropes, contact-force probes, run
   history and comparison, a residual plot, two-variable grids, seeded initial-condition
   perturbations, and Stress sweeps with
   the convergence study sheet.

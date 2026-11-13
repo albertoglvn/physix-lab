@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { isBody } from "./scene";
 import type {
   Ball,
+  Body,
   Cylinder,
   LabScene,
   Pendulum,
@@ -24,6 +26,35 @@ import {
   rampVertices,
   type Simulation,
 } from "./simulation";
+
+/**
+ * An arrow from the body's centre along its applied force, shown until the force ends.
+ * Its length grows with the force, from 0.5 m to 2.5 m at 200 N.
+ */
+function forceArrow(
+  object: Body,
+  palette: ViewportPalette,
+  current: Simulation | undefined,
+) {
+  const force = object.force!;
+  const magnitude = Math.hypot(force.x, force.y);
+  const arrow = new THREE.ArrowHelper(
+    new THREE.Vector3(force.x, force.y, 0).normalize(),
+    new THREE.Vector3(),
+    0.5 + 2 * Math.min(1, magnitude / 200),
+    new THREE.Color(palette.weightRight),
+    0.28,
+    0.18,
+  );
+  arrow.visible = magnitude > 0;
+  const update = () => {
+    const time = current?.time ?? 0;
+    const position = current?.block(object.id)?.position ?? object;
+    arrow.position.set(position.x, position.y, position.z);
+    arrow.visible = magnitude > 0 && time < force.end;
+  };
+  return { arrow, update };
+}
 
 type Drawable = {
   root: THREE.Object3D;
@@ -521,6 +552,15 @@ function createView(
             outline,
             update: root.userData.update as () => void,
           };
+        }
+        if (isBody(object) && object.force) {
+          const { arrow, update } = forceArrow(object, palette, current);
+          const body = drawable.update;
+          drawable.update = () => {
+            body?.();
+            update();
+          };
+          parts.add(arrow);
         }
         drawable.root.userData.id = object.id;
         drawable.update?.();

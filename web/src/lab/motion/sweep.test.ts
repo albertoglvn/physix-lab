@@ -85,6 +85,41 @@ describe("sweep variables", () => {
     );
   });
 
+  it("varies air, drag coefficients and applied forces", () => {
+    const push = makeScene("push");
+    const paths = sweepVariables(push).map((item) => item.path);
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        "airDensity",
+        "linearDrag",
+        "block-1.force.x",
+        "block-1.force.y",
+        "block-1.force.start",
+        "block-1.force.end",
+      ]),
+    );
+    expect(paths).not.toContain("block-1.dragCoefficient");
+    expect(sweepValueOf(push, "block-1.force.x")).toBe(10);
+    const harder = applySweepValue(push, "block-1.force.x", 20);
+    expect(sweepValueOf(harder, "block-1.force.x")).toBe(20);
+    expect(sweepValueOf(harder, "block-1.force.end")).toBe(1);
+    expect(sweepValueOf(push, "block-1.force.x")).toBe(10);
+    expect(() => applySweepValue(push, "block-1.force.end", 0)).toThrow(
+      "A force must end after it starts.",
+    );
+    const drag = makeScene("drag");
+    expect(sweepValueOf(drag, "ball-1.dragCoefficient")).toBe(0.47);
+    expect(
+      sweepValueOf(
+        applySweepValue(drag, "ball-1.dragCoefficient", 0.3),
+        "ball-1.dragCoefficient",
+      ),
+    ).toBe(0.3);
+    expect(
+      sweepValueOf(applySweepValue(drag, "airDensity", 2), "airDensity"),
+    ).toBe(2);
+  });
+
   it("keeps a block on its ramp when the angle, length or block size changes", () => {
     for (const [path, value] of [
       ["ramp-1.angle", 42],

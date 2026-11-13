@@ -5,7 +5,7 @@
 
 import { niceTicks } from "../data/Plot";
 import { freshSeed } from "../data/random";
-import { isBody, type LabScene } from "../scene";
+import { hasDrag, isBody, type LabScene } from "../scene";
 import { TIME_STEP } from "../simulation";
 import type { Protocol } from "./probes";
 import {
@@ -53,6 +53,7 @@ export function defaultVariable(scene: LabScene): string {
   const pendulum = scene.objects.find((part) => part.kind === "pendulum");
   const spring = scene.objects.find((part) => part.kind === "spring");
   const launched = scene.objects.find((part) => isBody(part) && part.vx !== 0);
+  const pushed = scene.objects.find((part) => isBody(part) && part.force);
   const preferred = [
     ramp && `${ramp.id}.angle`,
     pulley && `${pulley.id}.rightMass`,
@@ -61,6 +62,8 @@ export function defaultVariable(scene: LabScene): string {
     references.some((item) => item.id.endsWith(".friction.d")) &&
       "floorFriction",
     launched && `${launched.id}.vx`,
+    pushed && `${pushed.id}.force.x`,
+    hasDrag(scene) && (scene.airDensity > 0 ? "airDensity" : "linearDrag"),
   ];
   return (
     preferred.find(

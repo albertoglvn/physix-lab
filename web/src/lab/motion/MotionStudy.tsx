@@ -38,6 +38,7 @@ import {
 } from "../LabFrame";
 import { LabViewport } from "../LabViewport";
 import {
+  dragCoefficientOf,
   findRampPlacement,
   isBody,
   limits,
@@ -137,6 +138,8 @@ const TEMPLATE_NOTES: Record<Preset, string> = {
   launcher: "Steel ball launched at 45°",
   bounce: "Rubber ball dropped on the floor",
   collision: "Two steel balls meeting head on",
+  push: "Block pushed by 10 N for 1 s",
+  drag: "Ball falling through air",
   blank: "Empty floor",
 };
 
@@ -207,14 +210,89 @@ function custom<T extends Body>(body: T, patch: Partial<T>): T {
   return rest as T;
 }
 
-/** Launch, material, restitution and friction fields shared by every free body. */
+/** Fields of a body's applied force: components and the interval it acts over. */
+function ForceFields({
+  object,
+  onChange,
+}: {
+  object: Body;
+  onChange: (object: LabObject) => void;
+}) {
+  const force = object.force;
+  if (!force)
+    return (
+      <button
+        className="lab-button"
+        type="button"
+        title="A constant force held at the centre of mass for a set time"
+        onClick={() =>
+          onChange({ ...object, force: { x: 10, y: 0, start: 0, end: 1 } })
+        }
+      >
+        Add a force
+      </button>
+    );
+  const set = (patch: Partial<typeof force>) =>
+    onChange({ ...object, force: { ...force, ...patch } });
+  const [, maxTime, gap] = limits.forceTime;
+  return (
+    <>
+      <UnitInput
+        label="Force X"
+        dimension="force"
+        unit="N"
+        value={force.x}
+        {...range(limits.force)}
+        onCommit={(x) => set({ x })}
+      />
+      <UnitInput
+        label="Force Y"
+        dimension="force"
+        unit="N"
+        value={force.y}
+        {...range(limits.force)}
+        onCommit={(y) => set({ y })}
+      />
+      <UnitInput
+        label="Force starts"
+        dimension="time"
+        unit="s"
+        value={force.start}
+        min={0}
+        max={force.end - gap}
+        onCommit={(start) => set({ start })}
+      />
+      <UnitInput
+        label="Force ends"
+        dimension="time"
+        unit="s"
+        value={force.end}
+        min={force.start + gap}
+        max={maxTime}
+        onCommit={(end) => set({ end })}
+      />
+      <button
+        className="lab-button"
+        type="button"
+        onClick={() => onChange({ ...object, force: undefined })}
+      >
+        Remove the force
+      </button>
+    </>
+  );
+}
+
+/** Launch, material, restitution, friction, force and drag fields shared by every free body. */
 function BodyFields({
   object,
   onRamp,
+  air,
   onChange,
 }: {
   object: Body;
   onRamp: boolean;
+  /** The scene has air, so the body's drag coefficient matters. */
+  air: boolean;
   onChange: (object: LabObject) => void;
 }) {
   return (
@@ -295,6 +373,32 @@ function BodyFields({
           </button>
         </>
       )}
+      {air ? (
+        <>
+          <UnitInput
+            label="Drag coefficient C_d"
+            dimension="ratio"
+            unit=""
+            value={dragCoefficientOf(object)}
+            {...range(limits.dragCoefficient)}
+            onCommit={(dragCoefficient) =>
+              onChange({ ...object, dragCoefficient })
+            }
+          />
+          {object.dragCoefficient === undefined ? null : (
+            <button
+              className="lab-button"
+              type="button"
+              onClick={() =>
+                onChange({ ...object, dragCoefficient: undefined })
+              }
+            >
+              Use the shape's C_d
+            </button>
+          )}
+        </>
+      ) : null}
+      <ForceFields object={object} onChange={onChange} />
     </>
   );
 }
@@ -302,11 +406,14 @@ function BodyFields({
 function ObjectFields({
   object,
   onRamp,
+  air,
   onChange,
 }: {
   object: LabObject;
   /** The body starts on a ramp, so its launch speeds stay at zero. */
   onRamp: boolean;
+  /** The scene has air, so bodies show a drag coefficient. */
+  air: boolean;
   onChange: (object: LabObject) => void;
 }) {
   const position = (
@@ -367,7 +474,12 @@ function ObjectFields({
             onChange({ ...object, rotation: toDegrees(rotation) })
           }
         />
-        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
+        <BodyFields
+          object={object}
+          onRamp={onRamp}
+          air={air}
+          onChange={onChange}
+        />
       </div>
     );
   if (object.kind === "ball")
@@ -398,7 +510,12 @@ function ObjectFields({
           {...range(limits.mass)}
           onCommit={(mass) => onChange({ ...object, mass })}
         />
-        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
+        <BodyFields
+          object={object}
+          onRamp={onRamp}
+          air={air}
+          onChange={onChange}
+        />
       </div>
     );
   if (object.kind === "cylinder")
@@ -437,7 +554,12 @@ function ObjectFields({
           {...range(limits.mass)}
           onCommit={(mass) => onChange({ ...object, mass })}
         />
-        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
+        <BodyFields
+          object={object}
+          onRamp={onRamp}
+          air={air}
+          onChange={onChange}
+        />
       </div>
     );
   if (object.kind === "pendulum")
@@ -1502,6 +1624,7 @@ export function MotionStudy({
             <ObjectFields
               object={object}
               onRamp={isBody(object) && !!startingRamp(object, scene)}
+              air={scene.airDensity > 0}
               onChange={updateObject}
             />
             {isBody(object) && ramps.length > 0 ? (
@@ -1547,6 +1670,22 @@ export function MotionStudy({
                 value={scene.floorFriction}
                 {...range(limits.friction)}
                 onCommit={(floorFriction) => apply({ ...scene, floorFriction })}
+              />
+              <UnitInput
+                label="Air density ρ"
+                dimension="density"
+                unit="kg/m³"
+                value={scene.airDensity}
+                {...range(limits.airDensity)}
+                onCommit={(airDensity) => apply({ ...scene, airDensity })}
+              />
+              <UnitInput
+                label="Linear drag b"
+                dimension="damping"
+                unit="N·s/m"
+                value={scene.linearDrag}
+                {...range(limits.linearDrag)}
+                onCommit={(linearDrag) => apply({ ...scene, linearDrag })}
               />
             </div>
             <p className="lab-kind lab-kind--section">Protocol</p>

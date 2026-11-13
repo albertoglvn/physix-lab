@@ -153,6 +153,23 @@ describe("methods summary", () => {
     expect(text).toContain("at the time limit");
   });
 
+  it("states the air and the applied forces", async () => {
+    const push = makeScene("push");
+    const pushed = await runProtocol(push, { stop: "time", maxTime: 0.5 });
+    expect(methodsSummary(pushed, [])).toContain(
+      "block-1 (10 N, 0 N) from 0 s to 1 s",
+    );
+    const drag = makeScene("drag");
+    const fall = await runProtocol(
+      { ...drag, linearDrag: 0.2 },
+      { stop: "time", maxTime: 0.5 },
+    );
+    const text = methodsSummary(fall, []);
+    expect(text).toContain("ρ = 1.2 kg/m³ (ball-1 C_d = 0.47)");
+    expect(text).toContain("linear drag b v with b = 0.2 N·s/m");
+    expect(text).not.toMatch(/undefined|NaN|false/);
+  });
+
   it("formats steps and differences", () => {
     expect(formatStep(1 / 120)).toBe("1/120 s");
     expect(formatStep(0.003)).toBe("0.003 s");

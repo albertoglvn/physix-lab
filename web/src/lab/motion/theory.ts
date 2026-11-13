@@ -2,6 +2,8 @@ import { ellipticK, meanPeriod } from "../data/period";
 import {
   bodyHalf,
   contactFriction,
+  dragCoefficients,
+  hasDrag,
   isBody,
   radians,
   rollingFactor,
@@ -649,6 +651,311 @@ export function impactVelocities(a: Ball, b: Ball) {
   };
 }
 
+/**
+ * Fall time and impact speed of a body dropped from rest through air with quadratic drag
+ * only: v(t) = v_t tanh(g t / v_t), with terminal speed v_t = √(m g / c), c = ½ ρ C_d A.
+ */
+export function quadraticDrop(
+  height: number,
+  mass: number,
+  c: number,
+  g: number,
+) {
+  const terminal = Math.sqrt((mass * g) / c);
+  const ratio = (g * height) / terminal ** 2;
+  return {
+    terminal,
+    time: (terminal / g) * Math.acosh(Math.exp(ratio)),
+    speed: terminal * Math.sqrt(-Math.expm1(-2 * ratio)),
+  };
+}
+
+/**
+ * Flight of a body launched from `height` with linear drag k = b/m:
+ * y(t) = h + (v_y + g/k)(1 − e^(−kt))/k − g t/k, x(t) = vₓ (1 − e^(−kt))/k.
+ */
+export function linearDragFlight(
+  vx: number,
+  vy: number,
+  height: number,
+  k: number,
+  g: number,
+) {
+  const rise = (t: number) =>
+    height + ((vy + g / k) * -Math.expm1(-k * t)) / k - (g * t) / k;
+  // y falls monotonically after the apex, so the landing lies between it and the
+  // first doubling that reaches the floor.
+  let low = vy > 0 ? Math.log1p((k * vy) / g) / k : 0;
+  let high = Math.max(low, 1e-3);
+  while (rise(high) > 0) high *= 2;
+  for (let i = 0; i < 200 && high - low > 1e-12; i++) {
+    const mid = (low + high) / 2;
+    if (rise(mid) > 0) low = mid;
+    else high = mid;
+  }
+  const time = (low + high) / 2;
+  return { time, range: (Math.abs(vx) * -Math.expm1(-k * time)) / k };
+}
+
+/**
+ * The impact speed of a quadratic-drag drop, from the last sample at least one step before
+ * landing, carried to the floor along v² = v_t² − (v_t² − v_s²) e^(−2 g Δ / v_t²).
+ */
+function dropImpactSpeed(
+  run: MotionRun,
+  body: Body,
+  terminal: number,
+  g: number,
+): number | undefined {
+  const t = eventTime(run, "floor_contact", body.id);
+  const vy = run.series.columns[`${body.id}.vy`];
+  const y = run.series.columns[`${body.id}.y`];
+  if (t === undefined || !vy || !y) return;
+  const limit = t - run.inputs.timeStep + 1e-9;
+  let index = -1;
+  run.series.t.forEach((time, at) => {
+    if (time <= limit) index = at;
+  });
+  if (index < 0) return;
+  const gap = Math.max(0, y[index] - bodyHalf(body));
+  const v2 = terminal ** 2;
+  return Math.sqrt(v2 - (v2 - vy[index] ** 2) * Math.exp((-2 * g * gap) / v2));
+}
+
+/**
+ * References for a body falling through air, when a closed form exists: a drop from rest
+ * with quadratic drag only, or any launch with linear drag only.
+ */
+function dragReferences(
+  body: Body,
+  height: number,
+  scene: LabScene,
+): Reference[] {
+  const g = scene.gravity;
+  const { linear, quadratic } = dragCoefficients(body, scene);
+  const landing = (run: MotionRun) => eventTime(run, "floor_contact", body.id);
+  const common = [
+    "Uniform gravity; no spin; drag acts at the centre and opposes the velocity.",
+    "The engine holds the drag over each step so the velocity follows the exact solution, with |v| at the step's midpoint.",
+    "Contact is detected to one step, as the lowest point comes within 5 mm of the floor.",
+  ];
+  if (quadratic > 0 && linear === 0 && body.vx === 0 && body.vy === 0) {
+    const { terminal, time, speed } = quadraticDrop(
+      height,
+      body.mass,
+      quadratic,
+      g,
+    );
+    const assumptions = [
+      `Dropped from rest ${height.toFixed(2)} m above the floor through air of ρ = ${scene.airDensity} kg/m³.`,
+      `Quadratic drag ½ ρ C_d A v² with c = ${quadratic.toPrecision(4)} kg/m, so v_t = √(m g / c) = ${terminal.toFixed(3)} m/s.`,
+      ...common,
+    ];
+    return [
+      {
+        id: `${body.id}.drag.t`,
+        target: body.id,
+        label: "Fall time with drag",
+        symbol: "t",
+        unit: "s",
+        formula: "t = (v_t / g) arcosh(e^(g h / v_t²))",
+        value: time,
+        assumptions,
+        tolerance: 0.01,
+        floor: 0,
+        event: "floor_contact",
+        measure: landing,
+      },
+      {
+        id: `${body.id}.drag.v`,
+        target: body.id,
+        label: "Impact speed with drag",
+        symbol: "v",
+        unit: "m/s",
+        formula: "v = v_t √(1 − e^(−2 g h / v_t²))",
+        value: speed,
+        assumptions: [
+          ...assumptions,
+          "Read from the last sample a step before landing, carried to the floor by the same law.",
+        ],
+        tolerance: 0.002,
+        floor: 0,
+        event: "floor_contact",
+        measure: (run) => dropImpactSpeed(run, body, terminal, g),
+      },
+    ];
+  }
+  if (quadratic > 0 || linear === 0) return [];
+  const k = linear / body.mass;
+  const { time, range } = linearDragFlight(body.vx, body.vy, height, k, g);
+  const assumptions = [
+    `Launched at vₓ = ${body.vx} m/s, v_y = ${body.vy} m/s from ${height.toFixed(2)} m above the floor.`,
+    `Linear drag b v with b = ${linear} N·s/m, so k = b / m = ${k.toPrecision(4)} 1/s.`,
+    ...common,
+  ];
+  return [
+    {
+      id: `${body.id}.drag.t`,
+      target: body.id,
+      label: "Flight time with drag",
+      symbol: "t",
+      unit: "s",
+      formula: "h + (v_y + g/k)(1 − e^(−kt))/k − g t/k = 0",
+      value: time,
+      assumptions,
+      tolerance: 0.01,
+      floor: 0,
+      event: "floor_contact",
+      measure: landing,
+    },
+    {
+      id: `${body.id}.drag.r`,
+      target: body.id,
+      label: "Range with drag",
+      symbol: "R",
+      unit: "m",
+      formula: "R = |vₓ| (1 − e^(−kt)) / k",
+      value: range,
+      assumptions,
+      tolerance: 0.01,
+      floor: 0.05,
+      event: "floor_contact",
+      measure: (run) => {
+        const t = landing(run);
+        return t === undefined
+          ? undefined
+          : Math.abs(valueAt(run, `${body.id}.x`, t) - body.x);
+      },
+    },
+  ];
+}
+
+/** Acceleration, final speed and distance of a body pushed from rest along the floor. */
+export function pushMotion(body: Body, scene: LabScene) {
+  const force = body.force!;
+  const g = scene.gravity;
+  const mu = contactFriction(body, scene.floorFriction);
+  const normal = body.mass * g - force.y;
+  const grip = mu * Math.max(0, normal);
+  const excess = Math.max(0, Math.abs(force.x) - grip);
+  const a = (Math.sign(force.x) * excess) / body.mass;
+  const duration = force.end - force.start;
+  const v = a * duration;
+  const distance =
+    mu > 0
+      ? Math.abs((a * duration ** 2) / 2) + v ** 2 / (2 * mu * g)
+      : Infinity;
+  return { mu, normal, a, v, duration, distance };
+}
+
+function pushReferences(body: Body, scene: LabScene): Reference[] {
+  const force = body.force!;
+  const { mu, normal, a, v, duration, distance } = pushMotion(body, scene);
+  const round = body.kind !== "block";
+  const travel = Math.min(Number.isFinite(distance) ? distance : 40, 40);
+  const obstacle = sharesPath(
+    body,
+    scene.objects,
+    body.x,
+    body.x + Math.sign(force.x || 1) * travel,
+  );
+  const broken = hasDrag(scene)
+    ? "Air drag acts; the push formulas leave it out."
+    : normal <= 0
+      ? "The vertical force lifts the body off the floor."
+      : round && mu > 0
+        ? `${body.id} would roll; the push formulas cover sliding, so set μ = 0 or use a block.`
+        : obstacle
+          ? `${obstacle.id} is in the path.`
+          : undefined;
+  const assumptions = [
+    `Starts at rest on the floor; ${force.x} N along x and ${force.y} N along y from ${force.start} s to ${force.end} s.`,
+    `Coulomb friction μ = ${mu} on a normal force of m g − F_y = ${normal.toFixed(3)} N while pushed, m g after.`,
+    "Slides without tipping or rolling; no air drag.",
+    CONTACT_MODEL,
+  ];
+  const vx = `${body.id}.vx`;
+  const list: Reference[] = [];
+  if (duration >= 0.25)
+    list.push({
+      id: `${body.id}.push.a`,
+      target: body.id,
+      label: "Acceleration while pushed",
+      symbol: "a",
+      unit: "m/s²",
+      formula: "a = (Fₓ − μ (m g − F_y)) / m, or 0 when μ (m g − F_y) ≥ |Fₓ|",
+      value: a,
+      assumptions: [
+        ...assumptions,
+        "Read as the least-squares slope of vₓ over the middle 80 % of the push.",
+      ],
+      broken,
+      tolerance: 0.01,
+      floor: 0.01,
+      measure: (run) => {
+        const margin = 0.1 * duration;
+        return run.stop.t >= force.end
+          ? slope(run, vx, force.start + margin, force.end - margin)
+          : undefined;
+      },
+    });
+  list.push({
+    id: `${body.id}.push.v`,
+    target: body.id,
+    label: "Speed when the force ends",
+    symbol: "v",
+    unit: "m/s",
+    formula: "v = a (t_end − t_start)",
+    value: Math.abs(v),
+    assumptions,
+    broken,
+    tolerance: 0.01,
+    floor: 0.01,
+    measure: (run) =>
+      run.stop.t >= force.end
+        ? Math.abs(valueAt(run, vx, force.end))
+        : undefined,
+  });
+  if (mu > 0 && a !== 0)
+    list.push({
+      id: `${body.id}.push.d`,
+      target: body.id,
+      label: "Distance to rest",
+      symbol: "d",
+      unit: "m",
+      formula: "d = a T² / 2 + v² / (2 μ g)",
+      value: distance,
+      assumptions,
+      broken,
+      tolerance: 0.02,
+      floor: 0,
+      event: "rest",
+      measure: (run) => {
+        const t = eventTime(run, "rest", body.id);
+        return t === undefined
+          ? undefined
+          : Math.abs(valueAt(run, `${body.id}.x`, t) - body.x);
+      },
+    });
+  return list;
+}
+
+/** Why a body's drag-free, unforced closed forms do not apply, if they do not. */
+function disturbance(body: Body, scene: LabScene): string | undefined {
+  if (body.force)
+    return `A force acts on ${body.id}; this formula leaves it out.`;
+  if (hasDrag(scene))
+    return `Air drag acts on ${body.id}; this formula assumes none.`;
+}
+
+const flag = (list: Reference[], reason: string | undefined) =>
+  reason
+    ? list.map((reference) => ({
+        ...reference,
+        broken: reference.broken ?? reason,
+      }))
+    : list;
+
 function collisionReferences(a: Ball, b: Ball): Reference[] {
   const { e, v1, v2 } = impactVelocities(a, b);
   const assumptions = [
@@ -786,24 +1093,45 @@ export function referencesFor(scene: LabScene): Reference[] {
     if (part.kind === "pendulum") list.push(...pendulumReferences(part, scene));
     if (part.kind === "spring") list.push(...springReferences(part));
     if (!isBody(part)) continue;
+    const reason = disturbance(part, scene);
     const start = startingRamp(part, scene);
     if (start) {
       list.push(
-        ...(part.kind === "block"
-          ? inclineReferences(part, start.ramp, start.fraction, scene)
-          : rollingReferences(part, start.ramp, start.fraction, scene)),
+        ...flag(
+          part.kind === "block"
+            ? inclineReferences(part, start.ramp, start.fraction, scene)
+            : rollingReferences(part, start.ramp, start.fraction, scene),
+          reason,
+        ),
       );
       continue;
     }
     const height = part.y - bodyLowest(part, startRotation(part));
-    if (canLand(part, scene)) {
-      list.push(...projectileReferences(part, height, scene));
-      if (part.restitution > 0) list.push(...bounceReferences(part, scene));
+    const airborne = canLand(part, scene);
+    if (part.force && !airborne && part.vx === 0 && part.vy === 0) {
+      list.push(...pushReferences(part, scene));
+      continue;
+    }
+    if (airborne) {
+      const drag = part.force ? [] : dragReferences(part, height, scene);
+      // A drag law that has a closed form replaces the drag-free flight.
+      list.push(
+        ...(drag.length
+          ? drag
+          : flag(projectileReferences(part, height, scene), reason)),
+      );
+      if (part.restitution > 0)
+        list.push(...flag(bounceReferences(part, scene), reason));
     } else if (part.kind === "block")
-      list.push(...frictionReferences(part, scene));
+      list.push(...flag(frictionReferences(part, scene), reason));
   }
   for (const [a, b] of headOnPairs(scene))
-    list.push(...collisionReferences(a, b));
+    list.push(
+      ...flag(
+        collisionReferences(a, b),
+        disturbance(a, scene) ?? disturbance(b, scene),
+      ),
+    );
   return list;
 }
 
@@ -812,8 +1140,9 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
   const curves: TheoryCurve[] = [];
   const g = scene.gravity;
   const references = referencesFor(scene);
+  // Curves follow only the references whose assumptions the scene meets.
   const find = (id: string) =>
-    references.find((reference) => reference.id === id);
+    references.find((reference) => reference.id === id && !reference.broken);
   for (const part of scene.objects) {
     if (part.kind === "pulley") {
       const a = atwood(part, g).acceleration;
@@ -870,6 +1199,65 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
         at: (t) => Math.max(0, v0 - deceleration * t),
         until: Math.min(stop.value, 60),
       });
+    }
+    const pushed = find(`${part.id}.push.v`);
+    if (pushed && part.force) {
+      const { a, v, mu } = pushMotion(part, scene);
+      const { start, end } = part.force;
+      const stopping = mu * g;
+      curves.push({
+        key: `${part.id}.speed`,
+        at: (t) =>
+          t < start
+            ? 0
+            : t < end
+              ? Math.abs(a) * (t - start)
+              : Math.max(0, Math.abs(v) - stopping * (t - end)),
+        until: stopping > 0 ? end + Math.abs(v) / stopping : 60,
+      });
+    }
+    const drop = find(`${part.id}.drag.v`);
+    if (drop) {
+      const { quadratic } = dragCoefficients(part, scene);
+      const terminal = Math.sqrt((part.mass * g) / quadratic);
+      const until = find(`${part.id}.drag.t`)?.value ?? 60;
+      curves.push(
+        {
+          key: `${part.id}.vy`,
+          at: (t) => -terminal * Math.tanh((g * t) / terminal),
+          until,
+        },
+        {
+          key: `${part.id}.y`,
+          at: (t) =>
+            part.y -
+            (terminal ** 2 / g) * Math.log(Math.cosh((g * t) / terminal)),
+          until,
+        },
+      );
+    }
+    const range = find(`${part.id}.drag.r`);
+    if (range) {
+      const k = scene.linearDrag / part.mass;
+      const until = find(`${part.id}.drag.t`)?.value ?? 60;
+      const grow = (t: number) => -Math.expm1(-k * t) / k;
+      curves.push(
+        {
+          key: `${part.id}.x`,
+          at: (t) => part.x + part.vx * grow(t),
+          until,
+        },
+        {
+          key: `${part.id}.y`,
+          at: (t) => part.y + (part.vy + g / k) * grow(t) - (g * t) / k,
+          until,
+        },
+        {
+          key: `${part.id}.vy`,
+          at: (t) => (part.vy + g / k) * Math.exp(-k * t) - g / k,
+          until,
+        },
+      );
     }
     const flight = find(`${part.id}.projectile.t`);
     if (flight)
