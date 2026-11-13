@@ -199,12 +199,31 @@ acts along −y. The floor is the plane y = 0. At most 32 objects, each with a u
 
 | Kind | Fields | Notes |
 | --- | --- | --- |
-| `block` | `y`, `size`, `mass`, `rotation`, `vx` | A cube. `y` is its centre height and `rotation` is about z. |
-| `ball` | `y`, `radius`, `mass`, `vx` | A solid sphere (I = 2/5 m r²). |
+| `block` | `y`, `size`, `mass`, `rotation`, `vx`, `vy`, surface | A cube. `y` is its centre height and `rotation` is about z. |
+| `ball` | `y`, `radius`, `mass`, `vx`, `vy`, surface | A solid sphere (I = 2/5 m r²). |
+| `cylinder` | `y`, `radius`, `length` (0.2 to 3 m), `mass`, `vx`, `vy`, surface | A solid cylinder lying with its axis along z, so it rolls along x (I = m r²/2 about the axis). |
 | `ramp` | `length`, `width`, `angle`, `friction` | A fixed wedge rising towards −x. |
 | `pulley` | `leftMass`, `rightMass`, `wheelMass` | An Atwood machine: two weights on an inextensible rope over a wheel. `wheelMass` (kg, 0 to 20) makes the wheel a uniform disc, I = M R²/2. It is optional and defaults to 0, a massless wheel. |
 | `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle` | A solid bob on a rigid, massless rod hinged about z. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. |
 | `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
+
+`vx` and `vy` are the initial velocity in m/s. `vy` is optional and defaults to 0, so a
+launcher is any free body with both set. A body on a ramp starts at rest. The surface
+fields of a free body (block, ball or cylinder) are:
+
+| Field | Meaning |
+| --- | --- |
+| `restitution` | Coefficient of restitution e, 0 to 1. Optional, default 0. |
+| `friction` | The body's own Coulomb coefficient, 0 to 2. Optional; without it the surface's coefficient applies. |
+| `material` | Optional label for a library entry: `wood`, `steel`, `rubber`, `ice` or `felt`. Choosing one copies its friction and restitution; the mass stays as set. |
+
+| Material | μ | e | Density (kg/m³, shown for reference) |
+| --- | --- | --- | --- |
+| Wood | 0.4 | 0.5 | 700 |
+| Steel | 0.5 | 0.6 | 7850 |
+| Rubber | 1 | 0.8 | 1100 |
+| Ice | 0.03 | 0.1 | 917 |
+| Felt | 0.3 | 0.05 | 300 |
 
 Validation rejects a pendulum whose swing would reach the floor. It also rejects a spring
 whose cube would reach the floor or the anchor at any point of the undamped swing.
@@ -213,8 +232,17 @@ A `physix.lab/1` scene holds only blocks, ramps and pulleys with the same fields
 migrates by its version alone (its pulleys get a massless wheel). A migrated scene has a new run identity, because the
 identity hashes the scene.
 
-Contacts use a friction coefficient of 1 on blocks and balls, combined by product with the
-ramp or floor value. A pendulum's moment of inertia about the pivot is m L² + 2/5 m r².
+Each contact pair has one Coulomb coefficient (static equals kinetic): the smaller of the
+two parts' coefficients. A body without its own coefficient carries 2, the largest allowed
+value, so the ramp's or floor's coefficient governs its contacts with them, and two such
+bodies grip each other at 2. Restitution combines by the larger value; floors and ramps
+have none, so a body's own e sets its rebound. The engine applies e to the normal
+velocity at the start of the step: the ratio of rebound to impact speed equals e, though
+the rebound height falls short of e² h by the contact's sink into the floor (about 2 cm
+at 1/120 s). Scenes saved before restitution and per-body friction parse unchanged and
+behave as before against the floor and ramps, but the parsed scene gains `vy` and
+`restitution`, so its run identity changes. A pendulum's moment of inertia about the
+pivot is m L² + 2/5 m r².
 Each spring force is held over one step. The elastic part is read at a lead position
 y + h·v·(N−1)/(2N), with N = 8 solver substeps, and the damper at the mean of the step's
 start and end velocities. Under these rules the undamped engine period matches 2π √(m/k),
@@ -243,7 +271,7 @@ view replays the same steps.
 | `timing` | `wallMs` and its `boundary`: engine set-up, every step and probe sampling, without rendering |
 | `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a part id or `system`, and `source` is `rapier` or `derived` (`ideal-atwood` in runs recorded before the simulated pulley). |
 | `series` | `t` (s) and one column per quantity key with the same length. Samples sit on the `1/rate` grid, plus a final sample at the stop. A missing value is `NaN` in memory and `null` in JSON. |
-| `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` and `pulley_stop` (a weight lands on the base or meets the wheel), resolved to one time step |
+| `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` (after the body has been clear of the floor), `bounce` (the step on which a body with e > 0 turns from falling to rising), `collision` (the striker of a head-on pair comes within touching distance of its partner) and `pulley_stop` (a weight lands on the base or meets the wheel), resolved to one time step |
 | `stop` | `{reason: "event" \| "time", t, event?}` |
 
 A protocol is `{stop, maxTime}`: `stop` is an event type or `"time"`, and `maxTime` lies
@@ -257,7 +285,7 @@ step), the mean rope force on each weight over the step (`tension` on the left,
 `rightTension`, 0 while slack), both weight heights (`leftY`, `rightY`) and the wheel's
 `wheelSpeed` at the rim. System quantities are total kinetic, potential and mechanical
 energy and linear momentum. Potential energy is m g y from y = 0, for pulley weights too,
-and the wheel's kinetic energy is M v_rim²/4. A ball's kinetic energy includes its rotation. A pendulum records `angle`
+and the wheel's kinetic energy is M v_rim²/4. A ball's or cylinder's kinetic energy includes its rotation, using the cylinder's inertia about its current axis. A pendulum records `angle`
 (rad, from straight down), `omega` (rad/s), bob position, speed, rod `tension`, and its
 energies. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
 `extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system

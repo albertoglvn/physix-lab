@@ -108,6 +108,9 @@ const FIELDS: Record<
     ["size", "size", "s", "m", limits.size],
     ["y", "height", "h", "m", limits.height],
     ["vx", "launch speed", "vₓ", "m/s", limits.velocity],
+    ["vy", "vertical launch speed", "v_y", "m/s", limits.velocity],
+    ["restitution", "restitution", "e", "", limits.restitution],
+    ["friction", "friction", "μ", "", limits.friction],
   ],
   ramp: [
     ["angle", "angle", "θ", "deg", limits.angle],
@@ -124,6 +127,19 @@ const FIELDS: Record<
     ["radius", "radius", "r", "m", limits.radius],
     ["y", "height", "h", "m", limits.height],
     ["vx", "launch speed", "vₓ", "m/s", limits.velocity],
+    ["vy", "vertical launch speed", "v_y", "m/s", limits.velocity],
+    ["restitution", "restitution", "e", "", limits.restitution],
+    ["friction", "friction", "μ", "", limits.friction],
+  ],
+  cylinder: [
+    ["mass", "mass", "m", "kg", limits.mass],
+    ["radius", "radius", "r", "m", limits.radius],
+    ["length", "length", "L", "m", limits.cylinderLength],
+    ["y", "height", "h", "m", limits.height],
+    ["vx", "launch speed", "vₓ", "m/s", limits.velocity],
+    ["vy", "vertical launch speed", "v_y", "m/s", limits.velocity],
+    ["restitution", "restitution", "e", "", limits.restitution],
+    ["friction", "friction", "μ", "", limits.friction],
   ],
   pendulum: [
     ["length", "length", "L", "m", limits.pendulumLength],
@@ -159,7 +175,11 @@ export function sweepVariables(scene: LabScene): SweepVariable[] {
   for (const part of scene.objects) {
     const onRamp = isBody(part) && startingRamp(part, scene);
     for (const [field, label, symbol, unit, range] of FIELDS[part.kind]) {
-      if (onRamp && (field === "y" || field === "vx")) continue;
+      if (onRamp && (field === "y" || field === "vx" || field === "vy"))
+        continue;
+      // A body without its own friction leaves the surface's coefficient in charge.
+      if (isBody(part) && field === "friction" && part.friction === undefined)
+        continue;
       variables.push(
         variable(
           `${part.id}.${field}`,

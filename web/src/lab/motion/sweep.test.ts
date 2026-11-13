@@ -64,6 +64,27 @@ describe("sweep variables", () => {
     ).toContain("block-1.vx");
   });
 
+  it("offers a body's surface fields and its own friction only once it has one", () => {
+    const projectile = sweepVariables(makeScene("projectile")).map(
+      (item) => item.path,
+    );
+    expect(projectile).toEqual(
+      expect.arrayContaining(["block-1.vy", "block-1.restitution"]),
+    );
+    expect(projectile).not.toContain("block-1.friction");
+    const cylinder = {
+      ...makeScene("blank"),
+      objects: [{ ...makeObject("cylinder", "cylinder-1"), friction: 0.4 }],
+    };
+    expect(sweepVariables(cylinder).map((item) => item.path)).toEqual(
+      expect.arrayContaining([
+        "cylinder-1.radius",
+        "cylinder-1.length",
+        "cylinder-1.friction",
+      ]),
+    );
+  });
+
   it("keeps a block on its ramp when the angle, length or block size changes", () => {
     for (const [path, value] of [
       ["ramp-1.angle", 42],

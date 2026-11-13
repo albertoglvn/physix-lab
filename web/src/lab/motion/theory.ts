@@ -1,11 +1,14 @@
 import { ellipticK, meanPeriod } from "../data/period";
 import {
   bodyHalf,
+  contactFriction,
   isBody,
   radians,
+  rollingFactor,
   type Ball,
   type Block,
   type Body,
+  type Cylinder,
   type LabObject,
   type LabScene,
   type Pendulum,
@@ -16,7 +19,8 @@ import {
 import { atwood, PULLEY_TRAVEL } from "../simulation";
 import {
   bodyLowest,
-  CONTACT_GAP,
+  canLand,
+  headOnPairs,
   leaveFraction,
   startingRamp,
   startRotation,
@@ -64,7 +68,7 @@ export type Comparison = {
 };
 
 export const CONTACT_MODEL =
-  "One Coulomb coefficient per contact pair (static equals kinetic), the product of the two parts' coefficients; blocks and balls use 1.";
+  "One Coulomb coefficient per contact pair (static equals kinetic): the smaller of the two parts' coefficients, so a body without its own coefficient leaves the surface's in charge. Restitution is the larger of the two; floors and ramps have none.";
 
 const eventTime = (run: MotionRun, type: EventType, target: string) =>
   eventOf(run, type, target)?.t;
@@ -141,7 +145,7 @@ function inclineReferences(
 ): Reference[] {
   const g = scene.gravity;
   const tilt = radians(ramp.angle);
-  const mu = ramp.friction;
+  const mu = contactFriction(block, ramp.friction);
   const slides = Math.tan(tilt) > mu;
   const a = slides ? g * (Math.sin(tilt) - mu * Math.cos(tilt)) : 0;
   const distance =
@@ -195,31 +199,35 @@ function inclineReferences(
 }
 
 /**
- * A solid ball released on a ramp rolls without slipping while μ ≥ (2/7) tan θ, at
- * a = (5/7) g sin θ; below that it slips, and kinetic friction gives g (sin θ − μ cos θ).
+ * A round body (I = k m r²) released on a ramp rolls without slipping while
+ * μ ≥ k/(1 + k) tan θ, at a = g sin θ/(1 + k); below that it slips, and kinetic friction
+ * gives g (sin θ − μ cos θ). A solid ball has k = 2/5, a solid cylinder k = 1/2.
  */
 function rollingReferences(
-  ball: Ball,
+  ball: Ball | Cylinder,
   ramp: Ramp,
   fraction: number,
   scene: LabScene,
 ): Reference[] {
   const g = scene.gravity;
   const tilt = radians(ramp.angle);
-  const mu = ramp.friction;
-  const rolls = mu >= (2 / 7) * Math.tan(tilt);
+  const mu = contactFriction(ball, ramp.friction);
+  const k = rollingFactor(ball)!;
+  const sphere = ball.kind === "ball";
+  const rolls = mu >= (k / (1 + k)) * Math.tan(tilt);
   const a = rolls
-    ? (5 / 7) * g * Math.sin(tilt)
+    ? (g * Math.sin(tilt)) / (1 + k)
     : g * (Math.sin(tilt) - mu * Math.cos(tilt));
   const distance =
     ((leaveFraction(ball, ramp) - fraction) * ramp.length) / Math.cos(tilt);
   const neighbour = rampNeighbour(ball, ramp, scene);
   const broken = neighbour ? `${neighbour.id} shares ${ramp.id}.` : undefined;
+  const threshold = sphere ? "(2/7) tan θ" : "(1/3) tan θ";
   const assumptions = [
     `Starts at rest on ${ramp.id}, ${ramp.angle.toFixed(0)}° with μ = ${mu}.`,
     rolls
-      ? "Rolls without slipping, since μ ≥ (2/7) tan θ; a solid sphere, I = (2/5) m r²."
-      : "Slips throughout, since μ < (2/7) tan θ; kinetic friction acts at the contact.",
+      ? `Rolls without slipping, since μ ≥ ${threshold}; ${sphere ? "a solid sphere, I = (2/5) m r²" : "a solid cylinder about its axis, I = (1/2) m r²"}.`
+      : `Slips throughout, since μ < ${threshold}; kinetic friction acts at the contact.`,
     "No rolling resistance or air drag.",
     CONTACT_MODEL,
     "Starts 15 mm above the surface, so the first ~55 ms are free fall.",
@@ -233,7 +241,9 @@ function rollingReferences(
       label: "Acceleration",
       symbol: "a",
       unit: "m/s²",
-      formula: rolls ? "a = (5/7) g sin θ" : "a = g (sin θ − μ cos θ)",
+      formula: rolls
+        ? `a = (${sphere ? "5/7" : "2/3"}) g sin θ`
+        : "a = g (sin θ − μ cos θ)",
       value: a,
       assumptions,
       broken,
@@ -406,7 +416,7 @@ function springReferences(spring: Spring): Reference[] {
 }
 
 function frictionReferences(block: Block, scene: LabScene): Reference[] {
-  const mu = scene.floorFriction;
+  const mu = contactFriction(block, scene.floorFriction);
   const v0 = Math.abs(block.vx);
   if (v0 === 0) return [];
   const g = scene.gravity;
@@ -469,35 +479,52 @@ function frictionReferences(block: Block, scene: LabScene): Reference[] {
   ];
 }
 
+/** Flight time of a body launched with vertical speed `vy` from `height` above the floor. */
+export const flightTime = (vy: number, height: number, g: number) =>
+  (vy + Math.sqrt(vy * vy + 2 * g * Math.max(0, height))) / g;
+
 function projectileReferences(
   block: Body,
   height: number,
   scene: LabScene,
 ): Reference[] {
   const g = scene.gravity;
-  const fall = Math.sqrt((2 * height) / g);
-  const range = Math.abs(block.vx) * fall;
+  const { vx, vy } = block;
+  const fall = flightTime(vy, height, g);
+  const range = Math.abs(vx) * fall;
   const obstacle = sharesPath(
     block,
     scene.objects.filter((part) => part.kind === "ramp"),
     block.x,
-    block.x + Math.sign(block.vx || 1) * range,
+    block.x + Math.sign(vx || 1) * range,
   );
   const broken = obstacle ? `${obstacle.id} lies under the path.` : undefined;
+  const lowest =
+    block.kind === "block"
+      ? "corner"
+      : block.kind === "ball"
+        ? "point"
+        : "edge";
+  const launch =
+    vy === 0
+      ? `Launched horizontally at ${vx} m/s`
+      : `Launched at vₓ = ${vx} m/s, v_y = ${vy} m/s`;
   const assumptions = [
-    `Launched horizontally at ${block.vx} m/s from ${height.toFixed(2)} m above the floor.`,
+    `${launch} from ${Math.max(0, height).toFixed(2)} m above the floor.`,
     "No air drag; uniform gravity; no spin.",
-    `Contact is detected to one step, as the lowest ${block.kind === "ball" ? "point" : "corner"} comes within 5 mm of the floor.`,
+    `Contact is detected to one step, as the lowest ${lowest} comes within 5 mm of the floor.`,
   ];
   const landing = (run: MotionRun) => eventTime(run, "floor_contact", block.id);
-  return [
+  const timeFormula =
+    vy === 0 ? "t = √(2h / g)" : "t = (v_y + √(v_y² + 2 g h)) / g";
+  const list: Reference[] = [
     {
       id: `${block.id}.projectile.t`,
       target: block.id,
       label: "Flight time",
       symbol: "t",
       unit: "s",
-      formula: "t = √(2h / g)",
+      formula: timeFormula,
       value: fall,
       assumptions,
       broken,
@@ -512,7 +539,7 @@ function projectileReferences(
       label: "Range",
       symbol: "R",
       unit: "m",
-      formula: "R = |vₓ| √(2h / g)",
+      formula: vy === 0 ? "R = |vₓ| √(2h / g)" : "R = |vₓ| t",
       value: range,
       assumptions,
       broken,
@@ -525,6 +552,145 @@ function projectileReferences(
           ? undefined
           : Math.abs(valueAt(run, `${block.id}.x`, t) - block.x);
       },
+    },
+  ];
+  if (vy > 0)
+    list.push({
+      id: `${block.id}.projectile.h`,
+      target: block.id,
+      label: "Peak height",
+      symbol: "y_max",
+      unit: "m",
+      formula: "y_max = y₀ + v_y² / (2g)",
+      value: block.y + (vy * vy) / (2 * g),
+      assumptions: [
+        ...assumptions,
+        "Read as the highest recorded centre height, sampled at the probe rate.",
+      ],
+      broken,
+      tolerance: 0.005,
+      floor: 0,
+      event: "floor_contact",
+      measure: (run) => {
+        const end = landing(run);
+        const column = run.series.columns[`${block.id}.y`];
+        if (end === undefined || !column) return;
+        let peak = Number.NEGATIVE_INFINITY;
+        run.series.t.forEach((t, index) => {
+          if (t <= end) peak = Math.max(peak, column[index]);
+        });
+        return peak;
+      },
+    });
+  return list;
+}
+
+/**
+ * The coefficient of restitution read across the first bounce: the vertical speeds at the
+ * start and end of the bounce step, each carried from the nearest probe sample by free fall.
+ */
+export function bounceRatio(
+  run: MotionRun,
+  id: string,
+  gravity: number,
+): number | undefined {
+  const t = eventTime(run, "bounce", id);
+  const column = run.series.columns[`${id}.vy`];
+  if (t === undefined || !column) return;
+  const h = run.inputs.timeStep;
+  const times = run.series.t;
+  const slack = 1e-9;
+  let before = -1;
+  let after = -1;
+  times.forEach((time, index) => {
+    if (time <= t - h + slack) before = index;
+    if (after < 0 && time >= t - slack) after = index;
+  });
+  if (before < 0 || after < 0) return;
+  const down = column[before] - gravity * (t - h - times[before]);
+  const up = column[after] + gravity * (times[after] - t);
+  return down < 0 ? up / -down : undefined;
+}
+
+function bounceReferences(body: Body, scene: LabScene): Reference[] {
+  const e = body.restitution;
+  return [
+    {
+      id: `${body.id}.bounce.e`,
+      target: body.id,
+      label: "Coefficient of restitution",
+      symbol: "e",
+      unit: "",
+      formula: "e = v_out / v_in",
+      value: e,
+      assumptions: [
+        `${body.id} has e = ${e}; the floor has none, so the larger, ${e}, applies.`,
+        "Speeds are taken just before and after the bounce step; the nearest samples are carried to it by free fall.",
+        "The body sinks up to one step's travel into the floor before it rebounds, so the rebound height falls short of e² h₀ by about that depth; the speed ratio does not.",
+      ],
+      tolerance: 0.002,
+      floor: 0.002,
+      event: "bounce",
+      measure: (run) => bounceRatio(run, body.id, scene.gravity),
+    },
+  ];
+}
+
+/** Velocities after a head-on impact of two balls with restitution e along x. */
+export function impactVelocities(a: Ball, b: Ball) {
+  const e = Math.max(a.restitution, b.restitution);
+  const m = a.mass + b.mass;
+  const p = a.mass * a.vx + b.mass * b.vx;
+  const approach = a.vx - b.vx;
+  return {
+    e,
+    v1: (p - b.mass * e * approach) / m,
+    v2: (p + a.mass * e * approach) / m,
+  };
+}
+
+function collisionReferences(a: Ball, b: Ball): Reference[] {
+  const { e, v1, v2 } = impactVelocities(a, b);
+  const assumptions = [
+    `Equal ${a.radius} m balls meet centre to centre on a frictionless floor, so they slide without spinning and the contact normal is along x.`,
+    `e is the larger of the two restitutions, ${e}.`,
+    "Read at the end of the run, after the impact; the speeds stay constant once the balls part.",
+  ];
+  const after = (key: string) => (run: MotionRun) => {
+    const hit = eventTime(run, "collision", a.id);
+    return hit !== undefined && run.stop.t >= hit + 0.05
+      ? valueAt(run, key, run.stop.t)
+      : undefined;
+  };
+  const momentum = "m₁u₁ + m₂u₂";
+  return [
+    {
+      id: `${a.id}.collision.v1`,
+      target: a.id,
+      label: "Velocity after impact",
+      symbol: "v₁′",
+      unit: "m/s",
+      formula: `v₁′ = (${momentum} − m₂ e (u₁ − u₂)) / (m₁ + m₂)`,
+      value: v1,
+      assumptions,
+      tolerance: 0.002,
+      floor: 0.01,
+      event: "collision",
+      measure: after(`${a.id}.vx`),
+    },
+    {
+      id: `${a.id}.collision.v2`,
+      target: b.id,
+      label: "Velocity after impact",
+      symbol: "v₂′",
+      unit: "m/s",
+      formula: `v₂′ = (${momentum} + m₁ e (u₁ − u₂)) / (m₁ + m₂)`,
+      value: v2,
+      assumptions,
+      tolerance: 0.002,
+      floor: 0.01,
+      event: "collision",
+      measure: after(`${b.id}.vx`),
     },
   ];
 }
@@ -623,18 +789,21 @@ export function referencesFor(scene: LabScene): Reference[] {
     const start = startingRamp(part, scene);
     if (start) {
       list.push(
-        ...(part.kind === "ball"
-          ? rollingReferences(part, start.ramp, start.fraction, scene)
-          : inclineReferences(part, start.ramp, start.fraction, scene)),
+        ...(part.kind === "block"
+          ? inclineReferences(part, start.ramp, start.fraction, scene)
+          : rollingReferences(part, start.ramp, start.fraction, scene)),
       );
       continue;
     }
     const height = part.y - bodyLowest(part, startRotation(part));
-    if (height > CONTACT_GAP)
+    if (canLand(part, scene)) {
       list.push(...projectileReferences(part, height, scene));
-    else if (part.kind === "block")
+      if (part.restitution > 0) list.push(...bounceReferences(part, scene));
+    } else if (part.kind === "block")
       list.push(...frictionReferences(part, scene));
   }
+  for (const [a, b] of headOnPairs(scene))
+    list.push(...collisionReferences(a, b));
   return list;
 }
 
@@ -695,7 +864,7 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
     const stop = find(`${part.id}.friction.t`);
     if (stop) {
       const v0 = Math.abs(part.vx);
-      const deceleration = scene.floorFriction * g;
+      const deceleration = contactFriction(part, scene.floorFriction) * g;
       curves.push({
         key: `${part.id}.speed`,
         at: (t) => Math.max(0, v0 - deceleration * t),
@@ -707,10 +876,14 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
       curves.push(
         {
           key: `${part.id}.y`,
-          at: (t) => part.y - (g * t * t) / 2,
+          at: (t) => part.y + part.vy * t - (g * t * t) / 2,
           until: flight.value,
         },
-        { key: `${part.id}.vy`, at: (t) => -g * t, until: flight.value },
+        {
+          key: `${part.id}.vy`,
+          at: (t) => part.vy - g * t,
+          until: flight.value,
+        },
         {
           key: `${part.id}.x`,
           at: (t) => part.x + part.vx * t,

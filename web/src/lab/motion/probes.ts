@@ -5,13 +5,19 @@ import {
   RAMP_CLEARANCE,
   rampPlacement,
   springSag,
+  type Ball,
   type Body,
   type LabScene,
   type Pendulum,
   type Ramp,
   type Spring,
 } from "../scene";
-import { springForce, type BlockState, type Simulation } from "../simulation";
+import {
+  springForce,
+  type BlockState,
+  type Simulation,
+  type Vec3,
+} from "../simulation";
 
 /** Default probe rate. Samples land on multiples of 1/60 s at every supported step size. */
 export const PROBE_RATE = 60;
@@ -34,13 +40,20 @@ export type Quantity = {
 };
 
 export type EventType =
-  "rest" | "leaves_ramp" | "floor_contact" | "pulley_stop";
+  | "rest"
+  | "leaves_ramp"
+  | "floor_contact"
+  | "bounce"
+  | "collision"
+  | "pulley_stop";
 export type RunEvent = { type: EventType; target: string; t: number };
 
 export const EVENT_LABELS: Record<EventType, string> = {
   rest: "Comes to rest",
   leaves_ramp: "Leaves the ramp",
   floor_contact: "Touches the floor",
+  bounce: "Bounces",
+  collision: "Meets another body",
   pulley_stop: "A weight lands or meets the wheel",
 };
 
@@ -48,7 +61,12 @@ export const EVENT_LABELS: Record<EventType, string> = {
 export type Protocol = { stop: EventType | "time"; maxTime: number };
 export const MAX_TIME_LIMITS = [0.5, 60] as const;
 
-type Trigger = { type: EventType; target: string; ramp?: Ramp };
+type Trigger = {
+  type: EventType;
+  target: string;
+  ramp?: Ramp;
+  partner?: Body;
+};
 
 /** The ramp a body starts on, when it was placed on one. */
 export function startingRamp(
@@ -71,9 +89,17 @@ export function lowestOffset(size: number, rotation: BlockState["rotation"]) {
   return (size / 2) * (Math.abs(r10) + Math.abs(r11) + Math.abs(r12));
 }
 
+/** The y component of a body's local z axis (a cylinder's axis) in the world. */
+const axisRise = ({ x, y, z, w }: BlockState["rotation"]) =>
+  2 * (y * z - w * x);
+
 /** Height of a body's lowest point above its centre, from its orientation. */
-export const bodyLowest = (body: Body, rotation: BlockState["rotation"]) =>
-  body.kind === "block" ? lowestOffset(body.size, rotation) : body.radius;
+export function bodyLowest(body: Body, rotation: BlockState["rotation"]) {
+  if (body.kind === "block") return lowestOffset(body.size, rotation);
+  if (body.kind === "ball") return body.radius;
+  const rise = Math.min(1, Math.abs(axisRise(rotation)));
+  return body.radius * Math.sqrt(1 - rise * rise) + (body.length / 2) * rise;
+}
 
 /** The upright orientation a body starts with. */
 export function startRotation(body: Body): BlockState["rotation"] {
@@ -86,15 +112,84 @@ export function startRotation(body: Body): BlockState["rotation"] {
  * a ball's contact point does.
  */
 export function leaveFraction(block: Body, ramp: Ramp) {
-  if (block.kind === "ball") return 1;
+  if (block.kind !== "block") return 1;
   return 1 - ((block.size / 2) * Math.cos(radians(ramp.angle))) / ramp.length;
 }
 
-/** Moment of inertia of a body about its centre, in kg·m². */
-export const bodyInertia = (body: Body) =>
-  body.kind === "block"
-    ? (body.mass * body.size * body.size) / 6
-    : 0.4 * body.mass * body.radius * body.radius;
+/** Rotational kinetic energy of a body spinning at `w` (rad/s, world axes), in joules. */
+export function rotationalEnergy(
+  body: Body,
+  rotation: BlockState["rotation"],
+  w: Vec3,
+) {
+  const spin = w.x * w.x + w.y * w.y + w.z * w.z;
+  if (body.kind === "block") return (body.mass * body.size ** 2 * spin) / 12;
+  if (body.kind === "ball") return 0.2 * body.mass * body.radius ** 2 * spin;
+  // I = I⊥ (1 − a aᵀ) + I∥ a aᵀ about the cylinder's world axis a.
+  const { x, y, z, w: s } = rotation;
+  const axis = {
+    x: 2 * (x * z + s * y),
+    y: axisRise(rotation),
+    z: 1 - 2 * (x * x + y * y),
+  };
+  const along = axis.x * w.x + axis.y * w.y + axis.z * w.z;
+  const r2 = body.radius ** 2;
+  const across = (body.mass * (3 * r2 + body.length ** 2)) / 12;
+  const about = (body.mass * r2) / 2;
+  return 0.5 * (across * spin + (about - across) * along * along);
+}
+
+/**
+ * Pairs of balls of equal radius at one height and depth on a frictionless floor, one moving
+ * along x towards the other: a head-on collision with a horizontal contact normal. Each pair
+ * is [striker, target].
+ */
+export function headOnPairs(scene: LabScene): [Ball, Ball][] {
+  if (scene.floorFriction !== 0) return [];
+  const balls = scene.objects.filter(
+    (part): part is Ball =>
+      part.kind === "ball" &&
+      part.vy === 0 &&
+      Math.abs(part.y - part.radius) <= CONTACT_GAP,
+  );
+  const pairs: [Ball, Ball][] = [];
+  for (const a of balls)
+    for (const b of balls) {
+      const closing = (b.x - a.x) * (a.vx - b.vx);
+      if (
+        a === b ||
+        a.radius !== b.radius ||
+        a.z !== b.z ||
+        closing <= 0 ||
+        Math.abs(a.vx) < Math.abs(b.vx) ||
+        (Math.abs(a.vx) === Math.abs(b.vx) && a.id > b.id)
+      )
+        continue;
+      const between = balls.some(
+        (c) =>
+          c !== a &&
+          c !== b &&
+          Math.abs(c.z - a.z) < c.radius + a.radius &&
+          (c.x - a.x) * (c.x - b.x) < 0,
+      );
+      if (
+        !between &&
+        !pairs.some((pair) => pair.includes(a) || pair.includes(b))
+      )
+        pairs.push([a, b]);
+    }
+  return pairs;
+}
+
+/** Time until a head-on pair first touches, in seconds. */
+export function impactTime([a, b]: [Ball, Ball]) {
+  return (Math.abs(b.x - a.x) - a.radius - b.radius) / Math.abs(a.vx - b.vx);
+}
+
+/** A body that starts above the floor or is launched upwards: it can land. */
+export const canLand = (body: Body, scene: LabScene) =>
+  !startingRamp(body, scene) &&
+  (body.y - bodyLowest(body, startRotation(body)) > CONTACT_GAP || body.vy > 0);
 
 function triggers(scene: LabScene): Trigger[] {
   const list: Trigger[] = [];
@@ -107,11 +202,14 @@ function triggers(scene: LabScene): Trigger[] {
     const start = startingRamp(part, scene);
     if (start)
       list.push({ type: "leaves_ramp", target: part.id, ramp: start.ramp });
-    const lowest = part.y - bodyLowest(part, startRotation(part));
-    if (!start && lowest > CONTACT_GAP)
+    if (canLand(part, scene)) {
       list.push({ type: "floor_contact", target: part.id });
+      if (part.restitution > 0) list.push({ type: "bounce", target: part.id });
+    }
     list.push({ type: "rest", target: part.id });
   }
+  for (const [striker, partner] of headOnPairs(scene))
+    list.push({ type: "collision", target: striker.id, partner });
   return list;
 }
 
@@ -123,13 +221,27 @@ export function availableStops(scene: LabScene): EventType[] {
   );
 }
 
-/** The stop that suits the scene: the pulley stop, leaving a ramp, landing, then rest. */
+/**
+ * The stop that suits the scene: the pulley stop, leaving a ramp, the first bounce,
+ * landing, then rest. A head-on collision runs to twice its impact time plus half a second,
+ * rounded up to a whole second, so both speeds settle after the impact.
+ */
 export function defaultProtocol(scene: LabScene): Protocol {
   const stops = availableStops(scene);
-  const moving = scene.objects.some((part) => isBody(part) && part.vx !== 0);
+  const pairs = headOnPairs(scene);
+  if (pairs.length && !stops.includes("pulley_stop")) {
+    const last = Math.max(...pairs.map(impactTime));
+    return {
+      stop: "time",
+      maxTime: Math.min(MAX_TIME_LIMITS[1], Math.ceil(2 * last + 0.5)),
+    };
+  }
+  const moving = scene.objects.some(
+    (part) => isBody(part) && (part.vx !== 0 || part.vy !== 0),
+  );
   const stop =
-    (["pulley_stop", "leaves_ramp", "floor_contact"] as const).find((type) =>
-      stops.includes(type),
+    (["pulley_stop", "leaves_ramp", "bounce", "floor_contact"] as const).find(
+      (type) => stops.includes(type),
     ) ?? (moving && stops.includes("rest") ? "rest" : "time");
   return { stop, maxTime: 10 };
 }
@@ -321,6 +433,9 @@ export function createRecorder(
     string,
     { t: number; v: [number, number, number] }
   >();
+  /** Bodies that have been clear of the floor, and each body's vy after the last step. */
+  const airborne = new Set<string>();
+  const lastVy = new Map<string, number>();
   let ticks = 0;
 
   const push = (key: string, value: number) => series.columns[key].push(value);
@@ -338,10 +453,9 @@ export function createRecorder(
       const { position: p, velocity: v } = state;
       const w = state.angularVelocity ?? { x: 0, y: 0, z: 0 };
       const speed = Math.hypot(v.x, v.y, v.z);
-      const inertia = bodyInertia(block);
       const k =
         0.5 * block.mass * speed * speed +
-        0.5 * inertia * (w.x * w.x + w.y * w.y + w.z * w.z);
+        rotationalEnergy(block, state.rotation, w);
       const u = block.mass * scene.gravity * p.y;
       const before = previous.get(block.id);
       const acceleration = before
@@ -471,12 +585,26 @@ export function createRecorder(
           state.velocity.y,
           state.velocity.z,
         );
+        const clearance = state.position.y - bodyLowest(block, state.rotation);
         if (trigger.type === "rest") {
           if (speed > MOVING_SPEED) moved.add(block.id);
           fired = moved.has(block.id) && speed < REST_SPEED;
         } else if (trigger.type === "floor_contact") {
+          fired = airborne.has(block.id) && clearance <= CONTACT_GAP;
+        } else if (trigger.type === "bounce") {
+          // The step on which the vertical velocity turns from down to up.
+          const before = lastVy.get(block.id) ?? 0;
+          fired = airborne.has(block.id) && before < 0 && state.velocity.y > 0;
+        } else if (trigger.type === "collision" && trigger.partner) {
+          const other = simulation.block(trigger.partner.id);
           fired =
-            state.position.y - bodyLowest(block, state.rotation) <= CONTACT_GAP;
+            !!other &&
+            Math.hypot(
+              other.position.x - state.position.x,
+              other.position.y - state.position.y,
+              other.position.z - state.position.z,
+            ) <=
+              bodyHalf(block) + bodyHalf(trigger.partner) + CONTACT_GAP;
         } else if (trigger.ramp) {
           const ramp = trigger.ramp;
           const tilt = radians(ramp.angle);
@@ -494,10 +622,23 @@ export function createRecorder(
         pending.splice(index, 1);
       }
     }
+    watchFloor();
     return raised;
   }
 
+  /** Marks bodies clear of the floor and keeps each body's latest vertical velocity. */
+  function watchFloor() {
+    for (const block of blocks) {
+      const state = simulation.block(block.id);
+      if (!state) continue;
+      if (state.position.y - bodyLowest(block, state.rotation) > CONTACT_GAP)
+        airborne.add(block.id);
+      lastVy.set(block.id, state.velocity.y);
+    }
+  }
+
   sample();
+  watchFloor();
   for (const block of blocks) {
     const state = simulation.block(block.id);
     if (

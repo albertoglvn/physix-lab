@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   blockOnRamp,
+  densityMass,
   findRampPlacement,
+  launchOf,
+  launchVelocity,
   makeObject,
+  MATERIALS,
   makeScene,
   OBJECT_LIMIT,
   parseScene,
   rampHeight,
   rampPlacement,
   SCENE_VERSION,
+  withMaterial,
+  type Ball,
   type Preset,
   type Pulley,
 } from "./scene";
@@ -22,6 +28,9 @@ describe("mechanics scene contract", () => {
     "rolling",
     "pendulum",
     "spring",
+    "launcher",
+    "bounce",
+    "collision",
     "blank",
   ])("round-trips %s", (preset) => {
     const scene = makeScene(preset);
@@ -67,6 +76,74 @@ describe("mechanics scene contract", () => {
     expect(() =>
       parseScene({ ...makeScene("rolling"), version: "physix.lab/1" }),
     ).toThrow("physix.lab/2");
+  });
+
+  it("defaults a body's vertical speed and restitution and checks its surface", () => {
+    const scene = makeScene("projectile");
+    const bare: Record<string, unknown> = { ...scene.objects[0] };
+    delete bare.vy;
+    delete bare.restitution;
+    const [parsed] = parseScene({ ...scene, objects: [bare] }).objects;
+    expect(parsed).toEqual({ ...bare, vy: 0, restitution: 0 });
+    expect(parsed).not.toHaveProperty("friction");
+    expect(parsed).not.toHaveProperty("material");
+    const objects = (patch: Record<string, unknown>) => ({
+      ...scene,
+      objects: [{ ...bare, ...patch }],
+    });
+    expect(() => parseScene(objects({ material: "glass" }))).toThrow(
+      "material must be one of wood, steel, rubber, ice, felt.",
+    );
+    expect(() => parseScene(objects({ restitution: 1.2 }))).toThrow(
+      "restitution",
+    );
+    expect(() => parseScene(objects({ friction: -0.1 }))).toThrow("friction");
+    expect(parseScene(objects({ friction: 0.3 })).objects[0]).toMatchObject({
+      friction: 0.3,
+    });
+  });
+
+  it("parses a cylinder and refuses one without its length", () => {
+    const scene = makeScene("blank");
+    const cylinder = makeObject("cylinder", "cylinder-1");
+    expect(cylinder).toMatchObject({
+      kind: "cylinder",
+      radius: 0.4,
+      length: 1,
+      y: 0.4,
+      vx: 0,
+      vy: 0,
+      restitution: 0,
+    });
+    expect(parseScene({ ...scene, objects: [cylinder] }).objects).toEqual([
+      cylinder,
+    ]);
+    const short: Record<string, unknown> = { ...cylinder };
+    delete short.length;
+    expect(() => parseScene({ ...scene, objects: [short] })).toThrow("length");
+  });
+
+  it("applies a library material without changing the mass", () => {
+    const ball = makeObject("ball", "ball-1") as Ball;
+    const rubber = withMaterial(ball, "rubber");
+    expect(rubber).toEqual({
+      ...ball,
+      material: "rubber",
+      friction: MATERIALS.rubber.friction,
+      restitution: MATERIALS.rubber.restitution,
+    });
+    expect(densityMass(ball, "steel")).toBeCloseTo(
+      7850 * (4 / 3) * Math.PI * ball.radius ** 3,
+      9,
+    );
+  });
+
+  it("splits a launch into components to the millimetre per second", () => {
+    expect(launchVelocity(10, 45)).toEqual({ vx: 7.071, vy: 7.071 });
+    expect(launchVelocity(4, 90)).toEqual({ vx: 0, vy: 4 });
+    const { speed, elevation } = launchOf({ vx: 3, vy: 4 });
+    expect(speed).toBe(5);
+    expect(elevation).toBeCloseTo(53.13010235, 8);
   });
 
   it("defaults a pulley's wheel to massless and checks a given wheel mass", () => {

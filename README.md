@@ -1,14 +1,17 @@
 # Physix
 
 Physix is a browser lab for university physics. Its mechanics workspace lets students build
-and run 3D experiments with blocks, ramps, friction, pulleys, pendulums, and springs. Start the lab with
+and run 3D experiments with blocks, balls, cylinders, ramps, friction, pulleys, pendulums,
+springs, launchers and collisions. Start the lab with
 `pnpm --filter @physix/web run dev`, then open <http://localhost:5173/#/lab>.
 
 ## Mechanics lab
 
 Start with an inclined plane, a friction track, an Atwood machine, a rolling ball, a
-pendulum, a spring oscillator, or a blank scene. Edit
-starting conditions in the inspector, then run, pause, step, or reset the simulation. The
+pendulum, a spring oscillator, a 45° launcher, a bouncing ball, a collision track, or a
+blank scene. Edit starting conditions in the inspector, including each body's material
+(wood, steel, rubber, ice or felt), restitution and launch velocity, then run, pause,
+step, or reset the simulation. The
 **Scene JSON** editor imports and exports `physix.lab/2` scenes that agents can generate and
 run headlessly:
 
@@ -20,8 +23,10 @@ node web/scripts/run-lab.mjs experiment.physix.json 120
 The command writes JSON measurements to stdout and accepts `-` for stdin. The TypeScript
 entry points are `parseScene` in [scene.ts](web/src/lab/scene.ts) and `createSimulation` in
 [simulation.ts](web/src/lab/simulation.ts). Positions and dimensions use metres, mass uses
-kilograms, angles use degrees, and Y points up. A ramp descends along +X. Blocks and ramps
-use Rapier 3D contacts at a fixed 120 Hz timestep with one friction coefficient per surface.
+kilograms, angles use degrees, and Y points up. A ramp descends along +X. Bodies and ramps
+use Rapier 3D contacts at a fixed 120 Hz timestep. Each contact takes the smaller of the
+two friction coefficients and the larger of the two restitutions; a body without its own
+friction leaves the surface's coefficient in charge.
 Each pulley is an Atwood machine: two weights on a massless, inextensible rope over a wheel
 that may be massless or a uniform disc. The rope can go slack, and a weight stops when it
 lands on the base or meets the wheel.

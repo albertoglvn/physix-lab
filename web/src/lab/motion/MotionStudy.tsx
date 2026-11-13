@@ -4,6 +4,7 @@ import {
   Circle,
   CircleDot,
   Code2,
+  Cylinder,
   Copy,
   Download,
   Focus,
@@ -42,11 +43,15 @@ import {
   limits,
   makeObject,
   makeScene,
+  materialNames,
+  MATERIALS,
+  withMaterial,
   OBJECT_LIMIT,
   objectNames,
   parseScene,
   presetNames,
   replaceObject,
+  type Body,
   type LabObject,
   type LabScene,
   type Preset,
@@ -85,6 +90,7 @@ import {
   EVENT_LABELS,
   MAX_TIME_LIMITS,
   protocolFor,
+  startingRamp,
   SYSTEM,
   type Protocol,
 } from "./probes";
@@ -100,6 +106,7 @@ import { useSweep } from "./useSweep";
 const icons = {
   block: Box,
   ball: Circle,
+  cylinder: Cylinder,
   ramp: TriangleRight,
   pulley: CircleDot,
   pendulum: GitCommitVertical,
@@ -108,6 +115,7 @@ const icons = {
 const objectKinds = [
   "block",
   "ball",
+  "cylinder",
   "ramp",
   "pulley",
   "pendulum",
@@ -126,6 +134,9 @@ const TEMPLATE_NOTES: Record<Preset, string> = {
   rolling: "Solid ball rolling down a ramp",
   pendulum: "Rigid pendulum released from rest",
   spring: "Mass on a vertical spring",
+  launcher: "Steel ball launched at 45°",
+  bounce: "Rubber ball dropped on the floor",
+  collision: "Two steel balls meeting head on",
   blank: "Empty floor",
 };
 
@@ -153,6 +164,8 @@ const PAST_STOPS: Record<Protocol["stop"], string> = {
   rest: "came to rest",
   leaves_ramp: "left the ramp",
   floor_contact: "touched the floor",
+  bounce: "bounced",
+  collision: "met another body",
   pulley_stop: "reached its stop",
   time: "reached the time limit",
 };
@@ -187,11 +200,113 @@ type RunRecord = {
   error?: string;
 };
 
+/** A body with some fields changed by hand: it no longer matches its library material. */
+function custom<T extends Body>(body: T, patch: Partial<T>): T {
+  const { material: _material, ...rest } = { ...body, ...patch };
+  void _material;
+  return rest as T;
+}
+
+/** Launch, material, restitution and friction fields shared by every free body. */
+function BodyFields({
+  object,
+  onRamp,
+  onChange,
+}: {
+  object: Body;
+  onRamp: boolean;
+  onChange: (object: LabObject) => void;
+}) {
+  return (
+    <>
+      {onRamp ? null : (
+        <>
+          <UnitInput
+            label="Initial X speed"
+            dimension="velocity"
+            unit="m/s"
+            value={object.vx}
+            {...range(limits.velocity)}
+            onCommit={(vx) => onChange({ ...object, vx })}
+          />
+          <UnitInput
+            label="Initial Y speed"
+            dimension="velocity"
+            unit="m/s"
+            value={object.vy}
+            {...range(limits.velocity)}
+            onCommit={(vy) => onChange({ ...object, vy })}
+          />
+        </>
+      )}
+      <label className="lab-select lab-select--inline">
+        <span>Material</span>
+        <select
+          className="px-input"
+          value={object.material ?? ""}
+          onChange={(event) => {
+            const name = materialNames.find(
+              (option) => option === event.target.value,
+            );
+            onChange(name ? withMaterial(object, name) : custom(object, {}));
+          }}
+        >
+          <option value="">Custom</option>
+          {materialNames.map((name) => (
+            <option key={name} value={name}>
+              {MATERIALS[name].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <UnitInput
+        label="Restitution e"
+        dimension="ratio"
+        unit=""
+        value={object.restitution}
+        {...range(limits.restitution)}
+        onCommit={(restitution) => onChange(custom(object, { restitution }))}
+      />
+      {object.friction === undefined ? (
+        <button
+          className="lab-button"
+          type="button"
+          title="The surface's coefficient applies until the part has its own"
+          onClick={() => onChange(custom(object, { friction: 0.5 }))}
+        >
+          Set own friction
+        </button>
+      ) : (
+        <>
+          <UnitInput
+            label="Own friction μ"
+            dimension="ratio"
+            unit=""
+            value={object.friction}
+            {...range(limits.friction)}
+            onCommit={(friction) => onChange(custom(object, { friction }))}
+          />
+          <button
+            className="lab-button"
+            type="button"
+            onClick={() => onChange(custom(object, { friction: undefined }))}
+          >
+            Use the surface's μ
+          </button>
+        </>
+      )}
+    </>
+  );
+}
+
 function ObjectFields({
   object,
+  onRamp,
   onChange,
 }: {
   object: LabObject;
+  /** The body starts on a ramp, so its launch speeds stay at zero. */
+  onRamp: boolean;
   onChange: (object: LabObject) => void;
 }) {
   const position = (
@@ -252,14 +367,7 @@ function ObjectFields({
             onChange({ ...object, rotation: toDegrees(rotation) })
           }
         />
-        <UnitInput
-          label="Initial X speed"
-          dimension="velocity"
-          unit="m/s"
-          value={object.vx}
-          {...range(limits.velocity)}
-          onCommit={(vx) => onChange({ ...object, vx })}
-        />
+        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
       </div>
     );
   if (object.kind === "ball")
@@ -290,14 +398,46 @@ function ObjectFields({
           {...range(limits.mass)}
           onCommit={(mass) => onChange({ ...object, mass })}
         />
+        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
+      </div>
+    );
+  if (object.kind === "cylinder")
+    return (
+      <div className="lab-fields">
+        {position}
         <UnitInput
-          label="Initial X speed"
-          dimension="velocity"
-          unit="m/s"
-          value={object.vx}
-          {...range(limits.velocity)}
-          onCommit={(vx) => onChange({ ...object, vx })}
+          label="Height"
+          dimension="length"
+          unit="m"
+          value={object.y}
+          {...range(limits.height)}
+          onCommit={(y) => onChange({ ...object, y })}
         />
+        <UnitInput
+          label="Radius"
+          dimension="length"
+          unit="m"
+          value={object.radius}
+          {...range(limits.radius)}
+          onCommit={(radius) => onChange({ ...object, radius })}
+        />
+        <UnitInput
+          label="Length"
+          dimension="length"
+          unit="m"
+          value={object.length}
+          {...range(limits.cylinderLength)}
+          onCommit={(length) => onChange({ ...object, length })}
+        />
+        <UnitInput
+          label="Mass"
+          dimension="mass"
+          unit="kg"
+          value={object.mass}
+          {...range(limits.mass)}
+          onCommit={(mass) => onChange({ ...object, mass })}
+        />
+        <BodyFields object={object} onRamp={onRamp} onChange={onChange} />
       </div>
     );
   if (object.kind === "pendulum")
@@ -1359,7 +1499,11 @@ export function MotionStudy({
         {object ? (
           <div key={object.id}>
             <p className="lab-kind">{objectNames[object.kind]}</p>
-            <ObjectFields object={object} onChange={updateObject} />
+            <ObjectFields
+              object={object}
+              onRamp={isBody(object) && !!startingRamp(object, scene)}
+              onChange={updateObject}
+            />
             {isBody(object) && ramps.length > 0 ? (
               <label className="lab-select">
                 <span>Place on ramp</span>

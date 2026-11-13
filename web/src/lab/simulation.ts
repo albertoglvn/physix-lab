@@ -1,5 +1,6 @@
 import type { ColliderDesc, RigidBody } from "@dimforge/rapier3d-compat";
 import {
+  isBody,
   parseScene,
   radians,
   rampHeight,
@@ -311,14 +312,14 @@ export function initialBlockState(part: BodyPart, gravity = 9.81): BlockState {
     return {
       position: { x: part.x, y: part.y, z: part.z },
       rotation: { x: 0, y: 0, z: Math.sin(halfAngle), w: Math.cos(halfAngle) },
-      velocity: { x: part.vx, y: 0, z: 0 },
+      velocity: { x: part.vx, y: part.vy, z: 0 },
     };
   }
-  if (part.kind === "ball")
+  if (part.kind === "ball" || part.kind === "cylinder")
     return {
       position: { x: part.x, y: part.y, z: part.z },
       rotation: upright,
-      velocity: { x: part.vx, y: 0, z: 0 },
+      velocity: { x: part.vx, y: part.vy, z: 0 },
     };
   if (part.kind === "pendulum")
     return {
@@ -336,6 +337,14 @@ export function initialBlockState(part: BodyPart, gravity = 9.81): BlockState {
     velocity: still,
   };
 }
+
+/**
+ * Friction of a body without its own coefficient. Contacts take the smaller coefficient of
+ * the pair, so such a body leaves the surface's coefficient in charge (up to the limit, 2).
+ */
+export const NEUTRAL_FRICTION = 2;
+/** A quarter turn about x: lays Rapier's y-axis cylinders along z. */
+const ALONG_Z = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
 
 type Rapier = typeof import("@dimforge/rapier3d-compat").default;
 
@@ -391,13 +400,24 @@ export async function createSimulation(
   let ticks = 0;
   let disposed = false;
 
-  const friction = (desc: ColliderDesc, coefficient: number) =>
+  /**
+   * Contacts take the smaller friction coefficient and the larger restitution of the two
+   * colliders. Surfaces (floor, ramps) have no restitution, so a body's own sets its bounce.
+   */
+  const surface = (desc: ColliderDesc, coefficient: number, restitution = 0) =>
     desc
       .setFriction(coefficient)
-      .setFrictionCombineRule(rapier.CoefficientCombineRule.Multiply);
+      .setFrictionCombineRule(rapier.CoefficientCombineRule.Min)
+      .setRestitution(restitution)
+      .setRestitutionCombineRule(rapier.CoefficientCombineRule.Max);
 
   function shape(part: BodyPart) {
     if (part.kind === "ball") return rapier.ColliderDesc.ball(part.radius);
+    if (part.kind === "cylinder")
+      return rapier.ColliderDesc.cylinder(
+        part.length / 2,
+        part.radius,
+      ).setRotation(ALONG_Z);
     if (part.kind === "pendulum")
       return rapier.ColliderDesc.ball(part.bobRadius);
     const half = part.size / 2;
@@ -426,7 +446,7 @@ export async function createSimulation(
     fixed(
       rapier.ColliderDesc.cylinder(0.09, PULLEY_RADIUS)
         .setTranslation(x, PULLEY_HEIGHT, z)
-        .setRotation({ x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }),
+        .setRotation(ALONG_Z),
     );
     // Kinematic weights follow the rope model and push other parts out of their way.
     const weight = (side: -1 | 1) => {
@@ -497,7 +517,7 @@ export async function createSimulation(
     world.timestep = timeStep;
     world.numSolverIterations = SOLVER_ITERATIONS;
     world.createCollider(
-      friction(
+      surface(
         rapier.ColliderDesc.cuboid(200, 0.25, 200),
         scene.floorFriction,
       ).setTranslation(0, -0.25, 0),
@@ -510,7 +530,7 @@ export async function createSimulation(
         );
         if (!desc) throw new Error("Could not construct the ramp collider.");
         world.createCollider(
-          friction(desc, object.friction).setTranslation(object.x, 0, object.z),
+          surface(desc, object.friction).setTranslation(object.x, 0, object.z),
         );
       } else if (object.kind === "pulley") {
         pulleys.set(object.id, atwoodMachine(object));
@@ -530,8 +550,15 @@ export async function createSimulation(
           body.setEnabledTranslations(false, true, false, true);
           springs.push({ spring: object, body });
         }
+        const free = isBody(object);
         world.createCollider(
-          friction(shape(object), 1).setMass(object.mass),
+          surface(
+            shape(object),
+            free && object.friction !== undefined
+              ? object.friction
+              : NEUTRAL_FRICTION,
+            free ? object.restitution : 0,
+          ).setMass(object.mass),
           body,
         );
         if (object.kind === "pendulum") hinge(object, body);

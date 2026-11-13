@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { blockOnRamp, makeObject, makeScene } from "../scene";
+import {
+  blockOnRamp,
+  makeObject,
+  makeScene,
+  type Ball,
+  type Cylinder,
+} from "../scene";
 import {
   availableStops,
+  bodyLowest,
   defaultProtocol,
+  headOnPairs,
   lowestOffset,
   parseProtocol,
   protocolFor,
+  rotationalEnergy,
   sceneQuantities,
   SYSTEM,
 } from "./probes";
@@ -84,6 +93,62 @@ describe("motion probes", () => {
     );
     expect(units["block-1.acceleration"]).toBe("m/s²");
     expect(units[`${SYSTEM}.px`]).toBe("kg·m/s");
+  });
+
+  it("stops a bounce on its first rebound and a collision after both speeds settle", () => {
+    expect(availableStops(makeScene("bounce"))).toEqual(
+      expect.arrayContaining(["floor_contact", "bounce", "rest"]),
+    );
+    expect(defaultProtocol(makeScene("bounce")).stop).toBe("bounce");
+    expect(defaultProtocol(makeScene("launcher")).stop).toBe("bounce");
+    // The balls close 3.4 m at 3 m/s: impact at 1.13 s, so the run lasts 3 s.
+    expect(defaultProtocol(makeScene("collision"))).toEqual({
+      stop: "time",
+      maxTime: 3,
+    });
+    expect(availableStops(makeScene("collision"))).toContain("collision");
+  });
+
+  it("pairs equal balls meeting head on and nothing else", () => {
+    const scene = makeScene("collision");
+    const [striker, target] = scene.objects as Ball[];
+    expect(headOnPairs(scene)).toEqual([[striker, target]]);
+    expect(headOnPairs({ ...scene, floorFriction: 0.3 })).toEqual([]);
+    const apart = { ...scene, objects: [striker, { ...target, z: 1 }] };
+    expect(headOnPairs(apart)).toEqual([]);
+    const larger = { ...target, radius: 0.4, y: 0.4 };
+    expect(headOnPairs({ ...scene, objects: [striker, larger] })).toEqual([]);
+    const away = { ...scene, objects: [{ ...striker, vx: -3 }, target] };
+    expect(headOnPairs(away)).toEqual([]);
+    const middle = { ...target, id: "ball-3", x: -2 };
+    expect(
+      headOnPairs({ ...scene, objects: [striker, target, middle] }),
+    ).toEqual([[striker, middle]]);
+  });
+
+  it("finds a cylinder's lowest point and spin energy from its axis", () => {
+    const cylinder = makeObject("cylinder", "c") as Cylinder;
+    const level = { x: 0, y: 0, z: 0, w: 1 };
+    expect(bodyLowest(cylinder, level)).toBeCloseTo(cylinder.radius, 12);
+    // A quarter turn about x stands the axis upright.
+    const upright = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+    expect(bodyLowest(cylinder, upright)).toBeCloseTo(cylinder.length / 2, 12);
+    const { mass, radius, length } = cylinder;
+    const roll = { x: 0, y: 0, z: 2 };
+    expect(rotationalEnergy(cylinder, level, roll)).toBeCloseTo(
+      ((0.5 * (mass * radius ** 2)) / 2) * 4,
+      12,
+    );
+    const tumble = { x: 2, y: 0, z: 0 };
+    expect(rotationalEnergy(cylinder, level, tumble)).toBeCloseTo(
+      ((0.5 * mass * (3 * radius ** 2 + length ** 2)) / 12) * 4,
+      12,
+    );
+    const ball = makeObject("ball", "b") as Ball;
+    expect(rotationalEnergy(ball, level, roll)).toBeCloseTo(
+      0.2 * ball.mass * ball.radius ** 2 * 4,
+      12,
+    );
   });
 
   it("measures a cube's lowest corner from its orientation", () => {

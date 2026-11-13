@@ -2,11 +2,14 @@ import type { ConvergenceResult } from "../motion/convergence";
 import type { EventType } from "../motion/probes";
 import type { MotionRun } from "../motion/run";
 import { CONTACT_MODEL, type Comparison } from "../motion/theory";
+import { isBody, MATERIALS } from "../scene";
 
 const PAST_EVENTS: Record<EventType, string> = {
   rest: "came to rest",
   leaves_ramp: "left the ramp",
   floor_contact: "touched the floor",
+  bounce: "bounced",
+  collision: "met another body",
   pulley_stop: "reached its stop",
 };
 
@@ -47,11 +50,15 @@ export function methodsSummary(
     : "at the time limit";
   const surfaces = [
     `floor μ = ${scene.floorFriction}`,
-    ...scene.objects.flatMap((part) =>
-      part.kind === "ramp"
-        ? [`${part.id} μ = ${part.friction} at ${part.angle}°`]
-        : [],
-    ),
+    ...scene.objects.flatMap((part) => {
+      if (part.kind === "ramp")
+        return [`${part.id} μ = ${part.friction} at ${part.angle}°`];
+      if (!isBody(part) || (part.friction === undefined && !part.restitution))
+        return [];
+      const made = part.material ? ` (${MATERIALS[part.material].label})` : "";
+      const mu = part.friction === undefined ? "" : `μ = ${part.friction}, `;
+      return [`${part.id}${made} ${mu}e = ${part.restitution}`];
+    }),
   ];
   const sentences = [
     `The ${scene.name} scene was simulated with ${engine.name} ${engine.version} using a fixed step of ${formatStep(inputs.timeStep)} and ${engine.solverIterations} solver iterations, with g = ${scene.gravity} m/s², ${surfaces.join(", ")}.`,

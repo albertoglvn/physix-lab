@@ -26,17 +26,46 @@ export const limits = {
   restLength: [0.2, 10, 0.05],
   offset: [-5, 5, 0.01],
   wheelMass: [0, 20, 0.1],
+  restitution: [0, 1, 0.01],
+  cylinderLength: [0.2, 3, 0.05],
 } as const;
 
+/**
+ * Representative dry-contact values for teaching, not measured pair data. The engine takes
+ * the smaller friction coefficient and the larger restitution of the two parts in contact.
+ */
+export const MATERIALS = {
+  wood: { label: "Wood", friction: 0.4, restitution: 0.5, density: 700 },
+  steel: { label: "Steel", friction: 0.5, restitution: 0.6, density: 7850 },
+  rubber: { label: "Rubber", friction: 1, restitution: 0.8, density: 1100 },
+  ice: { label: "Ice", friction: 0.03, restitution: 0.1, density: 917 },
+  felt: { label: "Felt", friction: 0.3, restitution: 0.05, density: 300 },
+} as const;
+export type MaterialName = keyof typeof MATERIALS;
+export const materialNames = Object.keys(MATERIALS) as MaterialName[];
+
 type Placement = { id: string; x: number; z: number };
-export type Block = Placement & {
-  kind: "block";
-  y: number;
-  size: number;
-  mass: number;
-  rotation: number;
-  vx: number;
+/**
+ * What a free body is made of. `restitution` (0 to 1) sets how it bounces. `friction` is
+ * optional: without it the surface the body touches sets the coefficient, as in
+ * `physix.lab/1`. `material` names the library entry the values came from, when they did.
+ */
+export type Surface = {
+  material?: MaterialName;
+  friction?: number;
+  restitution: number;
 };
+/** Launch velocity in the x–y plane, m/s. */
+export type Launch = { vx: number; vy: number };
+export type Block = Placement &
+  Surface &
+  Launch & {
+    kind: "block";
+    y: number;
+    size: number;
+    mass: number;
+    rotation: number;
+  };
 export type Ramp = Placement & {
   kind: "ramp";
   length: number;
@@ -54,13 +83,24 @@ export type Pulley = Placement & {
   rightMass: number;
   wheelMass: number;
 };
-export type Ball = Placement & {
-  kind: "ball";
-  y: number;
-  radius: number;
-  mass: number;
-  vx: number;
-};
+export type Ball = Placement &
+  Surface &
+  Launch & {
+    kind: "ball";
+    y: number;
+    radius: number;
+    mass: number;
+  };
+/** A solid cylinder lying with its axis along z, so it rolls along x. */
+export type Cylinder = Placement &
+  Surface &
+  Launch & {
+    kind: "cylinder";
+    y: number;
+    radius: number;
+    length: number;
+    mass: number;
+  };
 /**
  * A rigid pendulum: a solid bob on a massless rod, hinged about the z axis at
  * (x, pivotHeight, z). `angle` is the release angle from the downward vertical in degrees,
@@ -88,9 +128,10 @@ export type Spring = Placement & {
   size: number;
   offset: number;
 };
-export type LabObject = Block | Ramp | Pulley | Ball | Pendulum | Spring;
+export type LabObject =
+  Block | Ramp | Pulley | Ball | Cylinder | Pendulum | Spring;
 /** Free rigid bodies: they rest on ramps, slide or roll, fall and collide. */
-export type Body = Block | Ball;
+export type Body = Block | Ball | Cylinder;
 export type LabScene = {
   version: typeof SCENE_VERSION;
   name: string;
@@ -106,11 +147,15 @@ export type Preset =
   | "rolling"
   | "pendulum"
   | "spring"
+  | "launcher"
+  | "bounce"
+  | "collision"
   | "blank";
 
 export const objectNames: Record<LabObject["kind"], string> = {
   block: "Block",
   ball: "Ball",
+  cylinder: "Cylinder",
   ramp: "Ramp",
   pulley: "Pulley",
   pendulum: "Pendulum",
@@ -124,14 +169,63 @@ export const presetNames: Record<Preset, string> = {
   rolling: "Rolling ball",
   pendulum: "Pendulum",
   spring: "Spring oscillator",
+  launcher: "Launcher",
+  bounce: "Bouncing ball",
+  collision: "Collision track",
   blank: "Untitled experiment",
 };
 
 export const isBody = (part: LabObject): part is Body =>
-  part.kind === "block" || part.kind === "ball";
+  part.kind === "block" || part.kind === "ball" || part.kind === "cylinder";
 /** Distance from a body's centre to its lowest point when upright, in metres. */
 export const bodyHalf = (body: Body) =>
   body.kind === "block" ? body.size / 2 : body.radius;
+/** A body's extent along z, in metres. */
+export const bodyDepth = (body: Body) =>
+  body.kind === "cylinder" ? body.length : 2 * bodyHalf(body);
+/** A body's volume in m³. */
+export function bodyVolume(body: Body) {
+  if (body.kind === "block") return body.size ** 3;
+  if (body.kind === "ball") return (4 / 3) * Math.PI * body.radius ** 3;
+  return Math.PI * body.radius ** 2 * body.length;
+}
+/** Rolling-inertia factor k in I = k m r² about the rolling axis; undefined for a block. */
+export const rollingFactor = (body: Body) =>
+  body.kind === "ball" ? 2 / 5 : body.kind === "cylinder" ? 1 / 2 : undefined;
+
+/**
+ * The body made of a library material: its friction and restitution. The mass stays as
+ * set, since a solid lab-sized steel part would outweigh the mass limit; `densityMass`
+ * gives the mass the density implies.
+ */
+export function withMaterial<T extends Body>(body: T, name: MaterialName): T {
+  const { friction, restitution } = MATERIALS[name];
+  return { ...body, material: name, friction, restitution };
+}
+
+/** The mass, in kg, a solid body of the material's density would have. */
+export const densityMass = (body: Body, name: MaterialName) =>
+  MATERIALS[name].density * bodyVolume(body);
+
+/** The friction coefficient a body meets on a surface of coefficient `mu`. */
+export const contactFriction = (body: Surface, mu: number) =>
+  body.friction === undefined ? mu : Math.min(mu, body.friction);
+
+/** Launch speed and elevation (degrees above +x) from a body's launch velocity. */
+export const launchOf = (body: Launch) => ({
+  speed: Math.hypot(body.vx, body.vy),
+  elevation: (Math.atan2(body.vy, body.vx) * 180) / Math.PI,
+});
+
+/** Launch velocity components for a speed and an elevation in degrees, to 1 mm/s. */
+export function launchVelocity(speed: number, elevation: number): Launch {
+  const angle = radians(elevation);
+  const round = (value: number) => Math.round(value * 1000) / 1000 || 0;
+  return {
+    vx: round(speed * Math.cos(angle)),
+    vy: round(speed * Math.sin(angle)),
+  };
+}
 
 export function makeObject(
   kind: "block",
@@ -157,6 +251,12 @@ export function makeObject(
   x?: number,
   z?: number,
 ): Ball;
+export function makeObject(
+  kind: "cylinder",
+  id: string,
+  x?: number,
+  z?: number,
+): Cylinder;
 export function makeObject(
   kind: "pendulum",
   id: string,
@@ -192,6 +292,8 @@ export function makeObject(
         mass: 2,
         rotation: 0,
         vx: 0,
+        vy: 0,
+        restitution: 0,
       };
     case "ramp":
       return {
@@ -205,7 +307,28 @@ export function makeObject(
     case "pulley":
       return { ...placement, kind, leftMass: 2, rightMass: 3, wheelMass: 0 };
     case "ball":
-      return { ...placement, kind, y: 0.5, radius: 0.5, mass: 2, vx: 0 };
+      return {
+        ...placement,
+        kind,
+        y: 0.5,
+        radius: 0.5,
+        mass: 2,
+        vx: 0,
+        vy: 0,
+        restitution: 0,
+      };
+    case "cylinder":
+      return {
+        ...placement,
+        kind,
+        y: 0.4,
+        radius: 0.4,
+        length: 1,
+        mass: 2,
+        vx: 0,
+        vy: 0,
+        restitution: 0,
+      };
     case "pendulum":
       return {
         ...placement,
@@ -285,13 +408,14 @@ export function blockOnRamp<T extends Body>(
     z: ramp.z + lateral,
     ...(block.kind === "block" ? { rotation: -ramp.angle } : {}),
     vx: 0,
+    vy: 0,
   };
 }
 
 /** Returns an on-surface starting position expressed relative to the ramp. */
 export function rampPlacement(block: Body, ramp: Ramp) {
   if (block.kind === "block" && block.rotation !== -ramp.angle) return;
-  if (block.vx !== 0) return;
+  if (block.vx !== 0 || block.vy !== 0) return;
   const normalOffset =
     (bodyHalf(block) + RAMP_CLEARANCE) * Math.sin(radians(ramp.angle));
   const fraction = (block.x - ramp.x - normalOffset) / ramp.length + 0.5;
@@ -308,7 +432,7 @@ export function findRampPlacement<T extends Body>(
   objects: LabObject[],
 ): T | undefined {
   const half = bodyHalf(block);
-  if (2 * half > ramp.width) return;
+  if (bodyDepth(block) > ramp.width) return;
   const edge = (half * Math.cos(radians(ramp.angle))) / ramp.length;
   for (const fraction of [0.23, 0.46, 0.69, 0.85]) {
     if (fraction < edge || fraction > 1 - edge) continue;
@@ -372,6 +496,25 @@ export function makeScene(preset: Preset): LabScene {
     scene.objects = [{ ...makeObject("pendulum", "pendulum-1"), angle: 8 }];
   } else if (preset === "spring") {
     scene.objects = [makeObject("spring", "spring-1")];
+  } else if (preset === "launcher") {
+    // A steel ball launched from the floor at 10 m/s, 45° above +x.
+    const ball = { ...makeObject("ball", "ball-1", -6), radius: 0.2, y: 0.2 };
+    scene.objects = [
+      { ...withMaterial(ball, "steel"), ...launchVelocity(10, 45) },
+    ];
+  } else if (preset === "bounce") {
+    const ball = { ...makeObject("ball", "ball-1"), radius: 0.2, y: 2.2 };
+    scene.objects = [withMaterial(ball, "rubber")];
+  } else if (preset === "collision") {
+    // Equal balls on a frictionless floor slide without spinning and meet centre to
+    // centre, so the impact is one-dimensional and both speeds stay constant after it.
+    scene.floorFriction = 0;
+    const ball = (id: string, x: number, mass: number) =>
+      withMaterial(
+        { ...makeObject("ball", id, x), radius: 0.3, y: 0.3, mass },
+        "steel",
+      );
+    scene.objects = [{ ...ball("ball-1", -4, 2), vx: 3 }, ball("ball-2", 0, 1)];
   }
   return scene;
 }
@@ -399,6 +542,32 @@ function numeric(
   return value;
 }
 
+function optional(
+  input: Record<string, unknown>,
+  key: string,
+  range: readonly [number, number, number],
+  fallback: number,
+): number {
+  return input[key] === undefined ? fallback : numeric(input, key, range);
+}
+
+/** Restitution, optional friction and material name; absent fields keep lab/1 behaviour. */
+function parseSurface(input: Record<string, unknown>): Surface {
+  const { material } = input;
+  if (
+    material !== undefined &&
+    !(typeof material === "string" && Object.hasOwn(MATERIALS, material))
+  )
+    throw new Error(`material must be one of ${materialNames.join(", ")}.`);
+  const surface: Surface = {
+    restitution: optional(input, "restitution", limits.restitution, 0),
+  };
+  if (material !== undefined) surface.material = material as MaterialName;
+  if (input.friction !== undefined)
+    surface.friction = numeric(input, "friction", limits.friction);
+  return surface;
+}
+
 function parseObject(input: unknown): LabObject {
   const object = record(input, "Scene object");
   const { id, kind } = object;
@@ -421,6 +590,8 @@ function parseObject(input: unknown): LabObject {
         mass: numeric(object, "mass", limits.mass),
         rotation: numeric(object, "rotation", limits.rotation),
         vx: numeric(object, "vx", limits.velocity),
+        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseSurface(object),
       };
     case "ramp":
       return {
@@ -438,10 +609,7 @@ function parseObject(input: unknown): LabObject {
         leftMass: numeric(object, "leftMass", limits.mass),
         rightMass: numeric(object, "rightMass", limits.mass),
         // Optional, so physix.lab/1 pulleys and earlier lab/2 scenes keep a massless wheel.
-        wheelMass:
-          object.wheelMass === undefined
-            ? 0
-            : numeric(object, "wheelMass", limits.wheelMass),
+        wheelMass: optional(object, "wheelMass", limits.wheelMass, 0),
       };
     case "ball":
       return {
@@ -451,6 +619,20 @@ function parseObject(input: unknown): LabObject {
         radius: numeric(object, "radius", limits.radius),
         mass: numeric(object, "mass", limits.mass),
         vx: numeric(object, "vx", limits.velocity),
+        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseSurface(object),
+      };
+    case "cylinder":
+      return {
+        ...placement,
+        kind,
+        y: numeric(object, "y", limits.height),
+        radius: numeric(object, "radius", limits.radius),
+        length: numeric(object, "length", limits.cylinderLength),
+        mass: numeric(object, "mass", limits.mass),
+        vx: numeric(object, "vx", limits.velocity),
+        vy: optional(object, "vy", limits.velocity, 0),
+        ...parseSurface(object),
       };
     case "pendulum":
       return {
@@ -476,7 +658,7 @@ function parseObject(input: unknown): LabObject {
       };
     default:
       throw new Error(
-        "Supported objects are blocks, balls, ramps, pulleys, pendulums and springs.",
+        "Supported objects are blocks, balls, cylinders, ramps, pulleys, pendulums and springs.",
       );
   }
 }
@@ -510,7 +692,7 @@ export function parseScene(input: unknown): LabScene {
     throw new Error("Every object needs a unique ID.");
   if (legacy && objects.some((part) => !LEGACY_KINDS.includes(part.kind)))
     throw new Error(
-      `Balls, pendulums and springs need scene version ${SCENE_VERSION}.`,
+      `Balls, cylinders, pendulums and springs need scene version ${SCENE_VERSION}.`,
     );
   const gravity = numeric(scene, "gravity", limits.gravity);
   for (const part of objects) {

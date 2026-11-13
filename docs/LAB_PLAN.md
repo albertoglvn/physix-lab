@@ -7,8 +7,8 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator and simulated-pulley slices; each phase lists its own status. The plan started
-from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
+oscillator, simulated-pulley and materials slices; each phase lists its own status. The
+plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
 ---
@@ -683,9 +683,42 @@ Determinism behaves as documented in §4.1.
   T₂ = 24.525 N match the closed forms to the same precision. The landing time is 1.30000 s
   at 1/120 s and 1.29583 s at 1/240 s and 1/480 s against the ideal 1.29454 s. Every mass
   pair tested settles at its stop with the rope holding the lighter weight (T = m g).
-- *Still to do in Phase 3:* cylinders, rods, ropes, applied forces, launcher, drag,
-  restitution and materials, contact-force probes, run history and comparison, a residual
-  plot, two-variable grids, seeded initial-condition perturbations, and Stress sweeps with
+
+*Status, materials, restitution, cylinders and the launcher (done):*
+
+- Free bodies (blocks, balls and the new solid cylinder, which lies along z and rolls along
+  x) carry optional `restitution`, their own `friction`, a library `material` label and a
+  vertical launch speed `vy`. The library holds wood, steel, rubber, ice and felt with
+  friction, restitution and density; choosing one copies μ and e and leaves the mass alone,
+  since a solid lab-sized steel part would exceed the 100 kg limit.
+- Contacts take the smaller of the two friction coefficients and the larger of the two
+  restitutions. A body without its own coefficient carries 2, so floors and ramps keep
+  governing as before. The engine's rebound speed equals e times the impact speed, but the
+  ball sinks about 2 cm into the floor at 1/120 s, so e is measured as a speed ratio rather
+  than from the rebound height.
+- New presets: a steel ball launched at 10 m/s and 45°, a rubber ball dropped from 2 m and a
+  collision track with two equal steel balls (2 kg striker at 3 m/s, 1 kg target) on a
+  frictionless floor. New events: `bounce` and `collision`. A head-on pair runs to twice its
+  impact time plus half a second so both speeds settle.
+- References: flight time, range and peak height for any launch; e = v_out / v_in for a
+  bouncing body, read from the samples either side of the bounce carried to the bounce
+  time by free fall; both velocities after a head-on impact of equal balls; and the rolling
+  acceleration a = g sin θ / (1 + k) with k = 2/5 for a ball and 1/2 for a cylinder, which
+  slips when μ < k/(1 + k) tan θ. The collision reference is limited to equal balls on a
+  frictionless floor, because unequal radii and block faces put the engine 1 to 5 % off
+  the one-dimensional result.
+- Sweeps vary `vy`, restitution, own friction, and a cylinder's radius and length.
+- *Exit evidence, measured* at steps of 1/120, 1/240 and 1/480 s (probe rate up to
+  240 Hz). The launcher's flight time is 1.44167 s against 1.44159 s and its range is within
+  8 × 10⁻⁵. Its peak height approaches 2.74837 m as the step shrinks (−1.4, −0.66 and
+  −0.38 × 10⁻³ relative). The measured e is 0.6 (steel) and 0.8 (rubber) within 3 × 10⁻⁷.
+  After the impact the striker moves at 1.40000 m/s and the target at 3.20000 m/s, the
+  closed forms within 2 × 10⁻⁷. A rolling cylinder on the 26° ramp with μ = 0.2 accelerates
+  at 2.8674, 2.8658 and 2.8680 m/s² against 2.86695. With μ = 0.05 it slips at 3.8296,
+  3.8432 and 3.8597 m/s² against 3.85956, converging with the step.
+- *Still to do in Phase 3:* rods, ropes, applied forces, drag, contact-force probes, run
+  history and comparison, a residual plot, two-variable grids, seeded initial-condition
+  perturbations, and Stress sweeps with
   the convergence study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)

@@ -4,9 +4,11 @@ import {
   makeObject,
   makeScene,
   radians,
+  type Ball,
   type LabScene,
   type Pulley,
   type Preset,
+  type Ramp,
 } from "../scene";
 import { defaultProtocol } from "./probes";
 import { runProtocol } from "./run";
@@ -51,6 +53,9 @@ describe("closed-form references", () => {
     ["rolling", 2],
     ["pendulum", 2],
     ["spring", 1],
+    ["launcher", 4],
+    ["bounce", 3],
+    ["collision", 2],
   ])(
     "matches the %s template within tolerance at the default step",
     async (preset, count) => {
@@ -121,6 +126,66 @@ describe("closed-form references", () => {
     const covered = makeScene("projectile");
     covered.objects.push(makeObject("ramp", "ramp-1", -3));
     expect(byId(covered, "projectile.t").broken).toMatch("ramp-1");
+  });
+
+  it("predicts a launch's peak, a rebound's restitution and a head-on impact", () => {
+    const g = 9.81;
+    const launcher = makeScene("launcher");
+    const [ball] = launcher.objects as Ball[];
+    // The ball lands when its lowest point, a radius below the centre, meets the floor.
+    const h = ball.y - ball.radius;
+    const t = (ball.vy + Math.sqrt(ball.vy ** 2 + 2 * g * h)) / g;
+    expect(byId(launcher, "projectile.t").value).toBeCloseTo(t, 12);
+    expect(byId(launcher, "projectile.r").value).toBeCloseTo(ball.vx * t, 12);
+    expect(byId(launcher, "projectile.h").value).toBeCloseTo(
+      ball.y + ball.vy ** 2 / (2 * g),
+      12,
+    );
+    expect(byId(makeScene("bounce"), "bounce.e").value).toBe(0.8);
+    // m₁ = 2, m₂ = 1, u = 3 m/s, e = 0.6.
+    const collision = makeScene("collision");
+    expect(byId(collision, "collision.v1").value).toBeCloseTo(1.4, 12);
+    expect(byId(collision, "collision.v2").value).toBeCloseTo(3.2, 12);
+    expect(referencesFor(makeScene("projectile")).map(({ id }) => id)).toEqual([
+      "block-1.projectile.t",
+      "block-1.projectile.r",
+    ]);
+  });
+
+  it("rolls a cylinder at two thirds of g sin θ and slides it on a slick ramp", async () => {
+    const scene = (friction: number): LabScene => {
+      const template = makeScene("rolling");
+      const ramp = { ...(template.objects[0] as Ramp), friction };
+      const cylinder = blockOnRamp(makeObject("cylinder", "cylinder-1"), ramp);
+      return { ...template, objects: [ramp, cylinder] };
+    };
+    const tilt = radians(26);
+    const rolls = byId(scene(0.2), "rolling.a");
+    expect(rolls.value).toBeCloseTo((2 / 3) * 9.81 * Math.sin(tilt), 12);
+    expect(rolls.formula).toContain("2/3");
+    // μ = 0.05 < (1/3) tan 26° ≈ 0.163, so the cylinder slips.
+    const slick = scene(0.05);
+    const slips = byId(slick, "rolling.a");
+    expect(slips.formula).toBe("a = g (sin θ − μ cos θ)");
+    for (const reference of [rolls, slips]) {
+      const setup = reference === rolls ? scene(0.2) : slick;
+      const run = await runProtocol(setup, defaultProtocol(setup));
+      expect(compare(reference, run).within, reference.id).toBe(true);
+    }
+  });
+
+  it("uses a part's own friction when it is below the surface's", () => {
+    const scene = makeScene("friction");
+    const [block] = scene.objects;
+    const own = { ...scene, objects: [{ ...block, friction: 0.1 }] };
+    const higher = { ...scene, objects: [{ ...block, friction: 0.9 }] };
+    expect(byId(own, "friction.d").value).toBeCloseTo(
+      byId(scene, "friction.d").value * (scene.floorFriction / 0.1),
+      9,
+    );
+    expect(byId(higher, "friction.d").value).toBe(
+      byId(scene, "friction.d").value,
+    );
   });
 
   it("rolls a ball below the slip limit and slides it above", async () => {

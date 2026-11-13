@@ -98,10 +98,10 @@ export function knownParameters(
   if (family !== "incline" || !isBody(part)) return known;
   const start = startingRamp(part, scene);
   if (start && spec.variable !== `${start.ramp.id}.friction`)
-    known.mu = {
-      value: start.ramp.friction,
-      source: `${start.ramp.id} friction`,
-    };
+    known.mu =
+      part.friction !== undefined && part.friction < start.ramp.friction
+        ? { value: part.friction, source: `${part.id} friction` }
+        : { value: start.ramp.friction, source: `${start.ramp.id} friction` };
   return known;
 }
 

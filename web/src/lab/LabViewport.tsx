@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import type { Ball, LabScene, Pendulum, Pulley, Spring } from "./scene";
+import type {
+  Ball,
+  Cylinder,
+  LabScene,
+  Pendulum,
+  Pulley,
+  Spring,
+} from "./scene";
 import {
   documentViewportPalette,
   type ViewportPalette,
@@ -156,6 +163,35 @@ function ballMesh(
   );
   const outline = cage(object.radius, palette.partEdge);
   mesh.add(band, outline);
+  const initial = initialBlockState(object);
+  return {
+    root: mesh,
+    outline,
+    update: () => {
+      const { position, rotation } = simulation?.block(object.id) ?? initial;
+      mesh.position.set(position.x, position.y, position.z);
+      mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    },
+  };
+}
+
+/** A cylinder lying along z, with a stripe along its side so its rolling shows. */
+function cylinderMesh(
+  object: Cylinder,
+  palette: ViewportPalette,
+  simulation?: Simulation,
+): Drawable {
+  const { radius, length } = object;
+  const geometry = new THREE.CylinderGeometry(radius, radius, length, 40);
+  geometry.rotateX(Math.PI / 2);
+  const mesh = solid(geometry, palette.ball);
+  const stripe = solid(
+    new THREE.BoxGeometry(radius * 0.16, radius * 0.08, length * 1.002),
+    palette.ballBand,
+  );
+  stripe.position.y = radius * 0.97;
+  const outline = edges(geometry, palette.partEdge);
+  mesh.add(stripe, outline);
   const initial = initialBlockState(object);
   return {
     root: mesh,
@@ -448,6 +484,8 @@ function createView(
           };
         } else if (object.kind === "ball") {
           drawable = ballMesh(object, palette, current);
+        } else if (object.kind === "cylinder") {
+          drawable = cylinderMesh(object, palette, current);
         } else if (object.kind === "pendulum") {
           drawable = pendulumMesh(object, palette, scene.gravity, current);
         } else if (object.kind === "spring") {
