@@ -5,7 +5,7 @@ const SCIKIT_FEM =
 
 const sources = import.meta.glob<string>(
   [
-    "../../../physics/{__init__,case,examples,geometry,materials,mesh,solver}.py",
+    "../../../physics/{__init__,case,convergence,examples,geometry,materials,mesh,solver}.py",
     "../../../data/{__init__,domain,labels,raster}.py",
     "../../../model/{__init__,calibrate,ensemble}.py",
     "../../../mcp/physix_mcp/{__init__,http_api,optimize,service}.py",
