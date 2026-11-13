@@ -6,8 +6,8 @@ with theory, varies parameters, and exports evidence that holds up in a report o
 keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the style rules, and
 this plan cites it wherever the UI changes.
 
-Status: in progress. Phases 0 and 1 are done, and Phase 2 has its Motion and Stress
-slices; each phase lists its own status. The plan started from the `web/src/lab/`
+Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables and
+oscillator slices; each phase lists its own status. The plan started from the `web/src/lab/`
 workspace, `browser-fem` worker, `Home` page and `physix.lab/1` scene contract.
 
 ---
@@ -636,11 +636,33 @@ Determinism behaves as documented in §4.1.
   logical processors, 15 GB RAM), Chromium in the desktop preview, dev build, warm
   cache. During the sweep, no main-thread gap exceeded 50 ms (largest 49.7 ms, measured by
   message-channel ping).
-- *Still to do in Phase 3:* new parts (spheres, cylinders, springs, rods, ropes, simulated
-  pulley, applied forces, launcher, drag, restitution, materials) with `physix.lab/2`,
-  pendulum and spring–mass overlays, contact-force probes, run history and comparison, a
-  residual plot, two-variable grids, seeded initial-condition perturbations, the damped
-  sinusoid and period metrics, and Stress sweeps with the convergence study sheet.
+
+*Status, oscillators (done):*
+
+- Scene contract `physix.lab/2` adds a ball, a rigid pendulum and a vertical spring–mass with
+  a viscous damper. `physix.lab/1` scenes migrate unchanged. Validation rejects any set-up
+  whose swing would reach the floor or the spring anchor. New templates: Rolling ball,
+  Pendulum and Spring oscillator.
+- References: rolling without slipping, a(θ) = 5/7 g sin θ, switching to sliding when
+  μ < 2/7 tan θ; the small-angle pendulum period, broken beyond 10°; the exact
+  elliptic-integral period; and the damped spring period 2π / (ω₀ √(1 − ζ²)), broken at
+  ζ ≥ 1. Periods are measured from mean zero crossings. A damped swing is read until it
+  fades to 10⁻³ of its release offset. The overlays draw θ₀ cos ωt and the damped
+  sinusoid.
+- Sweeps accept the new fields and propose the pendulum length and the spring mass. A
+  "Period about the mean" probe statistic works on any column. The sweep sheet trims a
+  range to the values the scene accepts. Fits add the pendulum law (fitting g) and the
+  spring law (fitting k), with the configured value shown for comparison.
+- *Exit evidence, measured.* The engine pendulum period matches the exact period within
+  10⁻⁶ (relative). Spring periods match within 2 × 10⁻⁴ for ζ up to 0.4. A pendulum length
+  sweep from 1.5 to 4.5 m (13 values, 3°, σ 0.01 s, 3 readings each) recovers g within
+  2 SE of 9.81 m/s², with SE below 0.03. Without noise, the small-angle law fits
+  g = 9.8054 m/s², a model bias of 0.05% from the amplitude and the bob's inertia. A spring
+  mass sweep recovers k = 80 N/m within 5 × 10⁻³.
+- *Still to do in Phase 3:* cylinders, rods, ropes, simulated pulley, applied forces,
+  launcher, drag, restitution and materials, contact-force probes, run history and
+  comparison, a residual plot, two-variable grids, seeded initial-condition perturbations,
+  and Stress sweeps with the convergence study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

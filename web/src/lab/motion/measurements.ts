@@ -1,4 +1,9 @@
-import type { LabObject, LabScene } from "../scene";
+import {
+  isBody,
+  springEquilibrium,
+  type LabObject,
+  type LabScene,
+} from "../scene";
 import { initialBlockState, pulleyState, type Simulation } from "../simulation";
 
 export type Reading = {
@@ -18,7 +23,47 @@ export function measure(
   const items: Reading[] = [
     { label: "Time", short: "t", value: time, unit: "s" },
   ];
-  if (object?.kind === "block") {
+  if (object?.kind === "pendulum") {
+    const { position, velocity, angularVelocity } =
+      simulation?.block(object.id) ?? initialBlockState(object, scene.gravity);
+    const theta = Math.atan2(
+      position.x - object.x,
+      object.pivotHeight - position.y,
+    );
+    items.push(
+      {
+        label: "Angle",
+        short: "θ",
+        value: (theta * 180) / Math.PI,
+        unit: "°",
+      },
+      {
+        label: "Angular velocity",
+        short: "ω",
+        value: angularVelocity?.z ?? 0,
+        unit: "rad/s",
+      },
+      {
+        label: "Bob speed",
+        short: "v",
+        value: Math.hypot(velocity.x, velocity.y, velocity.z),
+        unit: "m/s",
+      },
+    );
+  } else if (object?.kind === "spring") {
+    const { position, velocity } =
+      simulation?.block(object.id) ?? initialBlockState(object, scene.gravity);
+    items.push(
+      {
+        label: "Displacement",
+        short: "u",
+        value: position.y - springEquilibrium(object, scene.gravity),
+        unit: "m",
+      },
+      { label: "Y velocity", short: "vy", value: velocity.y, unit: "m/s" },
+      { label: "Height", short: "h", value: position.y, unit: "m" },
+    );
+  } else if (object && isBody(object)) {
     const { position, velocity } =
       simulation?.block(object.id) ?? initialBlockState(object);
     items.push(

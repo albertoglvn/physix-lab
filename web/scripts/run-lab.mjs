@@ -13,7 +13,7 @@ try {
     (presetMode ? !Object.hasOwn(presetNames, arg) : presetSteps !== undefined)
   ) {
     throw new Error(
-      "Usage: run-lab.mjs <scene.json | -> [steps] or run-lab.mjs --preset <incline|friction|pulley|blank> [steps]",
+      `Usage: run-lab.mjs <scene.json | -> [steps] or run-lab.mjs --preset <${Object.keys(presetNames).join("|")}> [steps]`,
     );
   }
   const rawSteps = (presetMode ? presetSteps : arg) ?? "120";
@@ -33,10 +33,10 @@ try {
   try {
     simulation.step(steps);
     const objects = scene.objects.flatMap(({ id, kind }) => {
-      if (kind === "block")
-        return [{ id, kind, source: "rapier", ...simulation.block(id) }];
       if (kind === "pulley")
         return [{ id, kind, source: "ideal-atwood", ...simulation.pulley(id) }];
+      if (kind !== "ramp")
+        return [{ id, kind, source: "rapier", ...simulation.block(id) }];
       return [];
     });
     process.stdout.write(

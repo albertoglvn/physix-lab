@@ -6,9 +6,10 @@ and run 3D experiments with blocks, ramps, friction, and ideal pulleys. Start th
 
 ## Mechanics lab
 
-Start with an inclined plane, a friction track, an Atwood machine, or a blank scene. Edit
+Start with an inclined plane, a friction track, an Atwood machine, a rolling ball, a
+pendulum, a spring oscillator, or a blank scene. Edit
 starting conditions in the inspector, then run, pause, step, or reset the simulation. The
-**Scene JSON** editor imports and exports `physix.lab/1` scenes that agents can generate and
+**Scene JSON** editor imports and exports `physix.lab/2` scenes that agents can generate and
 run headlessly:
 
 ```sh

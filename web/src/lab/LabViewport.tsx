@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import type { LabScene, Pulley } from "./scene";
+import type { Ball, LabScene, Pendulum, Pulley, Spring } from "./scene";
 import {
   documentViewportPalette,
   type ViewportPalette,
@@ -122,6 +122,138 @@ function pulleyMesh(
     });
   };
   return root;
+}
+
+/** A selection cage around a round part: the edges of a coarse icosahedron. */
+const cage = (radius: number, color: THREE.ColorRepresentation) => {
+  const shape = new THREE.IcosahedronGeometry(radius * 1.04, 1);
+  const outline = edges(shape, color);
+  shape.dispose();
+  return outline;
+};
+
+/** A ball with an equatorial band, so its rolling shows. */
+function ballMesh(
+  object: Ball,
+  palette: ViewportPalette,
+  simulation?: Simulation,
+): Drawable {
+  const mesh = solid(
+    new THREE.SphereGeometry(object.radius, 32, 20),
+    palette.ball,
+  );
+  const band = solid(
+    new THREE.TorusGeometry(object.radius, object.radius * 0.06, 8, 48),
+    palette.ballBand,
+  );
+  const outline = cage(object.radius, palette.partEdge);
+  mesh.add(band, outline);
+  const initial = initialBlockState(object);
+  return {
+    root: mesh,
+    outline,
+    update: () => {
+      const { position, rotation } = simulation?.block(object.id) ?? initial;
+      mesh.position.set(position.x, position.y, position.z);
+      mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    },
+  };
+}
+
+/** A pivot, a rod and a bob; the rod follows the bob the engine moves. */
+function pendulumMesh(
+  object: Pendulum,
+  palette: ViewportPalette,
+  gravity: number,
+  simulation?: Simulation,
+): Drawable {
+  const root = new THREE.Group();
+  root.position.set(object.x, 0, object.z);
+  const pivot = solid(new THREE.BoxGeometry(0.3, 0.14, 0.3), palette.frame);
+  pivot.position.y = object.pivotHeight + 0.07;
+  const hub = solid(new THREE.SphereGeometry(0.06, 16, 12), palette.hub);
+  hub.position.y = object.pivotHeight;
+  const rod = solid(
+    new THREE.CylinderGeometry(0.018, 0.018, 1, 8),
+    palette.rope,
+  );
+  const bob = solid(
+    new THREE.SphereGeometry(object.bobRadius, 28, 18),
+    palette.bob,
+  );
+  const outline = cage(object.bobRadius, palette.partEdge);
+  bob.add(outline);
+  root.add(pivot, hub, rod, bob);
+  const initial = initialBlockState(object, gravity);
+  return {
+    root,
+    outline,
+    update: () => {
+      const { position } = simulation?.block(object.id) ?? initial;
+      const dx = position.x - object.x;
+      const dy = object.pivotHeight - position.y;
+      bob.position.set(dx, position.y, position.z - object.z);
+      rod.scale.y = Math.hypot(dx, dy);
+      rod.position.set(dx / 2, object.pivotHeight - dy / 2, 0);
+      rod.rotation.z = Math.atan2(dx, dy);
+    },
+  };
+}
+
+/** A helix of unit height along y, scaled to the spring's current length. */
+class Helix extends THREE.Curve<THREE.Vector3> {
+  readonly radius: number;
+  readonly turns: number;
+  constructor(radius: number, turns: number) {
+    super();
+    this.radius = radius;
+    this.turns = turns;
+  }
+  getPoint(t: number, target = new THREE.Vector3()) {
+    const angle = 2 * Math.PI * this.turns * t;
+    return target.set(
+      this.radius * Math.cos(angle),
+      t,
+      this.radius * Math.sin(angle),
+    );
+  }
+}
+
+/** An anchor plate, a coil and the cube it holds; the coil stretches with the cube. */
+function springMesh(
+  object: Spring,
+  palette: ViewportPalette,
+  gravity: number,
+  simulation?: Simulation,
+): Drawable {
+  const root = new THREE.Group();
+  root.position.set(object.x, 0, object.z);
+  const anchor = solid(new THREE.BoxGeometry(0.8, 0.1, 0.8), palette.frame);
+  anchor.position.y = object.anchorHeight + 0.05;
+  const coilRadius = Math.min(0.18, object.size * 0.3);
+  const coil = solid(
+    new THREE.TubeGeometry(new Helix(coilRadius, 12), 360, 0.018, 6),
+    palette.coil,
+  );
+  const cube = solid(
+    new RoundedBoxGeometry(object.size, object.size, object.size, 3, 0.04),
+    palette.block,
+  );
+  const outline = edges(cube.geometry, palette.blockEdge);
+  cube.add(outline);
+  root.add(anchor, coil, cube);
+  const initial = initialBlockState(object, gravity);
+  return {
+    root,
+    outline,
+    update: () => {
+      const { position } = simulation?.block(object.id) ?? initial;
+      const top = position.y + object.size / 2;
+      cube.position.y = position.y;
+      coil.position.y = top;
+      coil.scale.y = Math.max(object.anchorHeight - top, 0.01);
+    },
+  };
 }
 
 function disposeTree(object: THREE.Object3D) {
@@ -306,6 +438,12 @@ function createView(
               );
             },
           };
+        } else if (object.kind === "ball") {
+          drawable = ballMesh(object, palette, current);
+        } else if (object.kind === "pendulum") {
+          drawable = pendulumMesh(object, palette, scene.gravity, current);
+        } else if (object.kind === "spring") {
+          drawable = springMesh(object, palette, scene.gravity, current);
         } else if (object.kind === "ramp") {
           const geometry = new THREE.BufferGeometry();
           geometry.setAttribute(

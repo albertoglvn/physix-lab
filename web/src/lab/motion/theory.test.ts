@@ -47,6 +47,9 @@ describe("closed-form references", () => {
     ["friction", 2],
     ["projectile", 2],
     ["pulley", 2],
+    ["rolling", 2],
+    ["pendulum", 2],
+    ["spring", 1],
   ])(
     "matches the %s template within tolerance at the default step",
     async (preset, count) => {
@@ -102,6 +105,85 @@ describe("closed-form references", () => {
     expect(byId(covered, "projectile.t").broken).toMatch("ramp-1");
   });
 
+  it("rolls a ball below the slip limit and slides it above", async () => {
+    const rolling = makeScene("rolling");
+    const tilt = radians(26);
+    expect(byId(rolling, "rolling.a").value).toBeCloseTo(
+      (5 / 7) * 9.81 * Math.sin(tilt),
+      12,
+    );
+    // μ = 0.05 < (2/7) tan 26° ≈ 0.139, so the ball slips the whole way.
+    const slick = {
+      ...rolling,
+      objects: rolling.objects.map((part) =>
+        part.kind === "ramp" ? { ...part, friction: 0.05 } : part,
+      ),
+    };
+    const slip = byId(slick, "rolling.a");
+    expect(slip.formula).toBe("a = g (sin θ − μ cos θ)");
+    expect(slip.value).toBeCloseTo(
+      9.81 * (Math.sin(tilt) - 0.05 * Math.cos(tilt)),
+      12,
+    );
+    const run = await runProtocol(slick, defaultProtocol(slick));
+    expect(compare(slip, run).within, `Δ ${compare(slip, run).delta}`).toBe(
+      true,
+    );
+  });
+
+  it("gives the exact pendulum period at large angles and flags the small-angle one", async () => {
+    const scene = makeScene("pendulum");
+    const wide = {
+      ...scene,
+      objects: [{ ...makeObject("pendulum", "pendulum-1"), angle: 60 }],
+    };
+    const small = byId(wide, "pendulum.T0");
+    const exact = byId(wide, "pendulum.T");
+    expect(small.broken).toMatch("60°");
+    // T / T₀ = (2/π) K(sin 30°) = 1.0732 for a 60° release.
+    expect(exact.value / small.value).toBeCloseTo(1.0732, 4);
+    const run = await runProtocol(wide, { stop: "time", maxTime: 10 });
+    expect(compare(exact, run).within).toBe(true);
+    expect(compare(small, run).within).toBe(false);
+    expect(
+      referencesFor({
+        ...wide,
+        objects: [{ ...wide.objects[0], angle: 0 }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("predicts the damped spring period and flags overdamping", async () => {
+    const scene = makeScene("spring");
+    const damped = {
+      ...scene,
+      objects: [{ ...makeObject("spring", "spring-1"), damping: 4 }],
+    };
+    const period = byId(damped, "spring.T");
+    const zeta = 4 / (2 * Math.sqrt(80 * 2));
+    expect(period.value).toBeCloseTo(
+      (2 * Math.PI) / (Math.sqrt(40) * Math.sqrt(1 - zeta * zeta)),
+      12,
+    );
+    // ζ 0.16 and 0.40: the period is measured until the swing fades to 10⁻³ of the offset.
+    for (const damping of [4, 10]) {
+      const scenario = {
+        ...scene,
+        objects: [{ ...makeObject("spring", "spring-1"), damping }],
+      };
+      const run = await runProtocol(scenario, { stop: "time", maxTime: 10 });
+      const { delta, within } = compare(byId(scenario, "spring.T"), run);
+      expect(within, `c ${damping}: Δ ${delta}`).toBe(true);
+      expect(Math.abs(delta ?? 1)).toBeLessThan(1e-3);
+    }
+    const heavy = {
+      ...scene,
+      objects: [{ ...makeObject("spring", "spring-1"), damping: 40 }],
+    };
+    expect(byId(heavy, "spring.T").broken).toMatch("ζ");
+    expect(byId(heavy, "spring.T").value).toBe(Number.POSITIVE_INFINITY);
+  });
+
   it("compares relatively above the floor and absolutely below it", () => {
     const reference: Reference = {
       id: "test",
@@ -153,5 +235,18 @@ describe("closed-form references", () => {
       "pulley-1.speed",
       "pulley-1.displacement",
     ]);
+    const [swing] = curvesFor(makeScene("pendulum"));
+    expect(swing.key).toBe("pendulum-1.angle");
+    expect(swing.at(0)).toBeCloseTo(radians(8), 12);
+    const [bounce] = curvesFor(makeScene("spring"));
+    expect(bounce.key).toBe("spring-1.displacement");
+    expect(bounce.at(0)).toBe(0.5);
+    const roll = curvesFor(makeScene("rolling")).find(
+      ({ key }) => key === "ball-1.speed",
+    )!;
+    expect(roll.at(1)).toBeCloseTo(
+      byId(makeScene("rolling"), "rolling.a").value,
+      12,
+    );
   });
 });

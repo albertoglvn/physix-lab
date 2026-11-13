@@ -14,7 +14,7 @@ import {
 } from "../data/fit";
 import { readingUncertainty } from "../data/noise";
 import type { ScatterFit } from "../data/SweepPlot";
-import type { LabScene } from "../scene";
+import { isBody, type LabScene } from "../scene";
 import { startingRamp } from "./probes";
 import { fitData, type SweepPoint, type SweepSpec } from "./sweep";
 
@@ -56,21 +56,47 @@ function fitPoints(model: FitModelId, points: SweepPoint[]) {
   };
 }
 
-/** Constants an expression may use besides `pi` and `deg`. */
-export const fitConstants = (scene: LabScene) => ({ g: scene.gravity });
+/**
+ * Constants an expression may use besides `pi` and `deg`. A model that fits one of them,
+ * such as g for the pendulum, leaves it out so it becomes a parameter.
+ */
+export function fitConstants(
+  scene: LabScene,
+  fits: readonly string[] = [],
+): Record<string, number> {
+  const constants: Record<string, number> = { g: scene.gravity };
+  for (const name of fits) delete constants[name];
+  return constants;
+}
 
-/** Parameters with a configured value in the swept scene, such as μ on the incline. */
+/** The family of a sweep's metric: the second part of a reference id or of a probe key. */
+const metricFamily = (spec: SweepSpec) => {
+  const metric = spec.metric;
+  if (metric.kind === "stop_time") return {};
+  const [target, family] = (
+    metric.kind === "reference" ? metric.id : metric.key
+  ).split(".");
+  return { target, family };
+};
+
+/**
+ * Parameters with a configured value in the swept scene: μ on the incline, g for a pendulum
+ * period, k for a spring period swept over mass.
+ */
 export function knownParameters(
   scene: LabScene,
   spec: SweepSpec,
 ): Record<string, KnownParameter> {
   const known: Record<string, KnownParameter> = {};
-  if (spec.metric.kind !== "reference") return known;
-  const [blockId, family] = spec.metric.id.split(".");
-  if (family !== "incline") return known;
-  const block = scene.objects.find((part) => part.id === blockId);
-  const start =
-    block?.kind === "block" ? startingRamp(block, scene) : undefined;
+  const { target, family } = metricFamily(spec);
+  const part = scene.objects.find((item) => item.id === target);
+  if (!part) return known;
+  if (part.kind === "pendulum" && spec.variable !== "gravity")
+    known.g = { value: scene.gravity, source: "Scene gravity" };
+  if (part.kind === "spring" && spec.variable !== `${part.id}.stiffness`)
+    known.k = { value: part.stiffness, source: `${part.id} stiffness` };
+  if (family !== "incline" || !isBody(part)) return known;
+  const start = startingRamp(part, scene);
   if (start && spec.variable !== `${start.ramp.id}.friction`)
     known.mu = {
       value: start.ramp.friction,
@@ -94,7 +120,7 @@ export function fitSweep(
   const { xs, ys } = fitData(kept, noisy);
   const sigma = spec.noise ? readingUncertainty(spec.noise) : undefined;
   const { result, compiled } = fitExpression(source, xs, ys, {
-    constants: fitConstants(scene),
+    constants: fitConstants(scene, preset?.fits),
     preset,
     sigma,
   });

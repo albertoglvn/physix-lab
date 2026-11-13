@@ -1,12 +1,17 @@
 import {
+  bodyHalf,
+  isBody,
   radians,
   RAMP_CLEARANCE,
   rampPlacement,
-  type Block,
+  springSag,
+  type Body,
   type LabScene,
+  type Pendulum,
   type Ramp,
+  type Spring,
 } from "../scene";
-import type { BlockState, Simulation } from "../simulation";
+import { springForce, type BlockState, type Simulation } from "../simulation";
 
 /** Default probe rate. Samples land on multiples of 1/60 s at every supported step size. */
 export const PROBE_RATE = 60;
@@ -45,9 +50,9 @@ export const MAX_TIME_LIMITS = [0.5, 60] as const;
 
 type Trigger = { type: EventType; target: string; ramp?: Ramp };
 
-/** The ramp a block starts on, when it was placed on one. */
+/** The ramp a body starts on, when it was placed on one. */
 export function startingRamp(
-  block: Block,
+  block: Body,
   scene: LabScene,
 ): { ramp: Ramp; fraction: number } | undefined {
   for (const part of scene.objects) {
@@ -66,10 +71,30 @@ export function lowestOffset(size: number, rotation: BlockState["rotation"]) {
   return (size / 2) * (Math.abs(r10) + Math.abs(r11) + Math.abs(r12));
 }
 
-/** Fraction along the ramp at which a block's front edge reaches the ramp's foot. */
-export function leaveFraction(block: Block, ramp: Ramp) {
+/** Height of a body's lowest point above its centre, from its orientation. */
+export const bodyLowest = (body: Body, rotation: BlockState["rotation"]) =>
+  body.kind === "block" ? lowestOffset(body.size, rotation) : body.radius;
+
+/** The upright orientation a body starts with. */
+export function startRotation(body: Body): BlockState["rotation"] {
+  const halfAngle = body.kind === "block" ? radians(body.rotation) / 2 : 0;
+  return { x: 0, y: 0, z: Math.sin(halfAngle), w: Math.cos(halfAngle) };
+}
+
+/**
+ * Fraction along the ramp at which a body leaves it: a block's front edge reaches the foot,
+ * a ball's contact point does.
+ */
+export function leaveFraction(block: Body, ramp: Ramp) {
+  if (block.kind === "ball") return 1;
   return 1 - ((block.size / 2) * Math.cos(radians(ramp.angle))) / ramp.length;
 }
+
+/** Moment of inertia of a body about its centre, in kg·m². */
+export const bodyInertia = (body: Body) =>
+  body.kind === "block"
+    ? (body.mass * body.size * body.size) / 6
+    : 0.4 * body.mass * body.radius * body.radius;
 
 function triggers(scene: LabScene): Trigger[] {
   const list: Trigger[] = [];
@@ -78,19 +103,11 @@ function triggers(scene: LabScene): Trigger[] {
       list.push({ type: "pulley_stop", target: part.id });
       continue;
     }
-    if (part.kind !== "block") continue;
+    if (!isBody(part)) continue;
     const start = startingRamp(part, scene);
     if (start)
       list.push({ type: "leaves_ramp", target: part.id, ramp: start.ramp });
-    const halfAngle = radians(part.rotation) / 2;
-    const lowest =
-      part.y -
-      lowestOffset(part.size, {
-        x: 0,
-        y: 0,
-        z: Math.sin(halfAngle),
-        w: Math.cos(halfAngle),
-      });
+    const lowest = part.y - bodyLowest(part, startRotation(part));
     if (!start && lowest > CONTACT_GAP)
       list.push({ type: "floor_contact", target: part.id });
     list.push({ type: "rest", target: part.id });
@@ -109,9 +126,7 @@ export function availableStops(scene: LabScene): EventType[] {
 /** The stop that suits the scene: the pulley stop, leaving a ramp, landing, then rest. */
 export function defaultProtocol(scene: LabScene): Protocol {
   const stops = availableStops(scene);
-  const moving = scene.objects.some(
-    (part) => part.kind === "block" && part.vx !== 0,
-  );
+  const moving = scene.objects.some((part) => isBody(part) && part.vx !== 0);
   const stop =
     (["pulley_stop", "leaves_ramp", "floor_contact"] as const).find((type) =>
       stops.includes(type),
@@ -164,7 +179,7 @@ export type Recorder = {
   sample: () => void;
 };
 
-const BLOCK_QUANTITIES = [
+const BODY_QUANTITIES = [
   ["x", "X position", "x", "m"],
   ["y", "Height", "y", "m"],
   ["z", "Z position", "z", "m"],
@@ -182,6 +197,37 @@ const PULLEY_QUANTITIES = [
   ["acceleration", "Acceleration", "a", "m/s²"],
   ["tension", "Tension", "T", "N"],
 ] as const;
+const PENDULUM_QUANTITIES = [
+  ["angle", "Angle", "θ", "rad"],
+  ["omega", "Angular velocity", "ω", "rad/s"],
+  ["x", "Bob X position", "x", "m"],
+  ["y", "Bob height", "y", "m"],
+  ["speed", "Bob speed", "v", "m/s"],
+  ["tension", "Rod tension", "T", "N"],
+  ["kinetic", "Kinetic energy", "K", "J"],
+  ["potential", "Potential energy", "U", "J"],
+] as const;
+const SPRING_QUANTITIES = [
+  ["y", "Height", "y", "m"],
+  ["vy", "Y velocity", "vy", "m/s"],
+  ["displacement", "Displacement from equilibrium", "u", "m"],
+  ["extension", "Extension", "e", "m"],
+  ["force", "Spring force", "F", "N"],
+  ["kinetic", "Kinetic energy", "K", "J"],
+  ["potential", "Gravitational energy", "U", "J"],
+  ["elastic", "Elastic energy", "Uₛ", "J"],
+] as const;
+/** Columns read straight from the engine; the rest are derived from them. */
+const ENGINE_COLUMNS = new Set([
+  "x",
+  "y",
+  "z",
+  "vx",
+  "vy",
+  "vz",
+  "speed",
+  "omega",
+]);
 const SYSTEM_QUANTITIES = [
   ["kinetic", "Kinetic energy", "K", "J"],
   ["potential", "Potential energy", "U", "J"],
@@ -196,20 +242,22 @@ export const SYSTEM = "system";
 export function sceneQuantities(scene: LabScene): Quantity[] {
   const list: Quantity[] = [];
   for (const part of scene.objects) {
-    if (part.kind === "block")
-      for (const [name, label, symbol, unit] of BLOCK_QUANTITIES)
+    const set = isBody(part)
+      ? BODY_QUANTITIES
+      : part.kind === "pendulum"
+        ? PENDULUM_QUANTITIES
+        : part.kind === "spring"
+          ? SPRING_QUANTITIES
+          : undefined;
+    if (set)
+      for (const [name, label, symbol, unit] of set)
         list.push({
           key: `${part.id}.${name}`,
           target: part.id,
           label,
           symbol,
           unit,
-          source:
-            name === "acceleration" ||
-            name === "kinetic" ||
-            name === "potential"
-              ? "derived"
-              : "rapier",
+          source: ENGINE_COLUMNS.has(name) ? "rapier" : "derived",
         });
     else if (part.kind === "pulley")
       for (const [name, label, symbol, unit] of PULLEY_QUANTITIES)
@@ -254,8 +302,15 @@ export function createRecorder(
   const events: RunEvent[] = [];
   const pending = triggers(scene);
   const moved = new Set<string>();
-  const blocks = scene.objects.filter((part) => part.kind === "block");
+  const blocks = scene.objects.filter(isBody);
   const pulleys = scene.objects.filter((part) => part.kind === "pulley");
+  const pendulums = scene.objects.filter(
+    (part): part is Pendulum => part.kind === "pendulum",
+  );
+  const springs = scene.objects.filter(
+    (part): part is Spring => part.kind === "spring",
+  );
+  const g = scene.gravity;
   const previous = new Map<
     string,
     { t: number; v: [number, number, number] }
@@ -277,7 +332,7 @@ export function createRecorder(
       const { position: p, velocity: v } = state;
       const w = state.angularVelocity ?? { x: 0, y: 0, z: 0 };
       const speed = Math.hypot(v.x, v.y, v.z);
-      const inertia = (block.mass * block.size * block.size) / 6;
+      const inertia = bodyInertia(block);
       const k =
         0.5 * block.mass * speed * speed +
         0.5 * inertia * (w.x * w.x + w.y * w.y + w.z * w.z);
@@ -306,6 +361,62 @@ export function createRecorder(
       momentum[0] += block.mass * v.x;
       momentum[1] += block.mass * v.y;
       momentum[2] += block.mass * v.z;
+    }
+    for (const pendulum of pendulums) {
+      const state = simulation.block(pendulum.id);
+      if (!state) continue;
+      const { position: p, velocity: v } = state;
+      const id = pendulum.id;
+      const theta = Math.atan2(p.x - pendulum.x, pendulum.pivotHeight - p.y);
+      const omega = state.angularVelocity?.z ?? 0;
+      const speed = Math.hypot(v.x, v.y, v.z);
+      const spin = 0.4 * pendulum.mass * pendulum.bobRadius ** 2;
+      const k = 0.5 * pendulum.mass * speed * speed + 0.5 * spin * omega ** 2;
+      const u = pendulum.mass * g * p.y;
+      push(`${id}.angle`, theta);
+      push(`${id}.omega`, omega);
+      push(`${id}.x`, p.x);
+      push(`${id}.y`, p.y);
+      push(`${id}.speed`, speed);
+      push(
+        `${id}.tension`,
+        pendulum.mass * (g * Math.cos(theta) + omega * omega * pendulum.length),
+      );
+      push(`${id}.kinetic`, k);
+      push(`${id}.potential`, u);
+      kinetic += k;
+      potential += u;
+      momentum[0] += pendulum.mass * v.x;
+      momentum[1] += pendulum.mass * v.y;
+      momentum[2] += pendulum.mass * v.z;
+    }
+    for (const spring of springs) {
+      const state = simulation.block(spring.id);
+      if (!state) continue;
+      const y = state.position.y;
+      const vy = state.velocity.y;
+      const id = spring.id;
+      const top = y + spring.size / 2;
+      const extension = spring.anchorHeight - top - spring.restLength;
+      const equilibrium =
+        spring.anchorHeight -
+        spring.restLength -
+        springSag(spring, g) -
+        spring.size / 2;
+      const k = 0.5 * spring.mass * vy * vy;
+      const u = spring.mass * g * y;
+      const elastic = 0.5 * spring.stiffness * extension * extension;
+      push(`${id}.y`, y);
+      push(`${id}.vy`, vy);
+      push(`${id}.displacement`, y - equilibrium);
+      push(`${id}.extension`, extension);
+      push(`${id}.force`, springForce(spring, top, vy));
+      push(`${id}.kinetic`, k);
+      push(`${id}.potential`, u);
+      push(`${id}.elastic`, elastic);
+      kinetic += k;
+      potential += u + elastic;
+      momentum[1] += spring.mass * vy;
     }
     for (const pulley of pulleys) {
       const state = simulation.pulley(pulley.id);
@@ -353,13 +464,12 @@ export function createRecorder(
           fired = moved.has(block.id) && speed < REST_SPEED;
         } else if (trigger.type === "floor_contact") {
           fired =
-            state.position.y - lowestOffset(block.size, state.rotation) <=
-            CONTACT_GAP;
+            state.position.y - bodyLowest(block, state.rotation) <= CONTACT_GAP;
         } else if (trigger.ramp) {
           const ramp = trigger.ramp;
           const tilt = radians(ramp.angle);
           const normalOffset =
-            (block.size / 2 + RAMP_CLEARANCE) * Math.sin(tilt);
+            (bodyHalf(block) + RAMP_CLEARANCE) * Math.sin(tilt);
           const fraction =
             (state.position.x - ramp.x - normalOffset) / ramp.length + 0.5;
           fired = fraction >= leaveFraction(block, ramp);

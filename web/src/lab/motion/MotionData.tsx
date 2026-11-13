@@ -11,7 +11,10 @@ import type { Comparison, Reference, TheoryCurve } from "./theory";
 
 const DEFAULT_QUANTITY: Record<string, string> = {
   block: "speed",
+  ball: "speed",
   pulley: "speed",
+  pendulum: "angle",
+  spring: "displacement",
   [SYSTEM]: "energy",
 };
 const SERIES_COLOURS = [
@@ -23,7 +26,7 @@ const SERIES_COLOURS = [
   "var(--px-series-6)",
 ];
 
-/** The probe target for a selection: a block or pulley, or the whole system. */
+/** The probe target for a selection: any moving part, or the whole system for a ramp. */
 export function probeTarget(scene: LabScene, selected: string | null) {
   const part = scene.objects.find((item) => item.id === selected);
   return part && part.kind !== "ramp" ? part.id : SYSTEM;

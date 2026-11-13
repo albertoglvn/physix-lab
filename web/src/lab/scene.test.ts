@@ -8,21 +8,28 @@ import {
   parseScene,
   rampHeight,
   rampPlacement,
+  SCENE_VERSION,
   type Preset,
 } from "./scene";
 
 describe("mechanics scene contract", () => {
-  it.each<Preset>(["incline", "friction", "projectile", "pulley", "blank"])(
-    "round-trips %s",
-    (preset) => {
-      const scene = makeScene(preset);
-      expect(parseScene(JSON.parse(JSON.stringify(scene)))).toEqual(scene);
-    },
-  );
+  it.each<Preset>([
+    "incline",
+    "friction",
+    "projectile",
+    "pulley",
+    "rolling",
+    "pendulum",
+    "spring",
+    "blank",
+  ])("round-trips %s", (preset) => {
+    const scene = makeScene(preset);
+    expect(parseScene(JSON.parse(JSON.stringify(scene)))).toEqual(scene);
+  });
 
   it("rejects unsupported versions, object types, duplicate IDs and out-of-range values", () => {
     const scene = makeScene("incline");
-    expect(() => parseScene({ ...scene, version: "physix.lab/2" })).toThrow(
+    expect(() => parseScene({ ...scene, version: "physix.lab/3" })).toThrow(
       "version",
     );
     expect(() => parseScene({ ...scene, gravity: Infinity })).toThrow(
@@ -34,7 +41,7 @@ describe("mechanics scene contract", () => {
     expect(() =>
       parseScene({
         ...scene,
-        objects: [{ ...scene.objects[0], kind: "spring" }],
+        objects: [{ ...scene.objects[0], kind: "rope" }],
       }),
     ).toThrow("Supported objects");
     expect(() =>
@@ -49,6 +56,37 @@ describe("mechanics scene contract", () => {
         objects: [{ ...makeObject("block", "body"), mass: 0 }],
       }),
     ).toThrow("mass");
+  });
+
+  it("migrates a physix.lab/1 file to the current version", () => {
+    const legacy = { ...makeScene("incline"), version: "physix.lab/1" };
+    const parsed = parseScene(JSON.parse(JSON.stringify(legacy)));
+    expect(parsed.version).toBe(SCENE_VERSION);
+    expect(parsed.objects).toEqual(legacy.objects);
+    expect(() =>
+      parseScene({ ...makeScene("rolling"), version: "physix.lab/1" }),
+    ).toThrow("physix.lab/2");
+  });
+
+  it("rejects a pendulum or spring that would reach the floor or anchor", () => {
+    const pendulum = makeObject("pendulum", "pendulum-1", 0, 0);
+    const spring = makeObject("spring", "spring-1", 0, 0);
+    const base = makeScene("blank");
+    expect(() =>
+      parseScene({
+        ...base,
+        objects: [{ ...pendulum, length: pendulum.pivotHeight }],
+      }),
+    ).toThrow("floor");
+    expect(() =>
+      parseScene({ ...base, objects: [{ ...spring, offset: 2.5 }] }),
+    ).toThrow("anchor");
+    expect(() =>
+      parseScene({ ...base, objects: [{ ...spring, mass: 60 }] }),
+    ).toThrow("floor");
+    expect(
+      parseScene({ ...base, objects: [pendulum, spring] }).objects,
+    ).toHaveLength(2);
   });
 
   it("places additional blocks in free positions on a ramp", () => {

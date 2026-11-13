@@ -1,17 +1,25 @@
+import { ellipticK, meanPeriod } from "../data/period";
 import {
+  bodyHalf,
+  isBody,
   radians,
+  type Ball,
   type Block,
+  type Body,
   type LabObject,
   type LabScene,
+  type Pendulum,
   type Pulley,
   type Ramp,
+  type Spring,
 } from "../scene";
 import { PULLEY_TRAVEL } from "../simulation";
 import {
+  bodyLowest,
   CONTACT_GAP,
   leaveFraction,
-  lowestOffset,
   startingRamp,
+  startRotation,
   type EventType,
 } from "./probes";
 import { eventOf, valueAt, type MotionRun } from "./run";
@@ -56,7 +64,7 @@ export type Comparison = {
 };
 
 export const CONTACT_MODEL =
-  "One Coulomb coefficient per contact pair (static equals kinetic), the product of the two parts' coefficients; blocks use 1.";
+  "One Coulomb coefficient per contact pair (static equals kinetic), the product of the two parts' coefficients; blocks and balls use 1.";
 
 const eventTime = (run: MotionRun, type: EventType, target: string) =>
   eventOf(run, type, target)?.t;
@@ -89,23 +97,41 @@ export function slope(
   return (n * stv - st * sv) / denominator;
 }
 
+/** Half-extents of a part's footprint along x and z, or undefined for the pulley. */
+function footprint(part: LabObject): [number, number] | undefined {
+  if (isBody(part)) return [bodyHalf(part), bodyHalf(part)];
+  if (part.kind === "ramp") return [part.length / 2, part.width / 2];
+  if (part.kind === "pendulum")
+    return [part.length + part.bobRadius, part.bobRadius];
+  if (part.kind === "spring") return [part.size / 2, part.size / 2];
+}
+
 const sharesPath = (
-  block: Block,
+  block: Body,
   others: LabObject[],
   from: number,
   to: number,
 ): LabObject | undefined =>
   others.find((part) => {
-    if (part.id === block.id || part.kind === "pulley") return false;
-    const extent = part.kind === "block" ? part.size / 2 : part.length / 2;
-    const depth = part.kind === "block" ? part.size / 2 : part.width / 2;
+    const extent = part.id === block.id ? undefined : footprint(part);
+    if (!extent) return false;
+    const half = bodyHalf(block);
     const [low, high] = from < to ? [from, to] : [to, from];
     return (
-      part.x + extent > low - block.size / 2 &&
-      part.x - extent < high + block.size / 2 &&
-      Math.abs(part.z - block.z) < depth + block.size / 2
+      part.x + extent[0] > low - half &&
+      part.x - extent[0] < high + half &&
+      Math.abs(part.z - block.z) < extent[1] + half
     );
   });
+
+/** Another body that starts on the same ramp, which the closed forms leave out. */
+const rampNeighbour = (body: Body, ramp: Ramp, scene: LabScene) =>
+  scene.objects.find(
+    (part) =>
+      isBody(part) &&
+      part.id !== body.id &&
+      startingRamp(part, scene)?.ramp.id === ramp.id,
+  );
 
 function inclineReferences(
   block: Block,
@@ -120,12 +146,7 @@ function inclineReferences(
   const a = slides ? g * (Math.sin(tilt) - mu * Math.cos(tilt)) : 0;
   const distance =
     ((leaveFraction(block, ramp) - fraction) * ramp.length) / Math.cos(tilt);
-  const neighbour = scene.objects.find(
-    (part) =>
-      part.kind === "block" &&
-      part.id !== block.id &&
-      startingRamp(part, scene)?.ramp.id === ramp.id,
-  );
+  const neighbour = rampNeighbour(block, ramp, scene);
   const broken = neighbour ? `${neighbour.id} shares ${ramp.id}.` : undefined;
   const assumptions = [
     `Starts at rest on ${ramp.id}, ${ramp.angle.toFixed(0)}° with μ = ${mu}.`,
@@ -171,6 +192,217 @@ function inclineReferences(
       measure: (run) => eventTime(run, "leaves_ramp", block.id),
     });
   return references;
+}
+
+/**
+ * A solid ball released on a ramp rolls without slipping while μ ≥ (2/7) tan θ, at
+ * a = (5/7) g sin θ; below that it slips, and kinetic friction gives g (sin θ − μ cos θ).
+ */
+function rollingReferences(
+  ball: Ball,
+  ramp: Ramp,
+  fraction: number,
+  scene: LabScene,
+): Reference[] {
+  const g = scene.gravity;
+  const tilt = radians(ramp.angle);
+  const mu = ramp.friction;
+  const rolls = mu >= (2 / 7) * Math.tan(tilt);
+  const a = rolls
+    ? (5 / 7) * g * Math.sin(tilt)
+    : g * (Math.sin(tilt) - mu * Math.cos(tilt));
+  const distance =
+    ((leaveFraction(ball, ramp) - fraction) * ramp.length) / Math.cos(tilt);
+  const neighbour = rampNeighbour(ball, ramp, scene);
+  const broken = neighbour ? `${neighbour.id} shares ${ramp.id}.` : undefined;
+  const assumptions = [
+    `Starts at rest on ${ramp.id}, ${ramp.angle.toFixed(0)}° with μ = ${mu}.`,
+    rolls
+      ? "Rolls without slipping, since μ ≥ (2/7) tan θ; a solid sphere, I = (2/5) m r²."
+      : "Slips throughout, since μ < (2/7) tan θ; kinetic friction acts at the contact.",
+    "No rolling resistance or air drag.",
+    CONTACT_MODEL,
+    "Starts 15 mm above the surface, so the first ~55 ms are free fall.",
+  ];
+  const end = (run: MotionRun) =>
+    eventTime(run, "leaves_ramp", ball.id) ?? run.stop.t;
+  return [
+    {
+      id: `${ball.id}.rolling.a`,
+      target: ball.id,
+      label: "Acceleration",
+      symbol: "a",
+      unit: "m/s²",
+      formula: rolls ? "a = (5/7) g sin θ" : "a = g (sin θ − μ cos θ)",
+      value: a,
+      assumptions,
+      broken,
+      tolerance: 0.02,
+      floor: 0.05,
+      measure: (run) => {
+        const to = end(run) - 0.02;
+        return to > 0.3 ? slope(run, `${ball.id}.speed`, 0.15, to) : undefined;
+      },
+    },
+    {
+      id: `${ball.id}.rolling.t`,
+      target: ball.id,
+      label: "Time on ramp",
+      symbol: "t",
+      unit: "s",
+      formula: "t = √(2d / a)",
+      value: Math.sqrt((2 * distance) / a),
+      assumptions,
+      broken,
+      tolerance: 0.03,
+      floor: 0,
+      event: "leaves_ramp",
+      measure: (run) => eventTime(run, "leaves_ramp", ball.id),
+    },
+  ];
+}
+
+/** Largest release angle, in degrees, the small-angle period is taken to describe. */
+export const SMALL_ANGLE = 10;
+
+/** Moment of inertia of a pendulum about its pivot: the bob as a solid sphere. */
+export const pendulumInertia = (pendulum: Pendulum) =>
+  pendulum.mass * pendulum.length ** 2 +
+  0.4 * pendulum.mass * pendulum.bobRadius ** 2;
+
+/** Small-angle period of a pendulum, 2π √(I / (m g L)). */
+export function smallAnglePeriod(pendulum: Pendulum, gravity: number) {
+  return (
+    2 *
+    Math.PI *
+    Math.sqrt(
+      pendulumInertia(pendulum) / (pendulum.mass * gravity * pendulum.length),
+    )
+  );
+}
+
+/** Period at any release angle: the small-angle period times (2/π) K(sin(θ₀/2)). */
+export function exactPeriod(pendulum: Pendulum, gravity: number) {
+  const k = Math.sin(radians(Math.abs(pendulum.angle)) / 2);
+  return (smallAnglePeriod(pendulum, gravity) * 2 * ellipticK(k)) / Math.PI;
+}
+
+/**
+ * Mean period of a recorded column about zero, up to `until`. A decaying oscillation is cut
+ * where it fades into the engine's single-precision round-off, which would add false crossings.
+ */
+const recordedPeriod = (
+  run: MotionRun,
+  key: string,
+  until = Number.POSITIVE_INFINITY,
+) => {
+  const column = run.series.columns[key];
+  if (!column) return undefined;
+  const end = run.series.t.findIndex((t) => t > until);
+  const count = end < 0 ? column.length : end;
+  return meanPeriod(run.series.t.slice(0, count), column.slice(0, count), 0);
+};
+
+/** Envelope decay, 10⁻³ of the release offset, over which a damped period is measured. */
+const FADE = Math.log(1e3);
+
+function pendulumReferences(pendulum: Pendulum, scene: LabScene): Reference[] {
+  if (pendulum.angle === 0 || scene.gravity === 0) return [];
+  const g = scene.gravity;
+  const id = pendulum.id;
+  const assumptions = [
+    `Released from rest at ${pendulum.angle}° on a rigid, massless rod of ${pendulum.length} m.`,
+    `The bob is a solid sphere, so I = m L² + (2/5) m r² about the pivot.`,
+    "Frictionless hinge; no air drag.",
+  ];
+  const measure = (run: MotionRun) => recordedPeriod(run, `${id}.angle`);
+  const large = Math.abs(pendulum.angle) > SMALL_ANGLE;
+  return [
+    {
+      id: `${id}.pendulum.T0`,
+      target: id,
+      label: "Small-angle period",
+      symbol: "T₀",
+      unit: "s",
+      formula: "T₀ = 2π √(I / (m g L))",
+      value: smallAnglePeriod(pendulum, g),
+      assumptions: [
+        ...assumptions,
+        `Small swings, sin θ ≈ θ (within ${SMALL_ANGLE}°).`,
+      ],
+      broken: large
+        ? `Released at ${pendulum.angle}°, beyond the small-angle range.`
+        : undefined,
+      tolerance: 0.005,
+      floor: 0,
+      measure,
+    },
+    {
+      id: `${id}.pendulum.T`,
+      target: id,
+      label: "Period",
+      symbol: "T",
+      unit: "s",
+      formula: "T = (2/π) T₀ K(sin(θ₀/2))",
+      value: exactPeriod(pendulum, g),
+      assumptions: [
+        ...assumptions,
+        "K is the complete elliptic integral of the first kind.",
+      ],
+      tolerance: 0.005,
+      floor: 0,
+      measure,
+    },
+  ];
+}
+
+/** Natural angular frequency and damping ratio of a spring oscillator. */
+export function springModes(spring: Spring) {
+  const omega0 = Math.sqrt(spring.stiffness / spring.mass);
+  const zeta = spring.damping / (2 * Math.sqrt(spring.stiffness * spring.mass));
+  return { omega0, zeta };
+}
+
+function springReferences(spring: Spring): Reference[] {
+  if (spring.offset === 0) return [];
+  const { omega0, zeta } = springModes(spring);
+  const id = spring.id;
+  const assumptions = [
+    `Released from rest ${Math.abs(spring.offset)} m ${spring.offset > 0 ? "above" : "below"} equilibrium.`,
+    `Linear spring, k = ${spring.stiffness} N/m, and viscous damper, c = ${spring.damping} N·s/m; massless.`,
+    "Moves along y only; no other contact.",
+  ];
+  return [
+    {
+      id: `${id}.spring.T`,
+      target: id,
+      label: spring.damping > 0 ? "Damped period" : "Period",
+      symbol: "T",
+      unit: "s",
+      formula:
+        spring.damping > 0 ? "T = 2π / (ω₀ √(1 − ζ²))" : "T = 2π √(m / k)",
+      value:
+        zeta < 1
+          ? (2 * Math.PI) / (omega0 * Math.sqrt(1 - zeta * zeta))
+          : Number.POSITIVE_INFINITY,
+      assumptions: [
+        ...assumptions,
+        `ω₀ = √(k/m) = ${omega0.toPrecision(4)} rad/s, ζ = c / (2√(k m)) = ${zeta.toPrecision(3)}.`,
+      ],
+      broken:
+        zeta >= 1
+          ? `ζ = ${zeta.toPrecision(3)} ≥ 1, so the cube returns without oscillating.`
+          : undefined,
+      tolerance: 0.005,
+      floor: 0,
+      measure: (run) =>
+        recordedPeriod(
+          run,
+          `${id}.displacement`,
+          zeta > 0 ? FADE / (zeta * omega0) : undefined,
+        ),
+    },
+  ];
 }
 
 function frictionReferences(block: Block, scene: LabScene): Reference[] {
@@ -238,7 +470,7 @@ function frictionReferences(block: Block, scene: LabScene): Reference[] {
 }
 
 function projectileReferences(
-  block: Block,
+  block: Body,
   height: number,
   scene: LabScene,
 ): Reference[] {
@@ -255,7 +487,7 @@ function projectileReferences(
   const assumptions = [
     `Launched horizontally at ${block.vx} m/s from ${height.toFixed(2)} m above the floor.`,
     "No air drag; uniform gravity; no spin.",
-    "Contact is detected to one step, as the lowest corner comes within 5 mm of the floor.",
+    `Contact is detected to one step, as the lowest ${block.kind === "ball" ? "point" : "corner"} comes within 5 mm of the floor.`,
   ];
   const landing = (run: MotionRun) => eventTime(run, "floor_contact", block.id);
   return [
@@ -345,24 +577,23 @@ export function referencesFor(scene: LabScene): Reference[] {
   const list: Reference[] = [];
   for (const part of scene.objects) {
     if (part.kind === "pulley") list.push(...atwoodReferences(part, scene));
-    if (part.kind !== "block") continue;
+    if (part.kind === "pendulum") list.push(...pendulumReferences(part, scene));
+    if (part.kind === "spring") list.push(...springReferences(part));
+    if (!isBody(part)) continue;
     const start = startingRamp(part, scene);
     if (start) {
-      list.push(...inclineReferences(part, start.ramp, start.fraction, scene));
+      list.push(
+        ...(part.kind === "ball"
+          ? rollingReferences(part, start.ramp, start.fraction, scene)
+          : inclineReferences(part, start.ramp, start.fraction, scene)),
+      );
       continue;
     }
-    const halfAngle = radians(part.rotation) / 2;
-    const height =
-      part.y -
-      lowestOffset(part.size, {
-        x: 0,
-        y: 0,
-        z: Math.sin(halfAngle),
-        w: Math.cos(halfAngle),
-      });
+    const height = part.y - bodyLowest(part, startRotation(part));
     if (height > CONTACT_GAP)
       list.push(...projectileReferences(part, height, scene));
-    else list.push(...frictionReferences(part, scene));
+    else if (part.kind === "block")
+      list.push(...frictionReferences(part, scene));
   }
   return list;
 }
@@ -385,13 +616,43 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
         { key: `${part.id}.displacement`, at: (t) => (a * t * t) / 2, until },
       );
     }
-    if (part.kind !== "block") continue;
-    const incline = find(`${part.id}.incline.a`);
+    if (part.kind === "pendulum") {
+      const period = find(`${part.id}.pendulum.T0`);
+      if (period && Math.abs(part.angle) <= SMALL_ANGLE) {
+        const theta0 = radians(part.angle);
+        const omega = (2 * Math.PI) / period.value;
+        curves.push({
+          key: `${part.id}.angle`,
+          at: (t) => theta0 * Math.cos(omega * t),
+          until: 60,
+        });
+      }
+    }
+    if (part.kind === "spring") {
+      const { omega0, zeta } = springModes(part);
+      if (part.offset !== 0 && zeta < 1) {
+        const omegaD = omega0 * Math.sqrt(1 - zeta * zeta);
+        const decay = zeta * omega0;
+        curves.push({
+          key: `${part.id}.displacement`,
+          at: (t) =>
+            part.offset *
+            Math.exp(-decay * t) *
+            (Math.cos(omegaD * t) + (decay / omegaD) * Math.sin(omegaD * t)),
+          until: 60,
+        });
+      }
+    }
+    if (!isBody(part)) continue;
+    const incline =
+      find(`${part.id}.incline.a`) ?? find(`${part.id}.rolling.a`);
     if (incline)
       curves.push({
         key: `${part.id}.speed`,
         at: (t) => incline.value * t,
-        until: find(`${part.id}.incline.t`)?.value ?? 60,
+        until:
+          (find(`${part.id}.incline.t`) ?? find(`${part.id}.rolling.t`))
+            ?.value ?? 60,
       });
     const stop = find(`${part.id}.friction.t`);
     if (stop) {

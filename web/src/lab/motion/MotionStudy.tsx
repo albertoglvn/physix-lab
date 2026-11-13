@@ -1,11 +1,13 @@
 import {
   Box,
   ChartScatter,
+  Circle,
   CircleDot,
   Code2,
   Copy,
   Download,
   Focus,
+  GitCommitVertical,
   Home,
   Info,
   Keyboard,
@@ -20,6 +22,7 @@ import {
   Trash2,
   TriangleRight,
   Upload,
+  WavesVertical,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { labHash, replaceHash, type Study } from "../../routes";
@@ -35,6 +38,7 @@ import {
 import { LabViewport } from "../LabViewport";
 import {
   findRampPlacement,
+  isBody,
   limits,
   makeObject,
   makeScene,
@@ -93,13 +97,35 @@ import { sweepMethods, sweepToCsv, storedFit } from "./sweepExport";
 import { fitSweep, type SweepFit } from "./sweepFit";
 import { useSweep } from "./useSweep";
 
-const icons = { block: Box, ramp: TriangleRight, pulley: CircleDot };
-const objectKinds = ["block", "ramp", "pulley"] as const;
+const icons = {
+  block: Box,
+  ball: Circle,
+  ramp: TriangleRight,
+  pulley: CircleDot,
+  pendulum: GitCommitVertical,
+  spring: WavesVertical,
+};
+const objectKinds = [
+  "block",
+  "ball",
+  "ramp",
+  "pulley",
+  "pendulum",
+  "spring",
+] as const;
+/** The part selected when a scene opens: the first moving part, else the first part. */
+const firstPart = (scene: LabScene) =>
+  (scene.objects.find((part) => part.kind !== "ramp") ?? scene.objects[0])
+    ?.id ?? null;
+
 const TEMPLATE_NOTES: Record<Preset, string> = {
   incline: "Block sliding down a rough ramp",
   friction: "Block sliding to rest on the floor",
   projectile: "Horizontal launch from a height",
   pulley: "Ideal Atwood machine",
+  rolling: "Solid ball rolling down a ramp",
+  pendulum: "Rigid pendulum released from rest",
+  spring: "Mass on a vertical spring",
   blank: "Empty floor",
 };
 
@@ -236,6 +262,152 @@ function ObjectFields({
         />
       </div>
     );
+  if (object.kind === "ball")
+    return (
+      <div className="lab-fields">
+        {position}
+        <UnitInput
+          label="Height"
+          dimension="length"
+          unit="m"
+          value={object.y}
+          {...range(limits.height)}
+          onCommit={(y) => onChange({ ...object, y })}
+        />
+        <UnitInput
+          label="Radius"
+          dimension="length"
+          unit="m"
+          value={object.radius}
+          {...range(limits.radius)}
+          onCommit={(radius) => onChange({ ...object, radius })}
+        />
+        <UnitInput
+          label="Mass"
+          dimension="mass"
+          unit="kg"
+          value={object.mass}
+          {...range(limits.mass)}
+          onCommit={(mass) => onChange({ ...object, mass })}
+        />
+        <UnitInput
+          label="Initial X speed"
+          dimension="velocity"
+          unit="m/s"
+          value={object.vx}
+          {...range(limits.velocity)}
+          onCommit={(vx) => onChange({ ...object, vx })}
+        />
+      </div>
+    );
+  if (object.kind === "pendulum")
+    return (
+      <div className="lab-fields">
+        {position}
+        <UnitInput
+          label="Pivot height"
+          dimension="length"
+          unit="m"
+          value={object.pivotHeight}
+          {...range(limits.pivotHeight)}
+          onCommit={(pivotHeight) => onChange({ ...object, pivotHeight })}
+        />
+        <UnitInput
+          label="Length"
+          dimension="length"
+          unit="m"
+          value={object.length}
+          {...range(limits.pendulumLength)}
+          onCommit={(length) => onChange({ ...object, length })}
+        />
+        <UnitInput
+          label="Release angle"
+          dimension="angle"
+          unit="deg"
+          value={object.angle * DEG}
+          {...range(limits.swing, DEG)}
+          onCommit={(angle) => onChange({ ...object, angle: toDegrees(angle) })}
+        />
+        <UnitInput
+          label="Bob mass"
+          dimension="mass"
+          unit="kg"
+          value={object.mass}
+          {...range(limits.mass)}
+          onCommit={(mass) => onChange({ ...object, mass })}
+        />
+        <UnitInput
+          label="Bob radius"
+          dimension="length"
+          unit="m"
+          value={object.bobRadius}
+          {...range(limits.bobRadius)}
+          onCommit={(bobRadius) => onChange({ ...object, bobRadius })}
+        />
+      </div>
+    );
+  if (object.kind === "spring")
+    return (
+      <div className="lab-fields">
+        {position}
+        <UnitInput
+          label="Anchor height"
+          dimension="length"
+          unit="m"
+          value={object.anchorHeight}
+          {...range(limits.pivotHeight)}
+          onCommit={(anchorHeight) => onChange({ ...object, anchorHeight })}
+        />
+        <UnitInput
+          label="Stiffness k"
+          dimension="stiffness"
+          unit="N/m"
+          value={object.stiffness}
+          {...range(limits.stiffness)}
+          onCommit={(stiffness) => onChange({ ...object, stiffness })}
+        />
+        <UnitInput
+          label="Damping c"
+          dimension="damping"
+          unit="N·s/m"
+          value={object.damping}
+          {...range(limits.damping)}
+          onCommit={(damping) => onChange({ ...object, damping })}
+        />
+        <UnitInput
+          label="Rest length"
+          dimension="length"
+          unit="m"
+          value={object.restLength}
+          {...range(limits.restLength)}
+          onCommit={(restLength) => onChange({ ...object, restLength })}
+        />
+        <UnitInput
+          label="Mass"
+          dimension="mass"
+          unit="kg"
+          value={object.mass}
+          {...range(limits.mass)}
+          onCommit={(mass) => onChange({ ...object, mass })}
+        />
+        <UnitInput
+          label="Cube size"
+          dimension="length"
+          unit="m"
+          value={object.size}
+          {...range(limits.size)}
+          onCommit={(size) => onChange({ ...object, size })}
+        />
+        <UnitInput
+          label="Release offset"
+          dimension="length"
+          unit="m"
+          value={object.offset}
+          {...range(limits.offset)}
+          onCommit={(offset) => onChange({ ...object, offset })}
+        />
+      </div>
+    );
   if (object.kind === "ramp")
     return (
       <div className="lab-fields">
@@ -311,10 +483,8 @@ export function MotionStudy({
 }: MotionStudyProps) {
   const history = useHistory(() => makeScene(template));
   const scene = history.value;
-  const [selected, setSelected] = useState<string | null>(
-    () =>
-      (scene.objects.find((part) => part.kind === "block") ?? scene.objects[0])
-        ?.id ?? null,
+  const [selected, setSelected] = useState<string | null>(() =>
+    firstPart(scene),
   );
   const [revision, setRevision] = useState(0);
   const [viewRevision, setViewRevision] = useState(0);
@@ -461,10 +631,7 @@ export function MotionStudy({
 
   function loadTemplate(next: Preset) {
     const initial = makeScene(next);
-    const first =
-      initial.objects.find((part) => part.kind === "block") ??
-      initial.objects[0];
-    if (apply(initial, first?.id ?? null)) {
+    if (apply(initial, firstPart(initial))) {
       setViewRevision((value) => value + 1);
       replaceHash(labHash({ study: "motion", template: next }));
     }
@@ -475,7 +642,7 @@ export function MotionStudy({
   }
 
   function placeOnRamp(ramp: Ramp) {
-    if (object?.kind !== "block") return;
+    if (!object || !isBody(object)) return;
     const placed = findRampPlacement(object, ramp, scene.objects);
     if (placed) updateObject(placed);
     else
@@ -582,9 +749,7 @@ export function MotionStudy({
 
   function importExperiment(experiment: Experiment) {
     const next = experiment.studies.motion.scene;
-    const first =
-      next.objects.find((part) => part.kind === "block") ?? next.objects[0];
-    if (!apply(next, first?.id ?? null)) return;
+    if (!apply(next, firstPart(next))) return;
     setProtocolChoice(experiment.protocol);
     setSheet(null);
     setViewRevision((value) => value + 1);
@@ -712,9 +877,13 @@ export function MotionStudy({
   const help =
     object?.kind === "pulley"
       ? "Ideal Atwood machine with a massless rope and wheel. Motion ends when a weight reaches its stop. Positive acceleration lowers the right mass. Edits set the starting state and reset the run. Metres, Y up."
-      : object
-        ? "Edits set the starting state and reset the run. Metres, Y up."
-        : "Gravity and floor friction apply to every part. The protocol sets when a run stops; the live run pauses there. Edits reset the run. Metres, Y up.";
+      : object?.kind === "pendulum"
+        ? "Rigid, massless rod on a frictionless hinge. The release angle is measured from straight down, positive anticlockwise seen from +Z. Edits reset the run. Metres, Y up."
+        : object?.kind === "spring"
+          ? "Linear spring and viscous damper; the cube moves along Y only. The release offset is measured from the hanging equilibrium, positive up. Edits reset the run. Metres, Y up."
+          : object
+            ? "Edits set the starting state and reset the run. Metres, Y up."
+            : "Gravity and floor friction apply to every part. The protocol sets when a run stops; the live run pauses there. Edits reset the run. Metres, Y up.";
 
   const rail: RailItem[] = [
     {
@@ -939,7 +1108,7 @@ export function MotionStudy({
             onClose={() => setSheet(null)}
           >
             <p className="lab-sheet-lead">
-              Edit or paste a <code>physix.lab/1</code> scene in SI units, or
+              Edit or paste a <code>physix.lab/2</code> scene in SI units, or
               load a <code>physix.experiment/1</code> file to repeat its run.
               Applying is one undo step.
             </p>
@@ -1183,7 +1352,7 @@ export function MotionStudy({
           <div key={object.id}>
             <p className="lab-kind">{objectNames[object.kind]}</p>
             <ObjectFields object={object} onChange={updateObject} />
-            {object.kind === "block" && ramps.length > 0 ? (
+            {isBody(object) && ramps.length > 0 ? (
               <label className="lab-select">
                 <span>Place on ramp</span>
                 <select

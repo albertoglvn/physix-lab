@@ -3,13 +3,22 @@ import {
   parseScene,
   radians,
   rampHeight,
+  springEquilibrium,
   type LabObject,
+  type Pendulum,
   type Pulley,
   type Ramp,
+  type Spring,
 } from "./scene.ts";
 
 export const TIME_STEP = 1 / 120;
 export const SOLVER_ITERATIONS = 8;
+/**
+ * Rapier integrates each step in SOLVER_ITERATIONS substeps, so a force held over the step
+ * moves a body by h²(N+1)/(2N)·F/m. Evaluating the spring at y + h·v·(N−1)/(2N) makes the
+ * undamped step map area-preserving, so the oscillation neither grows nor decays.
+ */
+export const SPRING_LEAD = (SOLVER_ITERATIONS - 1) / (2 * SOLVER_ITERATIONS);
 /** Largest step a caller may request; convergence checks only refine below the default. */
 export const MAX_TIME_STEP = 1 / 30;
 export const PULLEY_HEIGHT = 4;
@@ -87,14 +96,80 @@ export function rampVertices(ramp: Ramp): number[] {
   ];
 }
 
-export function initialBlockState(
-  block: Extract<LabObject, { kind: "block" }>,
-): BlockState {
-  const halfAngle = radians(block.rotation) / 2;
+export type BodyPart = Exclude<LabObject, Ramp | Pulley>;
+
+const still = { x: 0, y: 0, z: 0 };
+const upright = { x: 0, y: 0, z: 0, w: 1 };
+
+/** Where a pendulum's bob centre sits at swing angle `theta` (radians). */
+export const bobPosition = (pendulum: Pendulum, theta: number): Vec3 => ({
+  x: pendulum.x + pendulum.length * Math.sin(theta),
+  y: pendulum.pivotHeight - pendulum.length * Math.cos(theta),
+  z: pendulum.z,
+});
+
+/** Tension along a spring and dashpot from the cube's top height and vertical velocity. */
+export function springForce(spring: Spring, top: number, vy: number) {
+  return (
+    spring.stiffness * (spring.anchorHeight - top - spring.restLength) -
+    spring.damping * vy
+  );
+}
+
+/**
+ * The force held on a spring cube over one step. The spring is read at the lead position
+ * (see SPRING_LEAD); the damper at the mean of the step's start and end velocities, which
+ * depends on the force itself: F = (Fₛ − c (v − h g / 2)) / (1 + c h / (2m)).
+ */
+export function springStepForce(
+  spring: Spring,
+  y: number,
+  vy: number,
+  timeStep: number,
+  gravity: number,
+) {
+  const top = y + spring.size / 2 + SPRING_LEAD * timeStep * vy;
+  const elastic = springForce(spring, top, 0);
+  const c = spring.damping;
+  return (
+    (elastic - c * (vy - (timeStep * gravity) / 2)) /
+    (1 + (c * timeStep) / (2 * spring.mass))
+  );
+}
+
+/**
+ * The rigid body a part starts as: a block, ball, pendulum bob or spring cube. A spring's
+ * release height depends on gravity through its equilibrium.
+ */
+export function initialBlockState(part: BodyPart, gravity = 9.81): BlockState {
+  if (part.kind === "block") {
+    const halfAngle = radians(part.rotation) / 2;
+    return {
+      position: { x: part.x, y: part.y, z: part.z },
+      rotation: { x: 0, y: 0, z: Math.sin(halfAngle), w: Math.cos(halfAngle) },
+      velocity: { x: part.vx, y: 0, z: 0 },
+    };
+  }
+  if (part.kind === "ball")
+    return {
+      position: { x: part.x, y: part.y, z: part.z },
+      rotation: upright,
+      velocity: { x: part.vx, y: 0, z: 0 },
+    };
+  if (part.kind === "pendulum")
+    return {
+      position: bobPosition(part, radians(part.angle)),
+      rotation: upright,
+      velocity: still,
+    };
   return {
-    position: { x: block.x, y: block.y, z: block.z },
-    rotation: { x: 0, y: 0, z: Math.sin(halfAngle), w: Math.cos(halfAngle) },
-    velocity: { x: block.vx, y: 0, z: 0 },
+    position: {
+      x: part.x,
+      y: springEquilibrium(part, gravity) + part.offset,
+      z: part.z,
+    },
+    rotation: upright,
+    velocity: still,
   };
 }
 
@@ -112,6 +187,7 @@ export type Simulation = {
   readonly solverIterations: number;
   readonly time: number;
   step: (count?: number) => void;
+  /** The rigid body of a block, ball, pendulum bob or spring cube. */
   block: (id: string) => BlockState | undefined;
   pulley: (id: string) => PulleyState | undefined;
   dispose: () => void;
@@ -140,6 +216,7 @@ export async function createSimulation(
   const world = new rapier.World({ x: 0, y: -scene.gravity, z: 0 });
   const blocks = new Map<string, RigidBody>();
   const pulleys = new Map<string, Pulley>();
+  const springs: { spring: Spring; body: RigidBody }[] = [];
   let ticks = 0;
   let disposed = false;
 
@@ -147,6 +224,40 @@ export async function createSimulation(
     desc
       .setFriction(coefficient)
       .setFrictionCombineRule(rapier.CoefficientCombineRule.Multiply);
+
+  function shape(part: BodyPart) {
+    if (part.kind === "ball") return rapier.ColliderDesc.ball(part.radius);
+    if (part.kind === "pendulum")
+      return rapier.ColliderDesc.ball(part.bobRadius);
+    const half = part.size / 2;
+    return rapier.ColliderDesc.cuboid(half, half, half);
+  }
+
+  /** Hinges the bob to a fixed pivot about z: a rigid, massless rod. */
+  function hinge(pendulum: Pendulum, bob: RigidBody) {
+    const pivot = world.createRigidBody(
+      rapier.RigidBodyDesc.fixed().setTranslation(
+        pendulum.x,
+        pendulum.pivotHeight,
+        pendulum.z,
+      ),
+    );
+    const theta = radians(pendulum.angle);
+    world.createImpulseJoint(
+      rapier.JointData.revolute(
+        { x: 0, y: 0, z: 0 },
+        {
+          x: -pendulum.length * Math.sin(theta),
+          y: pendulum.length * Math.cos(theta),
+          z: 0,
+        },
+        { x: 0, y: 0, z: 1 },
+      ),
+      pivot,
+      bob,
+      true,
+    );
+  }
 
   try {
     world.timestep = timeStep;
@@ -159,24 +270,7 @@ export async function createSimulation(
     );
 
     for (const object of scene.objects) {
-      if (object.kind === "block") {
-        const { position, rotation, velocity } = initialBlockState(object);
-        const body = world.createRigidBody(
-          rapier.RigidBodyDesc.dynamic()
-            .setTranslation(position.x, position.y, position.z)
-            .setRotation(rotation)
-            .setLinvel(velocity.x, velocity.y, velocity.z)
-            .setCcdEnabled(true),
-        );
-        const half = object.size / 2;
-        world.createCollider(
-          friction(rapier.ColliderDesc.cuboid(half, half, half), 1).setMass(
-            object.mass,
-          ),
-          body,
-        );
-        blocks.set(object.id, body);
-      } else if (object.kind === "ramp") {
+      if (object.kind === "ramp") {
         const desc = rapier.ColliderDesc.convexHull(
           new Float32Array(rampVertices(object)),
         );
@@ -184,8 +278,30 @@ export async function createSimulation(
         world.createCollider(
           friction(desc, object.friction).setTranslation(object.x, 0, object.z),
         );
-      } else {
+      } else if (object.kind === "pulley") {
         pulleys.set(object.id, object);
+      } else {
+        const { position, rotation, velocity } = initialBlockState(
+          object,
+          scene.gravity,
+        );
+        const desc = rapier.RigidBodyDesc.dynamic()
+          .setTranslation(position.x, position.y, position.z)
+          .setRotation(rotation)
+          .setLinvel(velocity.x, velocity.y, velocity.z)
+          .setCcdEnabled(true);
+        if (object.kind === "spring") desc.lockRotations();
+        const body = world.createRigidBody(desc);
+        if (object.kind === "spring") {
+          body.setEnabledTranslations(false, true, false, true);
+          springs.push({ spring: object, body });
+        }
+        world.createCollider(
+          friction(shape(object), 1).setMass(object.mass),
+          body,
+        );
+        if (object.kind === "pendulum") hinge(object, body);
+        blocks.set(object.id, body);
       }
     }
   } catch (error) {
@@ -204,7 +320,20 @@ export async function createSimulation(
       if (disposed) throw new Error("The simulation has been disposed.");
       if (!Number.isSafeInteger(count) || count < 0 || count > 12000)
         throw new RangeError("Step count must be an integer from 0 to 12,000.");
-      for (let i = 0; i < count; i++) world.step();
+      for (let i = 0; i < count; i++) {
+        for (const { spring, body } of springs) {
+          const force = springStepForce(
+            spring,
+            body.translation().y,
+            body.linvel().y,
+            timeStep,
+            scene.gravity,
+          );
+          body.resetForces(false);
+          body.addForce({ x: 0, y: force, z: 0 }, true);
+        }
+        world.step();
+      }
       ticks += count;
     },
     block(id) {
@@ -226,6 +355,7 @@ export async function createSimulation(
       disposed = true;
       blocks.clear();
       pulleys.clear();
+      springs.length = 0;
       world.free();
     },
   };

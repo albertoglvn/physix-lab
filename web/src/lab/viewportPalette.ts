@@ -23,6 +23,10 @@ export const VIEWPORT_TOKENS = {
   rope: "--px-part-rope",
   weightLeft: "--px-part-weight-left",
   weightRight: "--px-part-weight-right",
+  ball: "--px-part-ball",
+  ballBand: "--px-part-ball-band",
+  bob: "--px-part-bob",
+  coil: "--px-part-coil",
 } as const;
 
 export type ViewportPalette = Record<keyof typeof VIEWPORT_TOKENS, string>;

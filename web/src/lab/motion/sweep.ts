@@ -6,10 +6,13 @@
  */
 
 import { noiseProblem, noisyReading, type SensorNoise } from "../data/noise";
+import { finiteMean, meanPeriod } from "../data/period";
 import { MAX_SEED, stream } from "../data/random";
 import {
   blockOnRamp,
+  isBody,
   limits,
+  oscillatorProblem,
   replaceObject,
   type LabObject,
   type LabScene,
@@ -45,12 +48,13 @@ export type SweepVariable = {
   step: number;
 };
 
-export type ProbeStat = "final" | "max" | "min" | "mean";
+export type ProbeStat = "final" | "max" | "min" | "mean" | "period";
 export const PROBE_STATS: Record<ProbeStat, string> = {
   final: "Value at stop",
   max: "Maximum",
   min: "Minimum",
   mean: "Mean",
+  period: "Period about the mean",
 };
 
 export type SweepMetric =
@@ -114,6 +118,27 @@ const FIELDS: Record<
     ["leftMass", "left mass", "m₁", "kg", limits.mass],
     ["rightMass", "right mass", "m₂", "kg", limits.mass],
   ],
+  ball: [
+    ["mass", "mass", "m", "kg", limits.mass],
+    ["radius", "radius", "r", "m", limits.radius],
+    ["y", "height", "h", "m", limits.height],
+    ["vx", "launch speed", "vₓ", "m/s", limits.velocity],
+  ],
+  pendulum: [
+    ["length", "length", "L", "m", limits.pendulumLength],
+    ["angle", "release angle", "θ₀", "deg", limits.swing],
+    ["mass", "mass", "m", "kg", limits.mass],
+    ["bobRadius", "bob radius", "r", "m", limits.bobRadius],
+    ["pivotHeight", "pivot height", "H", "m", limits.pivotHeight],
+  ],
+  spring: [
+    ["mass", "mass", "m", "kg", limits.mass],
+    ["stiffness", "stiffness", "k", "N/m", limits.stiffness],
+    ["damping", "damping", "c", "N·s/m", limits.damping],
+    ["offset", "release offset", "u₀", "m", limits.offset],
+    ["restLength", "rest length", "ℓ₀", "m", limits.restLength],
+    ["anchorHeight", "anchor height", "H", "m", limits.pivotHeight],
+  ],
 };
 
 const variable = (
@@ -124,14 +149,14 @@ const variable = (
   [min, max, step]: Range,
 ): SweepVariable => ({ path, label, symbol, unit, min, max, step });
 
-/** Variables a sweep can vary in this scene. Blocks on a ramp keep their ramp placement. */
+/** Variables a sweep can vary in this scene. Bodies on a ramp keep their ramp placement. */
 export function sweepVariables(scene: LabScene): SweepVariable[] {
   const variables: SweepVariable[] = [
     variable("gravity", "Gravity", "g", "m/s²", limits.gravity),
     variable("floorFriction", "Floor friction", "μ", "", limits.friction),
   ];
   for (const part of scene.objects) {
-    const onRamp = part.kind === "block" && startingRamp(part, scene);
+    const onRamp = isBody(part) && startingRamp(part, scene);
     for (const [field, label, symbol, unit, range] of FIELDS[part.kind]) {
       if (onRamp && (field === "y" || field === "vx")) continue;
       variables.push(
@@ -159,7 +184,10 @@ export function sweepValueOf(scene: LabScene, path: string): number {
   return typeof value === "number" ? value : Number.NaN;
 }
 
-/** The scene with one variable set. Blocks on a changed ramp, or resized on one, stay on it. */
+/**
+ * The scene with one variable set. Bodies on a changed ramp, or resized on one, stay on it;
+ * a pendulum or spring that would reach the floor or its anchor is rejected.
+ */
 export function applySweepValue(
   scene: LabScene,
   path: string,
@@ -176,7 +204,11 @@ export function applySweepValue(
   const dot = path.lastIndexOf(".");
   const part = scene.objects.find((item) => item.id === path.slice(0, dot))!;
   const next = { ...part, [path.slice(dot + 1)]: value } as LabObject;
-  if (next.kind === "block" && part.kind === "block") {
+  if (next.kind === "pendulum" || next.kind === "spring") {
+    const problem = oscillatorProblem(next, scene.gravity);
+    if (problem) throw new RangeError(problem);
+  }
+  if (isBody(next) && isBody(part)) {
     const start = startingRamp(part, scene);
     if (start)
       return replaceObject(
@@ -283,6 +315,12 @@ export function measureMetric(
   if (!column) return { value: Number.NaN, note: "No such probe." };
   const finite = column.filter(Number.isFinite);
   if (!finite.length) return { value: Number.NaN, note: "No finite samples." };
+  if (metric.stat === "period") {
+    const period = meanPeriod(run.series.t, column, finiteMean(column));
+    return period === undefined
+      ? { value: Number.NaN, note: "Fewer than two full cycles were recorded." }
+      : { value: period };
+  }
   const value =
     metric.stat === "final"
       ? column[column.length - 1]

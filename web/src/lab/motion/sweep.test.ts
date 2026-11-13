@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fitExpression, presetById } from "../data/fit";
 import { readingUncertainty } from "../data/noise";
-import { makeScene, type Block } from "../scene";
+import { makeObject, makeScene, type Block } from "../scene";
 import { TIME_STEP } from "../simulation";
 import { defaultProtocol, startingRamp } from "./probes";
 import {
@@ -24,6 +24,9 @@ import {
   type PointRunner,
   type SweepRecord,
 } from "./sweepPool";
+import { suggestedModel } from "./SweepData";
+import { defaultSweepForm } from "./sweepForm";
+import { fitSweep } from "./sweepFit";
 import { referencesFor } from "./theory";
 
 const incline = makeScene("incline");
@@ -298,5 +301,101 @@ describe("Phase 3 exit criteria", () => {
     expect(record.points).toHaveLength(9);
     for (const point of record.points)
       expect(Math.abs(point.value - point.theory!)).toBeLessThan(1e-6);
+  });
+});
+
+describe("Phase 3 oscillator sweeps", () => {
+  const pendulum = {
+    ...makeScene("pendulum"),
+    objects: [
+      {
+        ...makeObject("pendulum", "pendulum-1"),
+        angle: 3,
+        bobRadius: 0.05,
+      },
+    ],
+  };
+  const lengthSpec = (overrides: Partial<SweepSpec> = {}): SweepSpec => ({
+    variable: "pendulum-1.length",
+    values: sweepValues(1.5, 4.5, 0.25),
+    metric: { kind: "reference", id: "pendulum-1.pendulum.T" },
+    repeats: 1,
+    seed: 2026,
+    noise: null,
+    protocol: defaultProtocol(pendulum),
+    timeStep: TIME_STEP,
+    ...overrides,
+  });
+
+  it("recovers g from a pendulum length sweep within the fitted uncertainty", async () => {
+    // Thirteen lengths, three synthetic readings each, σ = 0.01 s and a 1 ms resolution.
+    // The model 2π √(L/g) leaves out the 3° amplitude and the bob's own inertia, which
+    // together lower ĝ by about 0.05 %; the criterion is |ĝ − g| ≤ 2 SE.
+    const noise = { sigma: 0.01, resolution: 0.001 };
+    const spec = lengthSpec({ repeats: 3, noise });
+    const record = await runSweep(pendulum, spec, {
+      runners: [localRunner()],
+    });
+    expect(suggestedModel(spec)).toBe("pendulum");
+    const fit = fitSweep(pendulum, spec, record.points, "pendulum", "");
+    const [g] = fit.result.parameters;
+    expect(g.name).toBe("g");
+    expect(Math.abs(g.value - 9.81)).toBeLessThanOrEqual(2 * g.se);
+    expect(g.se).toBeLessThan(0.03);
+    expect(fit.known.g).toEqual({ value: 9.81, source: "Scene gravity" });
+    // Each clean run matches the exact period, so the clean fit shows only the model bias.
+    for (const point of record.points)
+      expect(Math.abs(point.value / point.theory! - 1)).toBeLessThan(1e-5);
+    const clean = fitSweep(
+      pendulum,
+      { ...spec, noise: null, repeats: 1 },
+      record.points,
+      "pendulum",
+      "",
+    ).result.parameters[0];
+    expect(Math.abs(clean.value / 9.81 - 1)).toBeLessThan(1e-3);
+  });
+
+  it("recovers k from a spring mass sweep", async () => {
+    const spring = makeScene("spring");
+    const spec: SweepSpec = {
+      variable: "spring-1.mass",
+      values: sweepValues(0.5, 3, 0.5),
+      metric: { kind: "reference", id: "spring-1.spring.T" },
+      repeats: 1,
+      seed: 0,
+      noise: null,
+      protocol: defaultProtocol(spring),
+      timeStep: TIME_STEP,
+    };
+    const record = await runSweep(spring, spec, { runners: [localRunner()] });
+    expect(suggestedModel(spec)).toBe("spring");
+    const fit = fitSweep(spring, spec, record.points, "spring", "");
+    expect(fit.result.parameters[0].value / 80 - 1).toBeLessThan(5e-3);
+    expect(fit.known.k).toEqual({ value: 80, source: "spring-1 stiffness" });
+  });
+
+  it("reads a period from any probe and rejects lengths that reach the floor", async () => {
+    const [point] = (
+      await runSweep(
+        pendulum,
+        lengthSpec({
+          values: [2],
+          metric: { kind: "probe", key: "pendulum-1.x", stat: "period" },
+        }),
+        { runners: [localRunner()] },
+      )
+    ).points;
+    const T = 2 * Math.PI * Math.sqrt((4 + 0.4 * 0.05 ** 2) / (9.81 * 2));
+    expect(point.value / T - 1).toBeLessThan(1e-3);
+    expect(() => applySweepValue(pendulum, "pendulum-1.length", 6)).toThrow(
+      "floor",
+    );
+    const form = defaultSweepForm(pendulum, 1);
+    expect(form.variable).toBe("pendulum-1.length");
+    expect(Number(form.to)).toBeLessThanOrEqual(4.95);
+    expect(
+      sweepValues(Number(form.from), Number(form.to), Number(form.step)).length,
+    ).toBeGreaterThan(5);
   });
 });

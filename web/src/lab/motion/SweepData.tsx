@@ -23,13 +23,21 @@ export function formatEstimate(value: number, se: number): string {
 const significant = (value: number) =>
   Number.isFinite(value) ? String(Number(value.toPrecision(4))) : "—";
 
-/** The model a sweep suggests: the incline law for an angle sweep of its acceleration. */
+/**
+ * The model a sweep suggests: the incline law for an angle sweep of its acceleration, the
+ * pendulum law for a length sweep of its period, the spring law for a mass sweep of its period.
+ */
 export function suggestedModel(spec: SweepSpec): FitModelId {
-  return spec.metric.kind === "reference" &&
-    spec.metric.id.endsWith(".incline.a") &&
-    spec.variable.endsWith(".angle")
-    ? "incline"
-    : "linear";
+  if (spec.metric.kind !== "reference") return "linear";
+  const id = spec.metric.id;
+  const [target] = id.split(".");
+  if (id.endsWith(".incline.a") && spec.variable.endsWith(".angle"))
+    return "incline";
+  if (id.includes(".pendulum.T") && spec.variable === `${target}.length`)
+    return "pendulum";
+  if (id.endsWith(".spring.T") && spec.variable === `${target}.mass`)
+    return "spring";
+  return "linear";
 }
 
 /** Axis titles for the swept variable and the metric. */

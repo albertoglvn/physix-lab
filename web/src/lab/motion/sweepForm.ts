@@ -5,10 +5,11 @@
 
 import { niceTicks } from "../data/Plot";
 import { freshSeed } from "../data/random";
-import type { LabScene } from "../scene";
+import { isBody, type LabScene } from "../scene";
 import { TIME_STEP } from "../simulation";
 import type { Protocol } from "./probes";
 import {
+  applySweepValue,
   metricKey,
   parseSweepSpec,
   sweepMetrics,
@@ -49,12 +50,14 @@ export function defaultVariable(scene: LabScene): string {
   const references = referencesFor(scene);
   const ramp = scene.objects.find((part) => part.kind === "ramp");
   const pulley = scene.objects.find((part) => part.kind === "pulley");
-  const launched = scene.objects.find(
-    (part) => part.kind === "block" && part.vx !== 0,
-  );
+  const pendulum = scene.objects.find((part) => part.kind === "pendulum");
+  const spring = scene.objects.find((part) => part.kind === "spring");
+  const launched = scene.objects.find((part) => isBody(part) && part.vx !== 0);
   const preferred = [
     ramp && `${ramp.id}.angle`,
     pulley && `${pulley.id}.rightMass`,
+    pendulum && `${pendulum.id}.length`,
+    spring && `${spring.id}.mass`,
     references.some((item) => item.id.endsWith(".friction.d")) &&
       "floorFriction",
     launched && `${launched.id}.vx`,
@@ -69,6 +72,39 @@ export function defaultVariable(scene: LabScene): string {
 
 const show = (value: number) => String(Number(value.toPrecision(6)));
 
+/**
+ * About ten round steps across the values the scene accepts: the variable's limits, trimmed
+ * where a value would put a pendulum bob or spring cube through the floor or anchor.
+ */
+function sceneRange(scene: LabScene, path: string, min: number, max: number) {
+  const accepts = (value: number) => {
+    try {
+      applySweepValue(scene, path, value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const trim = (low: number, high: number) => {
+    const range = defaultRange(low, high);
+    const values = sweepValues(range.from, range.to, range.step);
+    const valid = values.filter(accepts);
+    return { range, values, valid };
+  };
+  let { range, values, valid } = trim(min, max);
+  if (valid.length >= 2 && valid.length < values.length - 1) {
+    // Refine between the nearest rejected values so the trimmed range keeps about ten steps.
+    const first = values.indexOf(valid[0]);
+    const last = values.indexOf(valid[valid.length - 1]);
+    ({ range, values, valid } = trim(
+      Math.max(min, values[first - 1] ?? min),
+      Math.min(max, values[last + 1] ?? max),
+    ));
+  }
+  if (valid.length < 2) return range;
+  return { ...range, from: valid[0], to: valid[valid.length - 1] };
+}
+
 /** The form for one variable: its default range, and the other fields as they were. */
 export function formForVariable(
   scene: LabScene,
@@ -77,7 +113,7 @@ export function formForVariable(
 ): SweepForm {
   const known = sweepVariables(scene).find((item) => item.path === variable);
   if (!known) return { ...form, variable };
-  const range = defaultRange(known.min, known.max);
+  const range = sceneRange(scene, variable, known.min, known.max);
   return {
     ...form,
     variable,

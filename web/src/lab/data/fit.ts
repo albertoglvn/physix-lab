@@ -269,12 +269,16 @@ export type FitModelId =
   | "power"
   | "exponential"
   | "incline"
+  | "pendulum"
+  | "spring"
   | "custom";
 
 export type FitPreset = {
   id: Exclude<FitModelId, "custom">;
   label: string;
   expression: string;
+  /** Names that would otherwise be constants and that this model fits instead, such as g. */
+  fits?: readonly string[];
   /** Starting values from the data, in the expression's parameter order. */
   guess: (xs: number[], ys: number[], compiled: CompiledExpression) => number[];
 };
@@ -314,6 +318,16 @@ const logLinear = (xs: number[], ys: number[], logX: boolean) => {
   return [Math.exp(c0), c1];
 };
 
+/** Mean of 4π² x / T² over the points: c in T = 2π √(x / c), the fit's starting value. */
+export function periodConstant(xs: readonly number[], ys: readonly number[]) {
+  const values = xs
+    .map((x, index) => (4 * Math.PI * Math.PI * x) / ys[index] ** 2)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : 1;
+}
+
 export const FIT_PRESETS: readonly FitPreset[] = [
   {
     id: "linear",
@@ -350,6 +364,19 @@ export const FIT_PRESETS: readonly FitPreset[] = [
     label: "Incline g(sin θ − μ cos θ)",
     expression: "g*(sin(x*deg) - mu*cos(x*deg))",
     guess: () => [0.3],
+  },
+  {
+    id: "pendulum",
+    label: "Pendulum 2π √(L / g)",
+    expression: "2*pi*sqrt(x/g)",
+    fits: ["g"],
+    guess: (xs, ys) => [periodConstant(xs, ys)],
+  },
+  {
+    id: "spring",
+    label: "Spring 2π √(m / k)",
+    expression: "2*pi*sqrt(x/k)",
+    guess: (xs, ys) => [periodConstant(xs, ys)],
   },
 ];
 

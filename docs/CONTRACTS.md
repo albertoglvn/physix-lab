@@ -191,6 +191,35 @@ FEM-better than the FEM baseline.
 
 MCP tools use the same service functions and return the same JSON.
 
+## Motion scene (`physix.lab/2`)
+
+`{version, name, gravity, floorFriction, objects}`. `gravity` is in m/s² (0 to 30) and
+acts along −y. The floor is the plane y = 0. At most 32 objects, each with a unique `id`, a
+`kind` and a placement `x`, `z` in metres. Angles are in degrees and everything else is SI.
+
+| Kind | Fields | Notes |
+| --- | --- | --- |
+| `block` | `y`, `size`, `mass`, `rotation`, `vx` | A cube. `y` is its centre height and `rotation` is about z. |
+| `ball` | `y`, `radius`, `mass`, `vx` | A solid sphere (I = 2/5 m r²). |
+| `ramp` | `length`, `width`, `angle`, `friction` | A fixed wedge rising towards −x. |
+| `pulley` | `leftMass`, `rightMass` | An ideal Atwood machine. |
+| `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle` | A solid bob on a rigid, massless rod hinged about z. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. |
+| `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
+
+Validation rejects a pendulum whose swing would reach the floor. It also rejects a spring
+whose cube would reach the floor or the anchor at any point of the undamped swing.
+
+A `physix.lab/1` scene holds only blocks, ramps and pulleys with the same fields, so it
+migrates by its version alone. A migrated scene has a new run identity, because the
+identity hashes the scene.
+
+Contacts use a friction coefficient of 1 on blocks and balls, combined by product with the
+ramp or floor value. A pendulum's moment of inertia about the pivot is m L² + 2/5 m r².
+Each spring force is held over one step. The elastic part is read at a lead position
+y + h·v·(N−1)/(2N), with N = 8 solver substeps, and the damper at the mean of the step's
+start and end velocities. Under these rules the undamped engine period matches 2π √(m/k),
+and the pendulum period matches the exact elliptic-integral period within 10⁻⁶.
+
 ## Motion run (`physix.run/1`)
 
 One headless run of a Motion scene. The browser builds it with `runProtocol`, and the live
@@ -199,11 +228,11 @@ view replays the same steps.
 | Field | Meaning |
 | --- | --- |
 | `id` | `sha256:` of the canonical JSON (sorted keys) of `inputs`. Equal inputs give the same id. |
-| `inputs` | `scene` (`physix.lab/1`), `protocol`, `timeStep` (s, at most 1/30, default 1/120) and `rate` (probe rate in Hz, default 60) |
+| `inputs` | `scene` (`physix.lab/2`), `protocol`, `timeStep` (s, at most 1/30, default 1/120) and `rate` (probe rate in Hz, default 60) |
 | `engine` | `name` (`rapier3d-compat`), `version`, `solverIterations` and `reproducibility` (`"same build and browser engine"`) |
 | `seed` | `null`. Motion runs are not stochastic yet. |
 | `timing` | `wallMs` and its `boundary`: engine set-up, every step and probe sampling, without rendering |
-| `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a body id or `system`, and `source` is `rapier`, `derived` or `ideal-atwood`. |
+| `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a part id or `system`, and `source` is `rapier`, `derived` or `ideal-atwood`. |
 | `series` | `t` (s) and one column per quantity key with the same length. Samples sit on the `1/rate` grid, plus a final sample at the stop. A missing value is `NaN` in memory and `null` in JSON. |
 | `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` and `pulley_stop`, resolved to one time step |
 | `stop` | `{reason: "event" \| "time", t, event?}` |
@@ -216,7 +245,11 @@ Acceleration is a backward finite difference of velocity over one sample, and th
 sample repeats the second. Pulley quantities come from the ideal Atwood model. System
 quantities are total kinetic, potential and mechanical energy and linear momentum.
 Block potential energy is m g y from y = 0. A pulley's potential energy is measured from its
-starting position.
+starting position. A ball's kinetic energy includes its rotation. A pendulum records `angle`
+(rad, from straight down), `omega` (rad/s), bob position, speed, rod `tension`, and its
+energies. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
+`extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system
+potential energy includes the elastic energy.
 
 ## Experiment (`physix.experiment/1`)
 
@@ -238,7 +271,7 @@ One variable of a Motion scene varied over a list of values, with one headless
 | Field | Meaning |
 | --- | --- |
 | `id` | `sha256:` of the canonical JSON of `{schema, scene, spec}`. Equal designs share an id. |
-| `scene` | The base scene (`physix.lab/1`) before any value is applied |
+| `scene` | The base scene (`physix.lab/2`) before any value is applied |
 | `spec.variable` | `gravity`, `floorFriction` or `<object id>.<field>`, in the scene's own unit (degrees for angles, SI otherwise) |
 | `spec.values` | At most 200 values inside the variable's limits |
 | `spec.metric` | `{kind: "reference", id}` (the measured side of a closed-form reference), `{kind: "probe", key, stat}` with `stat` in `final`, `max`, `min` and `mean`, or `{kind: "stop_time"}` |
@@ -260,7 +293,8 @@ depend on worker count or completion order. Each reading's standard uncertainty 
 
 `{model, expression, constants, weighting, sigma?, parameters, covariance, n, dof, r2,
 chi2?, reducedChi2?, converged, bandCoverage, excluded?}`. `model` is `linear`, `quadratic`, `cubic`,
-`power`, `exponential`, `incline` or `custom`. `parameters` are `{name, value, se}` with
+`power`, `exponential`, `incline`, `pendulum` (T = 2π √(x/g), fitting g), `spring`
+(T = 2π √(x/k)) or `custom`. `parameters` are `{name, value, se}` with
 `se` one standard error. With noise, the fit is weighted by the reading uncertainty over
 every reading, and `chi2` is reported. Without noise, it is unweighted over the clean values,
 and the standard errors are scaled by the residual variance. Expressions may use `x`, the

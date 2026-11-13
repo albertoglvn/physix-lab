@@ -12,6 +12,8 @@ export type Dimension =
   | "stress"
   | "velocity"
   | "acceleration"
+  | "stiffness"
+  | "damping"
   | "ratio";
 
 /** Factor from each unit to the SI base unit of its dimension. The first entry is the base. */
@@ -24,6 +26,8 @@ export const UNITS: Record<Dimension, Readonly<Record<string, number>>> = {
   stress: { Pa: 1, kPa: 1e3, MPa: 1e6, GPa: 1e9 },
   velocity: { "m/s": 1, "km/h": 1 / 3.6 },
   acceleration: { "m/s²": 1, "m/s^2": 1, "m/s2": 1, g: 9.80665 },
+  stiffness: { "N/m": 1, "kN/m": 1e3, "N/mm": 1e3 },
+  damping: { "N·s/m": 1, "N s/m": 1, "Ns/m": 1, "kg/s": 1 },
   ratio: { "": 1, "%": 1e-2 },
 };
 
@@ -36,6 +40,8 @@ const NOUN: Record<Dimension, string> = {
   stress: "a stress",
   velocity: "a speed",
   acceleration: "an acceleration",
+  stiffness: "a stiffness",
+  damping: "a damping coefficient",
   ratio: "a ratio",
 };
 
