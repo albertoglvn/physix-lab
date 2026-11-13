@@ -253,6 +253,7 @@ test("reports the field of an invalid run request", async () => {
     [{ request: { template: "pendulum" }, stop: "bounce" }, "stop"],
     [{ request: {}, max_time_s: 600 }, "max_time_s"],
     [{ request: {}, points: 5000 }, "points"],
+    [{ request: {}, series: 1 }, "series"],
   ]) {
     const result = await simulate(args);
     assert.equal(result.isError, true, JSON.stringify(args));
@@ -472,4 +473,16 @@ test("the chart view completes the MCP Apps handshake and answers host requests"
       error: { code: -32601, message: "Method not found." },
     },
   ]);
+});
+
+test("returns the plotted values to the model when asked for series", async () => {
+  const reply = await simulate({
+    request: { template: "pulley" },
+    series: true,
+  });
+  const result = reply.structuredContent;
+  assert.deepEqual(result.series, reply._meta.graphs);
+  assert.ok(result.series.length > 0);
+  assert.ok(result.series.every((graph) => graph.t.length <= 40));
+  assert.ok(JSON.stringify(result).length < 20000);
 });

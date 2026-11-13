@@ -19,7 +19,13 @@ import { compare, CONTACT_MODEL, curvesFor, referencesFor } from "./theory.ts";
  */
 export const RUN_REQUEST_SCHEMA = "physix.run-request/1";
 export const HOSTED_RUN_SCHEMA = "physix.hosted-run/1";
-export const GRAPH_POINTS = { default: 120, min: 20, max: 400 } as const;
+export const GRAPH_POINTS = {
+  default: 120,
+  /** Default when the values also go to the model. */
+  series: 40,
+  min: 20,
+  max: 400,
+} as const;
 export const MAX_GRAPHS = 12;
 export const MAX_EVENTS = 20;
 export const MAX_REFERENCES = 16;
@@ -101,9 +107,18 @@ export type HostedRun = {
   references_omitted: number;
   summary: ColumnSummary[];
   graphs: { id: string; title: string; unit: string; keys: string[] }[];
+  /** The plotted values, only when the request asks for them. */
+  series?: Graph[];
 };
 
-const REQUEST_KEYS = ["request", "scene", "stop", "max_time_s", "points"];
+const REQUEST_KEYS = [
+  "request",
+  "scene",
+  "stop",
+  "max_time_s",
+  "points",
+  "series",
+];
 
 /** Graph choices per part kind: id suffix, title, columns. Columns share one unit. */
 const BODY_GRAPHS = [
@@ -151,6 +166,8 @@ export type RunRequest = {
   defaults?: Record<string, string[]>;
   protocol: Protocol;
   points: number;
+  /** Whether the result carries the plotted values for the model. */
+  series: boolean;
 };
 
 /** Validates a `physix.run-request/1` and resolves its scene and stop. */
@@ -217,7 +234,13 @@ export function parseRunRequest(input: unknown): RunRequest {
       );
     protocol.maxTime = args.max_time_s;
   }
-  let points: number = GRAPH_POINTS.default;
+  let series = false;
+  if (args.series !== undefined) {
+    if (typeof args.series !== "boolean")
+      throw new RunRequestError("series must be true or false.", "series");
+    series = args.series;
+  }
+  let points: number = series ? GRAPH_POINTS.series : GRAPH_POINTS.default;
   if (args.points !== undefined) {
     if (
       !Number.isInteger(args.points) ||
@@ -230,7 +253,7 @@ export function parseRunRequest(input: unknown): RunRequest {
       );
     points = args.points as number;
   }
-  return { scene, defaults, protocol, points };
+  return { scene, defaults, protocol, points, series };
 }
 
 /** Indices of at most `count` samples spread evenly over `length`, with the last one. */
@@ -330,6 +353,7 @@ export async function simulateScene({
   defaults,
   protocol,
   points,
+  series,
 }: RunRequest): Promise<{ result: HostedRun; graphs: Graph[] }> {
   const run = await runProtocol(scene, protocol);
   const { graphs, summary } = chooseGraphs(scene, run, points);
@@ -395,12 +419,13 @@ export async function simulateScene({
       references,
       references_omitted: all.length - references.length,
       summary,
-      graphs: graphs.map(({ id, title, unit, series }) => ({
+      graphs: graphs.map(({ id, title, unit, series: columns }) => ({
         id,
         title,
         unit,
-        keys: series.map((s) => s.key),
+        keys: columns.map((column) => column.key),
       })),
+      ...(series && { series: graphs }),
     },
   };
 }
@@ -438,7 +463,12 @@ export function runRequestSchema(sceneRequest: object) {
         type: "integer",
         minimum: GRAPH_POINTS.min,
         maximum: GRAPH_POINTS.max,
-        description: `Samples per plotted graph, default ${GRAPH_POINTS.default}.`,
+        description: `Samples per plotted graph, default ${GRAPH_POINTS.default}, or ${GRAPH_POINTS.series} with series.`,
+      },
+      series: {
+        type: "boolean",
+        description:
+          "Also return the plotted values to the model under series, for a chat that cannot show the chart view. Default false.",
       },
     },
   };

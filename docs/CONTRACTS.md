@@ -476,10 +476,11 @@ engine. `parseRunRequest` (`web/src/lab/motion/hostedRun.ts`) validates its argu
 | `scene` | A `physix.lab/2` scene, such as one `build_scene` returned. Give exactly one of `request` and `scene`. |
 | `stop` | `"time"` or an event the scene can raise (`availableStops`). Defaults to the lab's choice (`defaultProtocol`). |
 | `max_time_s` | Time limit in seconds, 0.5 to 60. Defaults to the lab's. |
-| `points` | Samples per plotted graph, an integer from 20 to 400, default 120 |
+| `points` | Samples per plotted graph, an integer from 20 to 400, default 120, or 40 with `series` |
+| `series` | `true` to return the plotted values to the model as well, default `false` |
 
 Unknown fields are rejected. Errors are `RunRequestError` with a `field`: `request`,
-`scene`, `stop`, `max_time_s`, `points`, an unknown key, or a scene-request path under
+`scene`, `stop`, `max_time_s`, `points`, `series`, an unknown key, or a scene-request path under
 `request.`, such as `request.objects[0].mass`. `runRequestSchema()` is the JSON Schema.
 
 ### Hosted run (`physix.hosted-run/1`)
@@ -498,6 +499,7 @@ the default time step and probe rate, and condenses it into what a chat can quot
 | `references` | The first 16 closed-form checks from `referencesFor`: `{id, target, label, symbol, unit, formula, theory, measured, difference, relative, tolerance, within, assumptions, broken?}`. `difference` is relative when `relative` is true and absolute otherwise; `measured`, `difference` and `within` are `null` when the run did not reach the measured moment. `references_omitted` counts the rest. |
 | `summary` | `{key, label, unit, start, end, min, max}` over every sample of each plotted column |
 | `graphs` | `{id, title, unit, keys}` for each plotted graph |
+| `series` | Only when the request sets `series`: the plotted graphs with their values, as in `_meta.graphs` |
 
 Values are rounded to 6 significant digits. Each part kind has fixed graphs, with at most 3
 columns in one unit: body position, velocity and contact forces; pulley rope displacement,
@@ -505,7 +507,8 @@ speed and tension; pendulum angle, angular velocity and link tension; spring dis
 force; then system energy. Columns that stay at 0 are left out, and a run has at most 12
 graphs. The tool adds `share_url` and a `note`.
 
-The tool result keeps the plotted series out of `structuredContent`. Its `_meta.graphs`
+Unless the request sets `series`, the tool result keeps the plotted values out of
+`structuredContent`. Its `_meta.graphs`
 holds `{id, title, target, unit, t, series: [{key, label, symbol, values, theory?}]}`, with
 `points` samples spread evenly over the run, the first and last included. `theory` is the
 closed-form curve from `curvesFor` at the same times and `null` past the curve's validity.

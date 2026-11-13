@@ -75,6 +75,7 @@ describe("hosted run requests", () => {
       [{ request: {}, points: 19 }, "points"],
       [{ request: {}, points: 401 }, "points"],
       [{ request: {}, points: 40.5 }, "points"],
+      [{ request: {}, series: "yes" }, "series"],
     ] as [unknown, string][])
       expect(fieldOf(input), JSON.stringify(input)).toBe(field);
   });
@@ -88,6 +89,7 @@ describe("hosted run requests", () => {
       "stop",
       "max_time_s",
       "points",
+      "series",
     ]);
     expect(schema.properties.stop.enum).toContain("time");
     expect(schema.properties.points).toMatchObject({
@@ -166,5 +168,32 @@ describe("hosted simulation", () => {
     expect(result.references_omitted).toBe(total - MAX_REFERENCES);
     expect(graphs.length).toBeLessThanOrEqual(MAX_GRAPHS);
     expect(result.run.stop).toEqual({ reason: "time", t: 0.5 });
+  });
+});
+
+describe("series for the model", () => {
+  it("keeps the plotted values out of the result unless asked", async () => {
+    const parsed = parseRunRequest({ request: { template: "incline" } });
+    expect(parsed.series).toBe(false);
+    const { result } = await simulateScene(parsed);
+    expect(result.series).toBeUndefined();
+  });
+
+  it("returns the plotted values with fewer default points when asked", async () => {
+    const parsed = parseRunRequest({
+      request: { template: "incline" },
+      series: true,
+    });
+    expect(parsed.points).toBe(GRAPH_POINTS.series);
+    const { result, graphs } = await simulateScene(parsed);
+    expect(result.series).toEqual(graphs);
+    for (const graph of graphs)
+      expect(graph.t.length).toBeLessThanOrEqual(GRAPH_POINTS.series);
+    const chosen = parseRunRequest({
+      request: { template: "incline" },
+      series: true,
+      points: 25,
+    });
+    expect(chosen.points).toBe(25);
   });
 });

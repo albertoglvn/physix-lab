@@ -115,7 +115,7 @@ const tools = [
     name: "simulate_scene",
     title: "Simulate a motion experiment",
     description:
-      "Simulate a motion experiment with the Physix lab's own rigid-body engine (Rapier) on the server and show its key graphs in the chat. Takes a scene request (the same fields as build_scene) or a scene that build_scene returned, an optional stop event and time limit (0.5 to 60 s). Returns the events, the closed-form theory values with the simulated values and their difference, the start, end, min and max of each plotted quantity in SI units, and a share_url that opens the scene in the Physix lab, which recomputes the run in the browser. Quote numbers only from this result; give the share_url to the user unchanged.",
+      "Simulate a motion experiment with the Physix lab's own rigid-body engine (Rapier) on the server and show its key graphs in the chat. Takes a scene request (the same fields as build_scene) or a scene that build_scene returned, an optional stop event and time limit (0.5 to 60 s). Returns the events, the closed-form theory values with the simulated values and their difference, the start, end, min and max of each plotted quantity in SI units, and a share_url that opens the scene in the Physix lab, which recomputes the run in the browser. The graphs appear in the chat's chart view. If the chart view cannot open, call again with series: true and plot only the returned series values; never plot curves the result does not contain. Quote numbers only from this result; give the share_url to the user unchanged.",
     inputSchema: runRequestSchema(sceneRequestSchema()),
     annotations: {
       readOnlyHint: true,

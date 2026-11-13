@@ -100,7 +100,9 @@ conventions, templates, part kinds, fields, units, limits and defaults.
   `assumptions` and the result's `contact_model`. Report `within: false` or a `broken`
   reason as found rather than explaining it away, and say when `references_omitted` or
   `events_omitted` is not zero. The graphs reach only the chart view, so describe them from
-  `summary`. If it returns `invalid_run`, fix the named `field`. If it returns
+  `summary`. If the chart view does not open, call again with `series: true` and plot
+  only the returned `series` values; never draw a curve from theory or endpoints alone
+  and present it as the simulation. If it returns `invalid_run`, fix the named `field`. If it returns
   `engine_unavailable`, give the `share_url` so the lab runs the scene in the browser.
 
 Every result carries a `share_url`. Give the student that link for each case or scene you

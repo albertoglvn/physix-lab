@@ -42,8 +42,9 @@ owner shares it. Public plugin directory distribution requires OpenAI review.
   values beside the simulated ones, the start, end, min and max of each plotted quantity, and
   a `share_url`. The chat shows the graphs in the Physix chart view, which also shows
   `compare_stress` results as a bar chart. The graphs go only to the view, not to the model
-  (`physix.hosted-run/1` in `docs/CONTRACTS.md`). The lab recomputes the run when the link
-  opens.
+  (`physix.hosted-run/1` in `docs/CONTRACTS.md`). When a chat cannot show the view,
+  `series: true` also returns the plotted values, 40 per graph by default, so ChatGPT can
+  plot the simulated data itself. The lab recomputes the run when the link opens.
 - Hosted stress tools expose cached scikit-fem results and their linear scaling. Arbitrary
   geometry, new FEM meshes and optimization are available through the local tools or the
   browser lab within each workflow's scope.
