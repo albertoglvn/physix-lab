@@ -476,8 +476,8 @@ engine. `parseRunRequest` (`web/src/lab/motion/hostedRun.ts`) validates its argu
 | `scene` | A `physix.lab/2` scene, such as one `build_scene` returned. Give exactly one of `request` and `scene`. |
 | `stop` | `"time"` or an event the scene can raise (`availableStops`). Defaults to the lab's choice (`defaultProtocol`). |
 | `max_time_s` | Time limit in seconds, 0.5 to 60. Defaults to the lab's. |
-| `points` | Samples per plotted graph, an integer from 20 to 400, default 120, or 40 with `series` |
-| `series` | `true` to return the plotted values to the model as well, default `false` |
+| `points` | Samples per plotted graph, an integer from 20 to 400, default 40, or 120 when `series` is `false` |
+| `series` | `false` to leave the plotted values out of the result, default `true` |
 
 Unknown fields are rejected. Errors are `RunRequestError` with a `field`: `request`,
 `scene`, `stop`, `max_time_s`, `points`, `series`, an unknown key, or a scene-request path under
@@ -499,7 +499,7 @@ the default time step and probe rate, and condenses it into what a chat can quot
 | `references` | The first 16 closed-form checks from `referencesFor`: `{id, target, label, symbol, unit, formula, theory, measured, difference, relative, tolerance, within, assumptions, broken?}`. `difference` is relative when `relative` is true and absolute otherwise; `measured`, `difference` and `within` are `null` when the run did not reach the measured moment. `references_omitted` counts the rest. |
 | `summary` | `{key, label, unit, start, end, min, max}` over every sample of each plotted column |
 | `graphs` | `{id, title, unit, keys}` for each plotted graph |
-| `series` | Only when the request sets `series`: the plotted graphs with their values, as in `_meta.graphs` |
+| `series` | Unless the request sets `series` to `false`: the plotted graphs with their values |
 
 Values are rounded to 6 significant digits. Each part kind has fixed graphs, with at most 3
 columns in one unit: body position, velocity and contact forces; pulley rope displacement,
@@ -507,9 +507,8 @@ speed and tension; pendulum angle, angular velocity and link tension; spring dis
 force; then system energy. Columns that stay at 0 are left out, and a run has at most 12
 graphs. The tool adds `share_url` and a `note`.
 
-Unless the request sets `series`, the tool result keeps the plotted values out of
-`structuredContent`. Its `_meta.graphs`
-holds `{id, title, target, unit, t, series: [{key, label, symbol, values, theory?}]}`, with
+Each entry of `series`, and of the result `_meta.graphs` when the chart view is on, is
+`{id, title, target, unit, t, series: [{key, label, symbol, values, theory?}]}`, with
 `points` samples spread evenly over the run, the first and last included. `theory` is the
 closed-form curve from `curvesFor` at the same times and `null` past the curve's validity.
 An invalid request returns `{error: "invalid_run", message, field?}`. An engine failure
@@ -517,9 +516,16 @@ returns `{error: "engine_unavailable", message, share_url}`, so the lab can run 
 
 ### Chart view
 
-`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v3.html`
-(`mcp/sites/chartView.mjs`) in their tool `_meta`, as `ui.resourceUri` and its flat form
-`ui/resourceUri` (MCP Apps). The Worker lists it with `resources/list` and serves it with
+The chart view is off unless the Worker's `PHYSIX_CHART_VIEW` variable is `on`. ChatGPT
+does not open MCP Apps views from a Sites-hosted plugin: chart v1 to v3 failed with "could
+not open" before the view loaded, so the model plots `series` instead. With the view off,
+the tools name no view, `initialize` declares no `resources` capability, `resources/list`
+is empty and `simulate_scene` sends no `_meta`.
+
+When the view is on, `simulate_scene` and `compare_stress` name it as
+`ui://physix/chart-v3.html` (`mcp/sites/chartView.mjs`) in their tool `_meta`, as
+`ui.resourceUri` and its flat form `ui/resourceUri` (MCP Apps), and `simulate_scene` sends
+the graphs in `_meta.graphs`. The Worker lists the view with `resources/list` and serves it with
 `resources/read` as `text/html;profile=mcp-app`, both with the same `_meta.ui`: one
 self-contained page with no network access (`connectDomains` and `resourceDomains` are
 empty), the Worker's origin as its `domain`, and links that open only that origin. The

@@ -20,9 +20,10 @@ import { compare, CONTACT_MODEL, curvesFor, referencesFor } from "./theory.ts";
 export const RUN_REQUEST_SCHEMA = "physix.run-request/1";
 export const HOSTED_RUN_SCHEMA = "physix.hosted-run/1";
 export const GRAPH_POINTS = {
-  default: 120,
-  /** Default when the values also go to the model. */
+  /** Default when the values go to the model, which is the default. */
   series: 40,
+  /** Default when `series` is false and the values go only to a chart view. */
+  view: 120,
   min: 20,
   max: 400,
 } as const;
@@ -107,7 +108,7 @@ export type HostedRun = {
   references_omitted: number;
   summary: ColumnSummary[];
   graphs: { id: string; title: string; unit: string; keys: string[] }[];
-  /** The plotted values, only when the request asks for them. */
+  /** The plotted values, unless the request sets `series` to false. */
   series?: Graph[];
 };
 
@@ -234,13 +235,13 @@ export function parseRunRequest(input: unknown): RunRequest {
       );
     protocol.maxTime = args.max_time_s;
   }
-  let series = false;
+  let series = true;
   if (args.series !== undefined) {
     if (typeof args.series !== "boolean")
       throw new RunRequestError("series must be true or false.", "series");
     series = args.series;
   }
-  let points: number = series ? GRAPH_POINTS.series : GRAPH_POINTS.default;
+  let points: number = series ? GRAPH_POINTS.series : GRAPH_POINTS.view;
   if (args.points !== undefined) {
     if (
       !Number.isInteger(args.points) ||
@@ -463,12 +464,12 @@ export function runRequestSchema(sceneRequest: object) {
         type: "integer",
         minimum: GRAPH_POINTS.min,
         maximum: GRAPH_POINTS.max,
-        description: `Samples per plotted graph, default ${GRAPH_POINTS.default}, or ${GRAPH_POINTS.series} with series.`,
+        description: `Samples per plotted graph, default ${GRAPH_POINTS.series}, or ${GRAPH_POINTS.view} when series is false.`,
       },
       series: {
         type: "boolean",
         description:
-          "Also return the plotted values to the model under series, for a chat that cannot show the chart view. Default false.",
+          "Return the plotted values under series. Default true; false leaves them out.",
       },
     },
   };

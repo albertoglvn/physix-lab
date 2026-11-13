@@ -40,11 +40,13 @@ owner shares it. Public plugin directory distribution requires OpenAI review.
 - `simulate_scene` takes the same request, or a scene from `build_scene`, and runs it on the
   server with the lab's engine (Rapier). ChatGPT receives the events, the closed-form theory
   values beside the simulated ones, the start, end, min and max of each plotted quantity, and
-  a `share_url`. The chat shows the graphs in the Physix chart view, which also shows
-  `compare_stress` results as a bar chart. The graphs go only to the view, not to the model
-  (`physix.hosted-run/1` in `docs/CONTRACTS.md`). When a chat cannot show the view,
-  `series: true` also returns the plotted values, 40 per graph by default, so ChatGPT can
-  plot the simulated data itself. The lab recomputes the run when the link opens.
+  a `share_url`. It also receives the plotted values, 40 samples per graph by default, and
+  plots them itself (`physix.hosted-run/1` in `docs/CONTRACTS.md`). The lab recomputes the
+  run and shows interactive graphs when the link opens.
+- ChatGPT does not open MCP Apps views from a Sites-hosted plugin: the Physix chart view
+  failed with "could not open" in regular and Work chats while its resource was served
+  correctly. The view stays in `mcp/sites/chartView.mjs`, off unless the Worker's
+  `PHYSIX_CHART_VIEW` variable is `on`.
 - Hosted stress tools expose cached scikit-fem results and their linear scaling. Arbitrary
   geometry, new FEM meshes and optimization are available through the local tools or the
   browser lab within each workflow's scope.
@@ -71,9 +73,9 @@ the engine cannot start, `simulate_scene` returns `engine_unavailable` with the
 Measured timings for `simulate_scene`, end to end through the MCP endpoint, on the built
 bundle in local workerd (miniflare 4.20260730, AMD Ryzen 9 7940HS, Windows 11): the incline
 template took 118 ms cold and 29 ms warm; 60 s runs took 133 ms for the pulley, 325 ms for
-the collision template and 865 ms for 32 balls, the largest scene. The model-visible result
-was 4 to 6 KB for the templates and 18 KB for 32 balls; the chart data was 10 to 18 KB at
-120 points and 130 KB for 32 balls at 400 points. The bundle is 455 KB (95 KB gzipped) and
+the collision template and 865 ms for 32 balls, the largest scene. The model-visible result,
+with the plotted values at the default 40 samples per graph, was 8 to 12 KB for the
+templates and 34 KB for 32 balls. The bundle is 455 KB (95 KB gzipped) and
 `rapier3d.wasm` 3.1 MB. A deployed Worker may report a lower `wall_ms`, since its clock can
 advance only at I/O. A run that exceeds the platform's CPU limit ends the request without
 a tool result.

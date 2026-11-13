@@ -30,16 +30,27 @@ const domain = Object.entries(reference.families).map(([family, entry]) => ({
   hole_radii_m: entry.results.map((row) => row.radius_m),
 }));
 
-/**
- * Tool `_meta` that shows a result in the chat chart view: the MCP Apps key, its flat form
- * that the MCP Apps SDK also writes for older hosts, and ChatGPT's status text.
- */
-const chartView = (invoking, invoked) => ({
-  ui: { resourceUri: CHART_VIEW_URI },
-  "ui/resourceUri": CHART_VIEW_URI,
+/** ChatGPT's status text while a tool runs and after it returns. */
+const status = (invoking, invoked) => ({
   "openai/toolInvocation/invoking": invoking,
   "openai/toolInvocation/invoked": invoked,
 });
+
+/**
+ * Whether tools name the chat chart view. ChatGPT does not open MCP Apps views from a
+ * Sites-hosted plugin, so the view stays off unless `PHYSIX_CHART_VIEW` is `"on"`, and
+ * the model plots the returned `series` instead.
+ */
+const chartViewOn = (env) => env?.PHYSIX_CHART_VIEW === "on";
+
+/** Tools whose results the chart view can show. */
+const CHART_TOOLS = new Set(["compare_stress", "simulate_scene"]);
+
+/** The tool `_meta` keys that name the view: MCP Apps and the flat form its SDK also writes. */
+const chartViewLink = {
+  ui: { resourceUri: CHART_VIEW_URI },
+  "ui/resourceUri": CHART_VIEW_URI,
+};
 
 const tools = [
   {
@@ -62,7 +73,7 @@ const tools = [
     name: "compare_stress",
     title: "Compare stress experiments",
     description:
-      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres, and shows them as a bar chart in the chat. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. Each result includes a share_url that opens the identical case in the Physix lab; give it to the user unchanged. This tool returns stress summaries and does not create a new mesh or simulate motion.",
+      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. Each result includes a share_url that opens the identical case in the Physix lab; give it to the user unchanged. This tool returns stress summaries and does not create a new mesh or simulate motion.",
     inputSchema: {
       type: "object",
       required: ["family", "cases"],
@@ -100,7 +111,7 @@ const tools = [
       destructiveHint: false,
       openWorldHint: false,
     },
-    _meta: chartView("Comparing stress…", "Stress compared"),
+    _meta: status("Comparing stress…", "Stress compared"),
   },
   {
     name: "build_scene",
@@ -118,14 +129,14 @@ const tools = [
     name: "simulate_scene",
     title: "Simulate a motion experiment",
     description:
-      "Simulate a motion experiment with the Physix lab's own rigid-body engine (Rapier) on the server and show its key graphs in the chat. Takes a scene request (the same fields as build_scene) or a scene that build_scene returned, an optional stop event and time limit (0.5 to 60 s). Returns the events, the closed-form theory values with the simulated values and their difference, the start, end, min and max of each plotted quantity in SI units, and a share_url that opens the scene in the Physix lab, which recomputes the run in the browser. The graphs appear in the chat's chart view. If the chart view cannot open, call again with series: true and plot only the returned series values; never plot curves the result does not contain. Quote numbers only from this result; give the share_url to the user unchanged.",
+      "Simulate a motion experiment with the Physix lab's own rigid-body engine (Rapier) on the server and return its key graphs. Takes a scene request (the same fields as build_scene) or a scene that build_scene returned, an optional stop event and time limit (0.5 to 60 s). Returns the events, the closed-form theory values with the simulated values and their difference, the start, end, min and max of each plotted quantity in SI units, the plotted values under series (40 samples per graph by default), and a share_url that opens the scene in the Physix lab, which recomputes the run and shows interactive graphs. To show a graph, plot that series entry: its t array on the x axis in seconds and each column's values in the graph's unit, with the theory values dashed where given. Plot only values the result contains and never draw a curve from theory or endpoints alone as the simulation. Quote numbers only from this result; give the share_url to the user unchanged.",
     inputSchema: runRequestSchema(sceneRequestSchema()),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       openWorldHint: false,
     },
-    _meta: chartView("Simulating the experiment…", "Experiment simulated"),
+    _meta: status("Simulating the experiment…", "Experiment simulated"),
   },
 ];
 
@@ -136,6 +147,16 @@ function object(value) {
 function onlyKeys(value, allowed) {
   return (
     object(value) && Object.keys(value).every((key) => allowed.includes(key))
+  );
+}
+
+/** The tool list, naming the chart view on the tools it can show when the view is on. */
+function listTools(viewOn) {
+  if (!viewOn) return tools;
+  return tools.map((tool) =>
+    CHART_TOOLS.has(tool.name)
+      ? { ...tool, _meta: { ...tool._meta, ...chartViewLink } }
+      : tool,
   );
 }
 
@@ -205,10 +226,11 @@ async function buildSceneResult(args, origin) {
 }
 
 /**
- * Runs a `physix.run-request/1` with the lab's engine. The graphs go to the chart view in
- * the result `_meta`; the model gets the events, theory checks and column summaries.
+ * Runs a `physix.run-request/1` with the lab's engine. The model gets the events, theory
+ * checks, column summaries and, unless the request turns it off, the plotted `series`.
+ * When the chart view is on, the graphs also go to it in the result `_meta`.
  */
-async function simulateSceneResult(args, origin) {
+async function simulateSceneResult(args, origin, viewOn) {
   let parsed;
   try {
     parsed = parseRunRequest(args);
@@ -248,7 +270,7 @@ async function simulateSceneResult(args, origin) {
       share_url: url,
       note: "Simulated on the server with the Physix lab's engine; the lab recomputes the run in the browser when the share_url opens. Theory values hold only under their listed assumptions.",
     },
-    meta: { graphs: run.graphs },
+    meta: viewOn ? { graphs: run.graphs } : undefined,
   };
 }
 
@@ -396,7 +418,7 @@ async function readJson(request) {
   }
 }
 
-async function handleMcp(request) {
+async function handleMcp(request, env) {
   if (request.method !== "POST")
     return new Response(null, {
       status: 405,
@@ -438,12 +460,11 @@ async function handleMcp(request) {
   if (id === undefined)
     return new Response(null, { status: 202, headers: NO_STORE });
 
+  const viewOn = chartViewOn(env);
+  const capabilities = viewOn ? { tools: {}, resources: {} } : { tools: {} };
   if (method === "server/discover")
     return jsonRpc(id, {
-      result: {
-        supportedVersions: [VERSION],
-        capabilities: { tools: {}, resources: {} },
-      },
+      result: { supportedVersions: [VERSION], capabilities },
     });
   if (method === "initialize") {
     const requested = params?.protocolVersion;
@@ -452,35 +473,38 @@ async function handleMcp(request) {
         protocolVersion: PREVIOUS_VERSIONS.includes(requested)
           ? requested
           : VERSION,
-        capabilities: { tools: {}, resources: {} },
+        capabilities,
         serverInfo: { name: "physix", title: "Physix", version: "1.0.0" },
         instructions:
-          "Call describe_domain first. compare_stress returns cached reference stress results. build_scene builds a motion experiment; simulate_scene also runs it with the lab's engine and shows its graphs in the chat. Each returns a share_url that opens the identical case or scene in the Physix lab; give it to the user unchanged.",
+          "Call describe_domain first. compare_stress returns cached reference stress results. build_scene builds a motion experiment; simulate_scene also runs it with the lab's engine and returns its graphs' values to plot. Each returns a share_url that opens the identical case or scene in the Physix lab; give it to the user unchanged.",
       },
     });
   }
   if (method === "ping") return jsonRpc(id, { result: {} });
-  if (method === "tools/list") return jsonRpc(id, { result: { tools } });
+  if (method === "tools/list")
+    return jsonRpc(id, { result: { tools: listTools(viewOn) } });
   if (method === "resources/list")
     return jsonRpc(id, {
       result: {
-        resources: [
-          {
-            uri: CHART_VIEW_URI,
-            name: "chart-view",
-            title: "Physix chart view",
-            description:
-              "Shows the graphs and theory checks of a Physix motion run, or a bar chart of a stress comparison, with a button that opens the Physix lab.",
-            mimeType: CHART_VIEW_MIME,
-            _meta: chartViewMeta(new URL(request.url).origin),
-          },
-        ],
+        resources: viewOn
+          ? [
+              {
+                uri: CHART_VIEW_URI,
+                name: "chart-view",
+                title: "Physix chart view",
+                description:
+                  "Shows the graphs and theory checks of a Physix motion run, or a bar chart of a stress comparison, with a button that opens the Physix lab.",
+                mimeType: CHART_VIEW_MIME,
+                _meta: chartViewMeta(new URL(request.url).origin),
+              },
+            ]
+          : [],
       },
     });
   if (method === "resources/templates/list")
     return jsonRpc(id, { result: { resourceTemplates: [] } });
   if (method === "resources/read") {
-    if (params?.uri !== CHART_VIEW_URI)
+    if (!viewOn || params?.uri !== CHART_VIEW_URI)
       return rpcError(id, -32002, "Resource not found.");
     return jsonRpc(id, {
       result: { contents: [chartResource(new URL(request.url).origin)] },
@@ -516,6 +540,7 @@ async function handleMcp(request) {
     ({ data: result, meta } = await simulateSceneResult(
       args,
       new URL(request.url).origin,
+      viewOn,
     ));
   } else if (params.name === "compare_stress") {
     result = await compareStress(args, new URL(request.url).origin);
@@ -535,7 +560,7 @@ function pluginDetailsUrl(value) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/mcp") return handleMcp(request);
+    if (url.pathname === "/mcp") return handleMcp(request, env);
     if (url.pathname === "/connect/start") {
       if (request.method !== "GET")
         return new Response(null, {

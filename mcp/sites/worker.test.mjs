@@ -8,7 +8,14 @@ const env = {
 };
 const site = "https://physix.example";
 
-function rpc(method, params, { signedIn = true, headers = {} } = {}) {
+/** The same Worker with the chat chart view turned on. */
+const viewEnv = { ...env, PHYSIX_CHART_VIEW: "on" };
+
+function rpc(
+  method,
+  params,
+  { signedIn = true, headers = {}, worker: workerEnv = env } = {},
+) {
   return worker.fetch(
     new Request(site + "/mcp", {
       method: "POST",
@@ -19,7 +26,7 @@ function rpc(method, params, { signedIn = true, headers = {} } = {}) {
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     }),
-    env,
+    workerEnv,
   );
 }
 
@@ -208,14 +215,15 @@ test("simulates a motion scene and checks it against theory", async () => {
   assert.ok(result.summary.some((row) => row.key === "block-1.speed"));
   assert.deepEqual(
     result.graphs.map(({ id }) => id),
-    reply._meta.graphs.map(({ id }) => id),
+    result.series.map(({ id }) => id),
   );
-  // The model-visible result carries no series; the chart view gets them in _meta.
-  assert.equal(JSON.stringify(result).includes('"values"'), false);
-  const velocity = reply._meta.graphs.find((g) => g.id === "block-1.velocity");
+  // With the chart view off, the plotted values go to the model and nothing to _meta.
+  assert.equal(reply._meta, undefined);
+  const velocity = result.series.find((g) => g.id === "block-1.velocity");
   assert.equal(velocity.unit, "m/s");
   assert.equal(velocity.t.length, velocity.series[0].values.length);
-  assert.ok(velocity.t.length <= 120);
+  assert.ok(velocity.t.length <= 40);
+  assert.ok(velocity.series.some((column) => column.theory));
   const query = new URLSearchParams(
     new URL(result.share_url).hash.replace(/^#\/lab\?/, ""),
   );
@@ -235,7 +243,7 @@ test("simulates a built scene with a chosen stop and sample count", async () => 
   assert.equal(result.run.stop.t, 2);
   assert.equal(result.run.samples, 121);
   assert.equal(result.defaults, undefined);
-  assert.ok(reply._meta.graphs.every((g) => g.t.length === 30));
+  assert.ok(result.series.every((g) => g.t.length === 30));
   assert.ok(result.graphs.some(({ id }) => id === "system.energy"));
 });
 
@@ -263,8 +271,27 @@ test("reports the field of an invalid run request", async () => {
   }
 });
 
-test("serves the chart view that simulate_scene and compare_stress show", async () => {
+test("leaves the chart view out unless it is turned on", async () => {
   const list = await (await rpc("tools/list", {}, { signedIn: false })).json();
+  for (const tool of list.result.tools) {
+    assert.equal(tool._meta?.ui, undefined, tool.name);
+    assert.equal(tool._meta?.["ui/resourceUri"], undefined, tool.name);
+  }
+  const init = await (await rpc("initialize", {})).json();
+  assert.deepEqual(init.result.capabilities, { tools: {} });
+  const resources = await (await rpc("resources/list", {})).json();
+  assert.deepEqual(resources.result.resources, []);
+  const read = await (
+    await rpc("resources/read", { uri: "ui://physix/chart-v3.html" })
+  ).json();
+  assert.equal(read.error.code, -32002);
+});
+
+test("serves the chart view that simulate_scene and compare_stress show when on", async () => {
+  const on = { worker: viewEnv };
+  const list = await (
+    await rpc("tools/list", {}, { signedIn: false, ...on })
+  ).json();
   const byName = Object.fromEntries(
     list.result.tools.map((tool) => [tool.name, tool]),
   );
@@ -275,10 +302,10 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
   assert.equal(byName.compare_stress._meta.ui.resourceUri, uri);
   assert.equal(byName.build_scene._meta, undefined);
 
-  const init = await (await rpc("initialize", {})).json();
+  const init = await (await rpc("initialize", {}, on)).json();
   assert.ok(init.result.capabilities.resources);
   const resources = await (
-    await rpc("resources/list", {}, { signedIn: false })
+    await rpc("resources/list", {}, { signedIn: false, ...on })
   ).json();
   assert.deepEqual(
     resources.result.resources.map((resource) => resource.uri),
@@ -286,7 +313,7 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
   );
   assert.equal(resources.result.resources[0]._meta.ui.domain, site);
   const read = await (
-    await rpc("resources/read", { uri }, { signedIn: false })
+    await rpc("resources/read", { uri }, { signedIn: false, ...on })
   ).json();
   const [view] = read.result.contents;
   assert.equal(view.mimeType, "text/html;profile=mcp-app");
@@ -302,7 +329,7 @@ test("serves the chart view that simulate_scene and compare_stress show", async 
   assert.equal(view._meta.ui.domain, site);
   assert.equal(view._meta.ui.prefersBorder, true);
   const missing = await (
-    await rpc("resources/read", { uri: "ui://physix/none.html" })
+    await rpc("resources/read", { uri: "ui://physix/none.html" }, on)
   ).json();
   assert.equal(missing.error.code, -32002);
 });
@@ -480,14 +507,33 @@ test("the chart view completes the MCP Apps handshake and answers host requests"
   ]);
 });
 
-test("returns the plotted values to the model when asked for series", async () => {
-  const reply = await simulate({
-    request: { template: "pulley" },
-    series: true,
-  });
+test("returns the plotted values to the model by default", async () => {
+  const reply = await simulate({ request: { template: "pulley" } });
   const result = reply.structuredContent;
-  assert.deepEqual(result.series, reply._meta.graphs);
   assert.ok(result.series.length > 0);
   assert.ok(result.series.every((graph) => graph.t.length <= 40));
   assert.ok(JSON.stringify(result).length < 20000);
+  assert.equal(reply._meta, undefined);
+});
+
+test("sends the graphs to the chart view when it is on", async () => {
+  const call = async (args) =>
+    (
+      await (
+        await rpc(
+          "tools/call",
+          { name: "simulate_scene", arguments: args },
+          { worker: viewEnv },
+        )
+      ).json()
+    ).result;
+  const both = await call({ request: { template: "pulley" } });
+  assert.deepEqual(both.structuredContent.series, both._meta.graphs);
+  const viewOnly = await call({
+    request: { template: "pulley" },
+    series: false,
+  });
+  assert.equal(viewOnly.structuredContent.series, undefined);
+  assert.ok(viewOnly._meta.graphs.every((graph) => graph.t.length <= 120));
+  assert.ok(viewOnly._meta.graphs.some((graph) => graph.t.length > 40));
 });

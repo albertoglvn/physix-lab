@@ -37,7 +37,8 @@ describe("hosted run requests", () => {
     const parsed = parseRunRequest({ request: { template: "incline" } });
     expect(parsed.scene).toEqual(buildScene({ template: "incline" }).scene);
     expect(parsed.protocol.stop).toBe("leaves_ramp");
-    expect(parsed.points).toBe(GRAPH_POINTS.default);
+    expect(parsed.points).toBe(GRAPH_POINTS.series);
+    expect(parsed.series).toBe(true);
   });
 
   it("accepts a built scene with a chosen stop, time limit and sample count", () => {
@@ -172,28 +173,28 @@ describe("hosted simulation", () => {
 });
 
 describe("series for the model", () => {
-  it("keeps the plotted values out of the result unless asked", async () => {
-    const parsed = parseRunRequest({ request: { template: "incline" } });
-    expect(parsed.series).toBe(false);
-    const { result } = await simulateScene(parsed);
-    expect(result.series).toBeUndefined();
-  });
-
-  it("returns the plotted values with fewer default points when asked", async () => {
-    const parsed = parseRunRequest({
-      request: { template: "incline" },
-      series: true,
-    });
-    expect(parsed.points).toBe(GRAPH_POINTS.series);
-    const { result, graphs } = await simulateScene(parsed);
+  it("returns the plotted values by default", async () => {
+    const { result, graphs } = await simulateScene(
+      parseRunRequest({ request: { template: "incline" } }),
+    );
     expect(result.series).toEqual(graphs);
     for (const graph of graphs)
       expect(graph.t.length).toBeLessThanOrEqual(GRAPH_POINTS.series);
     const chosen = parseRunRequest({
       request: { template: "incline" },
-      series: true,
       points: 25,
     });
     expect(chosen.points).toBe(25);
+  });
+
+  it("leaves the plotted values out with more points when series is false", async () => {
+    const parsed = parseRunRequest({
+      request: { template: "incline" },
+      series: false,
+    });
+    expect(parsed.points).toBe(GRAPH_POINTS.view);
+    const { result, graphs } = await simulateScene(parsed);
+    expect(result.series).toBeUndefined();
+    expect(graphs.length).toBeGreaterThan(0);
   });
 });
