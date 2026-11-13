@@ -9,12 +9,14 @@ import {
   frontalArea,
   launchOf,
   launchVelocity,
+  LEGACY_RAMP_CLEARANCE,
   makeObject,
   MATERIALS,
   makeScene,
   movePart,
   OBJECT_LIMIT,
   parseScene,
+  RAMP_CLEARANCE,
   rampHeight,
   rampPlacement,
   SCENE_VERSION,
@@ -333,6 +335,33 @@ describe("mechanics scene contract", () => {
     expect(rampPlacement({ ...first, y: first.y + 1 }, ramp)).toBeUndefined();
     expect(
       findRampPlacement({ ...first, size: 3 }, { ...ramp, width: 2 }, []),
+    ).toBeUndefined();
+  });
+
+  it("places a body in contact with the ramp and still recognises the legacy gap", () => {
+    const ramp = { ...makeObject("ramp", "ramp"), angle: 30, x: 2, z: -1 };
+    const block = blockOnRamp(makeObject("block", "block"), ramp, 0.4);
+    const tilt = Math.PI / 6;
+    const surfaceX = ramp.length * (0.4 - 0.5);
+    const surfaceY = (ramp.length / 2 - surfaceX) * Math.tan(tilt);
+    const normalDistance =
+      (block.x - ramp.x - surfaceX) * Math.sin(tilt) +
+      (block.y - surfaceY) * Math.cos(tilt);
+    expect(RAMP_CLEARANCE).toBe(0);
+    expect(normalDistance).toBeCloseTo(block.size / 2, 12);
+
+    const legacy = blockOnRamp(
+      makeObject("block", "legacy"),
+      ramp,
+      0.4,
+      0,
+      LEGACY_RAMP_CLEARANCE,
+    );
+    expect(legacy.y).toBeGreaterThan(block.y);
+    expect(rampPlacement(legacy, ramp)?.fraction).toBeCloseTo(0.4, 12);
+    expect(rampPlacement(block, ramp)?.fraction).toBeCloseTo(0.4, 12);
+    expect(
+      rampPlacement({ ...block, y: block.y + 0.005 }, ramp),
     ).toBeUndefined();
   });
 });

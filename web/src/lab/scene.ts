@@ -462,8 +462,17 @@ export function oscillatorProblem(
     return `${part.id}: the cube would reach the anchor; lengthen the spring or reduce the offset.`;
 }
 
-/** Gap left between a placed body and the ramp surface, in metres. */
-export const RAMP_CLEARANCE = 0.015;
+/**
+ * Gap left between a placed body and the ramp surface, in metres. A placed body starts in
+ * contact, so it slides from rest instead of falling onto the ramp first.
+ */
+export const RAMP_CLEARANCE = 0;
+
+/**
+ * The gap that earlier scenes used, in metres. Their bodies fell about 0.05 s onto the ramp
+ * before sliding; they are still recognised as placed on it.
+ */
+export const LEGACY_RAMP_CLEARANCE = 0.015;
 
 export const radians = (degrees: number) => (degrees * Math.PI) / 180;
 export const rampHeight = (ramp: Ramp) =>
@@ -475,10 +484,11 @@ export function blockOnRamp<T extends Body>(
   ramp: Ramp,
   fraction = 0.23,
   lateral = 0,
+  gap: number = RAMP_CLEARANCE,
 ): T {
   const tilt = radians(ramp.angle);
   const surfaceX = ramp.length * (fraction - 0.5);
-  const clearance = bodyHalf(block) + RAMP_CLEARANCE;
+  const clearance = bodyHalf(block) + gap;
   return {
     ...block,
     x: ramp.x + surfaceX + clearance * Math.sin(tilt),
@@ -492,18 +502,23 @@ export function blockOnRamp<T extends Body>(
   };
 }
 
-/** Returns an on-surface starting position expressed relative to the ramp. */
+/**
+ * Returns an on-surface starting position expressed relative to the ramp, for a body placed
+ * in contact or with the legacy gap.
+ */
 export function rampPlacement(block: Body, ramp: Ramp) {
   if (block.kind === "block" && block.rotation !== -ramp.angle) return;
   if (block.vx !== 0 || block.vy !== 0) return;
-  const normalOffset =
-    (bodyHalf(block) + RAMP_CLEARANCE) * Math.sin(radians(ramp.angle));
-  const fraction = (block.x - ramp.x - normalOffset) / ramp.length + 0.5;
-  const lateral = block.z - ramp.z;
-  if (fraction <= 0 || fraction >= 1 || Math.abs(lateral) > ramp.width / 2)
-    return;
-  const expected = blockOnRamp(block, ramp, fraction, lateral);
-  if (Math.abs(block.y - expected.y) < 1e-6) return { fraction, lateral };
+  for (const gap of [RAMP_CLEARANCE, LEGACY_RAMP_CLEARANCE]) {
+    const normalOffset =
+      (bodyHalf(block) + gap) * Math.sin(radians(ramp.angle));
+    const fraction = (block.x - ramp.x - normalOffset) / ramp.length + 0.5;
+    const lateral = block.z - ramp.z;
+    if (fraction <= 0 || fraction >= 1 || Math.abs(lateral) > ramp.width / 2)
+      continue;
+    const expected = blockOnRamp(block, ramp, fraction, lateral, gap);
+    if (Math.abs(block.y - expected.y) < 1e-6) return { fraction, lateral };
+  }
 }
 
 export function findRampPlacement<T extends Body>(

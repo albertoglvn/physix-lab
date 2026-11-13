@@ -54,6 +54,21 @@ describe("headless motion runs", () => {
     );
   });
 
+  it("starts a block on a ramp in contact instead of dropping it", async () => {
+    const scene = makeScene("incline");
+    const block = scene.objects.find((object) => object.id === "block-1");
+    const ramp = scene.objects.find((object) => object.kind === "ramp");
+    if (block?.kind !== "block" || ramp?.kind !== "ramp")
+      throw new Error("incline template changed");
+    const run = await runProtocol(scene, { stop: "time", maxTime: 0.5 });
+    const normal = run.series.columns["block-1.normal"];
+    const expected =
+      block.mass * scene.gravity * Math.cos((ramp.angle * Math.PI) / 180);
+    for (const value of normal)
+      expect(Math.abs(value - expected) / expected).toBeLessThan(0.01);
+    expect(Math.abs(run.series.columns["block-1.vx"][1])).toBeGreaterThan(0);
+  });
+
   it("keeps the probe grid at a finer step", async () => {
     const scene = makeScene("pulley");
     const run = await runProtocol(scene, defaultProtocol(scene), {

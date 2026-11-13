@@ -7,7 +7,9 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 3 are done; each phase lists its own status. Phase 4 has
-not started. The
+not started. Ahead of it, the hosted ChatGPT plugin (`docs/CHATGPT.md`) runs
+`simulate_scene` on the lab's engine and returns the plotted values for ChatGPT to chart; the
+embedded chart view is off because ChatGPT does not open it for Sites-hosted plugins. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
