@@ -514,7 +514,7 @@ returns `{error: "engine_unavailable", message, share_url}`, so the lab can run 
 
 ### Chart view
 
-`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v1.html`
+`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v2.html`
 (`mcp/sites/chartView.mjs`) in their tool `_meta`, as `ui.resourceUri` (MCP Apps) and
 `openai/outputTemplate` (ChatGPT). The Worker lists it with `resources/list` and serves it
 with `resources/read` as `text/html;profile=mcp-app`: one self-contained page with no

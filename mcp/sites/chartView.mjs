@@ -6,7 +6,7 @@
  * graphs the result's `_meta` carries. Change the URI when the page changes incompatibly,
  * since hosts cache it by URI.
  */
-export const CHART_VIEW_URI = "ui://physix/chart-v1.html";
+export const CHART_VIEW_URI = "ui://physix/chart-v2.html";
 export const CHART_VIEW_MIME = "text/html;profile=mcp-app";
 
 /** Runs inside the view's iframe; it is serialized into the page, so it uses no imports. */
@@ -680,11 +680,16 @@ function chartView() {
       show(message.params?.structuredContent, message.params?._meta);
     else if (message.method === "ui/notifications/host-context-changed")
       setTheme(message.params?.theme);
-    else if (
-      message.method === "ui/resource-teardown" &&
-      message.id !== undefined
-    )
+    // Every host request gets an answer, so the host never waits on the view.
+    if (message.id === undefined || typeof message.method !== "string") return;
+    if (message.method === "ping" || message.method === "ui/resource-teardown")
       post({ jsonrpc: "2.0", id: message.id, result: {} });
+    else
+      post({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32601, message: "Method not found." },
+      });
   });
 
   function fromGlobals() {
@@ -703,16 +708,19 @@ function chartView() {
       lastWidth = width;
       render();
     }
-    if (initialized)
-      notify("ui/notifications/size-changed", {
-        width: Math.ceil(document.documentElement.scrollWidth),
-        height: Math.ceil(document.documentElement.scrollHeight),
-      });
+    if (initialized) sendSize();
   }).observe(document.body);
+  function sendSize() {
+    notify("ui/notifications/size-changed", {
+      width: Math.ceil(document.documentElement.scrollWidth),
+      height: Math.ceil(document.documentElement.scrollHeight),
+    });
+  }
 
+  // MCP Apps 2026-01-26: the view names itself with appInfo, then confirms with initialized.
   request("ui/initialize", {
     protocolVersion: "2026-01-26",
-    clientInfo: { name: "physix-chart", version: "1.0.0" },
+    appInfo: { name: "physix-chart", version: "2.0.0" },
     appCapabilities: { availableDisplayModes: ["inline"] },
   })
     .then((result) => {
@@ -720,6 +728,7 @@ function chartView() {
       canOpenLinks = !!result?.hostCapabilities?.openLinks;
       initialized = true;
       notify("ui/notifications/initialized", {});
+      sendSize();
     })
     .catch(() => {});
 }

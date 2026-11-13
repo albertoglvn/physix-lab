@@ -379,3 +379,97 @@ test("connection links start sign-in and send signed-in users to the plugin", as
     );
   }
 });
+
+/** Runs the chart view's script against a fake MCP Apps host and returns its messages. */
+async function startView() {
+  const { runInNewContext } = await import("node:vm");
+  const { CHART_VIEW_HTML } = await import("./chartView.mjs");
+  const script = CHART_VIEW_HTML.match(/<script>([\s\S]*)<\/script>/)[1];
+  const sent = [];
+  const listeners = {};
+  const parent = {
+    // postMessage clones messages, which also drops the view realm's prototypes.
+    postMessage: (message) => sent.push(JSON.parse(JSON.stringify(message))),
+  };
+  const element = () => ({
+    clientWidth: 640,
+    dataset: {},
+    scrollWidth: 640,
+    scrollHeight: 480,
+    replaceChildren() {},
+    append() {},
+  });
+  const window = {
+    parent,
+    addEventListener: (type, listener) =>
+      (listeners[type] ??= []).push(listener),
+  };
+  runInNewContext(script, {
+    window,
+    document: { getElementById: element, documentElement: element() },
+    ResizeObserver: class {
+      observe() {}
+    },
+  });
+  const deliver = async (data, source = parent) => {
+    for (const listener of listeners.message ?? []) listener({ source, data });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  return { sent, deliver };
+}
+
+test("the chart view completes the MCP Apps handshake and answers host requests", async () => {
+  const { sent, deliver } = await startView();
+  const [initialize] = sent;
+  assert.equal(initialize.method, "ui/initialize");
+  assert.equal(initialize.params.protocolVersion, "2026-01-26");
+  assert.equal(initialize.params.appInfo.name, "physix-chart");
+  assert.equal("clientInfo" in initialize.params, false);
+  assert.deepEqual(initialize.params.appCapabilities, {
+    availableDisplayModes: ["inline"],
+  });
+
+  // Messages from any window but the host are ignored.
+  await deliver({ jsonrpc: "2.0", id: 7, method: "ping" }, {});
+  assert.equal(sent.length, 1);
+
+  await deliver({
+    jsonrpc: "2.0",
+    id: initialize.id,
+    result: {
+      protocolVersion: "2026-01-26",
+      hostInfo: { name: "host", version: "1" },
+      hostCapabilities: { openLinks: {} },
+      hostContext: { theme: "dark" },
+    },
+  });
+  assert.deepEqual(
+    sent.slice(1).map((message) => message.method),
+    ["ui/notifications/initialized", "ui/notifications/size-changed"],
+  );
+  assert.deepEqual(sent[2].params, { width: 640, height: 480 });
+
+  sent.length = 0;
+  await deliver({ jsonrpc: "2.0", id: 8, method: "ping", params: {} });
+  await deliver({
+    jsonrpc: "2.0",
+    id: 9,
+    method: "ui/resource-teardown",
+    params: {},
+  });
+  await deliver({ jsonrpc: "2.0", id: 10, method: "host/unknown", params: {} });
+  await deliver({
+    jsonrpc: "2.0",
+    method: "ui/notifications/tool-input",
+    params: {},
+  });
+  assert.deepEqual(sent, [
+    { jsonrpc: "2.0", id: 8, result: {} },
+    { jsonrpc: "2.0", id: 9, result: {} },
+    {
+      jsonrpc: "2.0",
+      id: 10,
+      error: { code: -32601, message: "Method not found." },
+    },
+  ]);
+});
