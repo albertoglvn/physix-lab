@@ -12,6 +12,8 @@ import {
   PULLEY_HEIGHT,
   PULLEY_RADIUS,
   PULLEY_WEIGHT_HEIGHT,
+  PULLEY_WEIGHT_TALL,
+  PULLEY_WEIGHT_WIDTH,
   rampVertices,
   type Simulation,
 } from "./simulation";
@@ -96,10 +98,16 @@ function pulleyMesh(
   }
   root.add(wheel);
 
-  const weightHeight = 0.54;
+  const weightHeight = PULLEY_WEIGHT_TALL;
   const weights = [palette.weightLeft, palette.weightRight].map((color, i) => {
     const weight = solid(
-      new RoundedBoxGeometry(0.5, weightHeight, 0.5, 2, 0.035),
+      new RoundedBoxGeometry(
+        PULLEY_WEIGHT_WIDTH,
+        weightHeight,
+        PULLEY_WEIGHT_WIDTH,
+        2,
+        0.035,
+      ),
       color,
     );
     const rope = solid(
@@ -111,11 +119,11 @@ function pulleyMesh(
     return { weight, rope };
   });
   root.userData.update = () => {
-    const displacement = simulation?.pulley(object.id)?.displacement ?? 0;
-    wheel.rotation.z = -displacement / PULLEY_RADIUS;
+    const state = simulation?.pulley(object.id);
+    wheel.rotation.z = -(state?.wheelAngle ?? 0);
     weights.forEach(({ weight, rope }, i) => {
       weight.position.y =
-        PULLEY_WEIGHT_HEIGHT + (i === 0 ? displacement : -displacement);
+        (i === 0 ? state?.left.y : state?.right.y) ?? PULLEY_WEIGHT_HEIGHT;
       const ropeBottom = weight.position.y + weightHeight / 2;
       rope.scale.y = PULLEY_HEIGHT - ropeBottom;
       rope.position.y = (PULLEY_HEIGHT + ropeBottom) / 2;

@@ -1,7 +1,7 @@
 # Physix
 
 Physix is a browser lab for university physics. Its mechanics workspace lets students build
-and run 3D experiments with blocks, ramps, friction, and ideal pulleys. Start the lab with
+and run 3D experiments with blocks, ramps, friction, pulleys, pendulums, and springs. Start the lab with
 `pnpm --filter @physix/web run dev`, then open <http://localhost:5173/#/lab>.
 
 ## Mechanics lab
@@ -22,8 +22,9 @@ entry points are `parseScene` in [scene.ts](web/src/lab/scene.ts) and `createSim
 [simulation.ts](web/src/lab/simulation.ts). Positions and dimensions use metres, mass uses
 kilograms, angles use degrees, and Y points up. A ramp descends along +X. Blocks and ramps
 use Rapier 3D contacts at a fixed 120 Hz timestep with one friction coefficient per surface.
-Each pulley is an independent ideal Atwood machine with a massless rope and wheel. Its
-motion ends when either weight reaches the travel stop.
+Each pulley is an Atwood machine: two weights on a massless, inextensible rope over a wheel
+that may be massless or a uniform disc. The rope can go slack, and a weight stops when it
+lands on the base or meets the wheel.
 
 ## Stress analysis
 

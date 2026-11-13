@@ -25,6 +25,7 @@ export const limits = {
   damping: [0, 200, 0.1],
   restLength: [0.2, 10, 0.05],
   offset: [-5, 5, 0.01],
+  wheelMass: [0, 20, 0.1],
 } as const;
 
 type Placement = { id: string; x: number; z: number };
@@ -43,10 +44,15 @@ export type Ramp = Placement & {
   angle: number;
   friction: number;
 };
+/**
+ * An Atwood machine: two weights on an inextensible rope over a wheel. The wheel is a
+ * uniform disc of `wheelMass` kilograms (0 for a massless wheel) on a frictionless axle.
+ */
 export type Pulley = Placement & {
   kind: "pulley";
   leftMass: number;
   rightMass: number;
+  wheelMass: number;
 };
 export type Ball = Placement & {
   kind: "ball";
@@ -197,7 +203,7 @@ export function makeObject(
         friction: 0.2,
       };
     case "pulley":
-      return { ...placement, kind, leftMass: 2, rightMass: 3 };
+      return { ...placement, kind, leftMass: 2, rightMass: 3, wheelMass: 0 };
     case "ball":
       return { ...placement, kind, y: 0.5, radius: 0.5, mass: 2, vx: 0 };
     case "pendulum":
@@ -431,6 +437,11 @@ function parseObject(input: unknown): LabObject {
         kind,
         leftMass: numeric(object, "leftMass", limits.mass),
         rightMass: numeric(object, "rightMass", limits.mass),
+        // Optional, so physix.lab/1 pulleys and earlier lab/2 scenes keep a massless wheel.
+        wheelMass:
+          object.wheelMass === undefined
+            ? 0
+            : numeric(object, "wheelMass", limits.wheelMass),
       };
     case "ball":
       return {

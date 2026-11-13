@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { makeObject, makeScene, type LabScene } from "./scene";
+import { makeObject, makeScene, type LabScene, type Pulley } from "./scene";
 import {
+  atwood,
   createSimulation,
+  initialPulleyState,
+  PULLEY_RADIUS,
   PULLEY_TRAVEL,
-  pulleyState,
+  PULLEY_WEIGHT_HEIGHT,
+  stepAtwood,
   TIME_STEP,
+  WEIGHT_HIGH,
+  WEIGHT_LOW,
 } from "./simulation";
 
 async function run(scene: LabScene, ticks: number) {
@@ -73,37 +79,117 @@ describe("mechanics simulation", () => {
   });
 });
 
-describe("ideal pulley", () => {
-  it("reproduces the Atwood acceleration and tension", async () => {
+describe("simulated pulley", () => {
+  const h = TIME_STEP;
+  const g = 9.81;
+  const pulley = (changes: Partial<Pulley> = {}): Pulley => ({
+    ...makeObject("pulley", "pulley-1"),
+    ...changes,
+  });
+  function settle(part: Pulley, steps: number) {
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < steps; i++) state = stepAtwood(part, g, state, h);
+    return state;
+  }
+
+  it("agrees with the ideal Atwood machine when the wheel is massless", async () => {
     const scene = makeScene("pulley");
     const simulation = await createSimulation(scene);
     try {
       simulation.step(60);
       const result = simulation.pulley("pulley-1");
-      expect(result?.displacement).toBeCloseTo(0.24525);
-      expect(result?.speed).toBeCloseTo(0.981);
-      expect(result?.acceleration).toBeCloseTo(1.962);
-      expect(result?.tension).toBeCloseTo(23.544);
+      const a = (g * (3 - 2)) / 5;
+      expect(result?.acceleration).toBeCloseTo(a, 12);
+      expect(result?.tension).toBeCloseTo((2 * 2 * 3 * g) / 5, 12);
+      expect(result?.rightTension).toBeCloseTo((2 * 2 * 3 * g) / 5, 12);
+      expect(result?.speed).toBeCloseTo(a * 0.5, 12);
+      expect(result?.displacement).toBeCloseTo((a * 0.25) / 2, 12);
+      expect(result!.left.y + result!.right.y).toBeCloseTo(
+        2 * PULLEY_WEIGHT_HEIGHT,
+        12,
+      );
+      expect(result?.taut).toBe(true);
     } finally {
       simulation.dispose();
     }
   });
 
-  it("holds equal masses still and stops either direction at the travel limit", () => {
-    const pulley = makeObject("pulley", "pulley");
-    expect(pulleyState({ ...pulley, rightMass: 2 }, 9.81, 10)).toEqual({
-      displacement: 0,
-      speed: 0,
-      acceleration: 0,
-      tension: 19.62,
-      stopped: false,
-    });
-    expect(pulleyState({ ...pulley, leftMass: 4 }, 9.81, 10)).toEqual({
-      displacement: -PULLEY_TRAVEL,
-      speed: 0,
-      acceleration: 0,
-      tension: null,
-      stopped: true,
-    });
+  it("slows the rope by the wheel's inertia and splits the tension", () => {
+    const part = pulley({ wheelMass: 2 });
+    const ideal = atwood(part, g);
+    expect(ideal.acceleration).toBeCloseTo(g / 6, 12);
+    const state = settle(part, 60);
+    expect(state.acceleration).toBeCloseTo(g / 6, 12);
+    expect(state.tension).toBeCloseTo(2 * (g + g / 6), 12);
+    expect(state.rightTension).toBeCloseTo(3 * (g - g / 6), 12);
+    expect(state.wheelSpeed).toBeCloseTo(state.speed, 12);
+    expect(state.wheelAngle).toBeCloseTo(state.displacement / PULLEY_RADIUS, 9);
+    // Energy holds while the rope is taut: K of both weights and the disc against U.
+    const kinetic =
+      0.5 * 5 * state.speed ** 2 + 0.25 * part.wheelMass * state.speed ** 2;
+    expect(kinetic).toBeCloseTo(g * (3 - 2) * state.displacement, 9);
+  });
+
+  it("holds equal masses still", () => {
+    const state = settle(pulley({ rightMass: 2 }), 600);
+    expect(state.displacement).toBe(0);
+    expect(state.speed).toBe(0);
+    expect(state.tension).toBeCloseTo(2 * g, 12);
+    expect(state.stopped).toBe(false);
+  });
+
+  it("lands the heavier weight, lets the rope go slack, then settles", () => {
+    for (const [leftMass, rightMass] of [
+      [2, 3],
+      [3, 2],
+    ]) {
+      const part = pulley({ leftMass, rightMass });
+      const a = atwood(part, g).acceleration;
+      let state = initialPulleyState(part, g);
+      let landing = 0;
+      let slack = false;
+      for (let i = 1; i <= 1200; i++) {
+        state = stepAtwood(part, g, state, h);
+        if (!landing && state.stopped) landing = i * h;
+        if (landing && !state.taut) slack = true;
+      }
+      const ideal = Math.sqrt((2 * PULLEY_TRAVEL) / Math.abs(a));
+      expect(landing).toBeGreaterThanOrEqual(ideal);
+      expect(landing - ideal).toBeLessThanOrEqual(h);
+      expect(slack).toBe(true);
+      const heavy = rightMass > leftMass ? state.right : state.left;
+      const light = rightMass > leftMass ? state.left : state.right;
+      expect(heavy.y).toBeCloseTo(WEIGHT_LOW, 12);
+      expect(light.y).toBeCloseTo(2 * PULLEY_WEIGHT_HEIGHT - WEIGHT_LOW, 12);
+      expect(state.speed).toBe(0);
+      expect(state.tension).toBeCloseTo(Math.min(leftMass, rightMass) * g, 9);
+      expect(state.taut).toBe(true);
+    }
+  });
+
+  it("stops a fast rising weight at the wheel and keeps it there", () => {
+    const part = pulley({ leftMass: 0.1, rightMass: 100 });
+    let highest = 0;
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < 600; i++) {
+      state = stepAtwood(part, g, state, h);
+      highest = Math.max(highest, state.left.y);
+    }
+    expect(highest).toBeCloseTo(WEIGHT_HIGH, 12);
+    expect(state.right.y).toBeCloseTo(WEIGHT_LOW, 12);
+  });
+
+  it("moves the engine's weights with the rope model", async () => {
+    const scene = makeScene("pulley");
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(30);
+      let state = initialPulleyState(scene.objects[0] as Pulley, g);
+      for (let i = 0; i < 30; i++)
+        state = stepAtwood(scene.objects[0] as Pulley, g, state, h);
+      expect(simulation.pulley("pulley-1")).toEqual(state);
+    } finally {
+      simulation.dispose();
+    }
   });
 });

@@ -4,7 +4,11 @@ import {
   type LabObject,
   type LabScene,
 } from "../scene";
-import { initialBlockState, pulleyState, type Simulation } from "../simulation";
+import {
+  initialBlockState,
+  initialPulleyState,
+  type Simulation,
+} from "../simulation";
 
 export type Reading = {
   label: string;
@@ -78,7 +82,8 @@ export function measure(
     );
   } else if (object?.kind === "pulley") {
     const state =
-      simulation?.pulley(object.id) ?? pulleyState(object, scene.gravity, 0);
+      simulation?.pulley(object.id) ??
+      initialPulleyState(object, scene.gravity);
     items.push(
       {
         label: "Rope speed",
@@ -93,9 +98,9 @@ export function measure(
         unit: "m/s²",
       },
       {
-        label: state.stopped ? "At travel stop" : "Tension",
+        label: state.taut ? "Left tension" : "Rope slack",
         short: "T",
-        value: state.tension ?? Number.NaN,
+        value: state.tension,
         unit: "N",
       },
     );

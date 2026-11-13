@@ -34,7 +34,7 @@ try {
     simulation.step(steps);
     const objects = scene.objects.flatMap(({ id, kind }) => {
       if (kind === "pulley")
-        return [{ id, kind, source: "ideal-atwood", ...simulation.pulley(id) }];
+        return [{ id, kind, source: "rapier", ...simulation.pulley(id) }];
       if (kind !== "ramp")
         return [{ id, kind, source: "rapier", ...simulation.block(id) }];
       return [];

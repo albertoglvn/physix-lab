@@ -21,7 +21,7 @@ const MOVING_SPEED = 0.05;
 /** A block's lowest point within this height of the floor counts as touching it. */
 export const CONTACT_GAP = 0.005;
 
-export type QuantitySource = "rapier" | "ideal-atwood" | "derived";
+export type QuantitySource = "rapier" | "derived";
 
 /** One recorded column, such as `block-1.speed`, in SI units. */
 export type Quantity = {
@@ -41,7 +41,7 @@ export const EVENT_LABELS: Record<EventType, string> = {
   rest: "Comes to rest",
   leaves_ramp: "Leaves the ramp",
   floor_contact: "Touches the floor",
-  pulley_stop: "Weight reaches its stop",
+  pulley_stop: "A weight lands or meets the wheel",
 };
 
 /** How a run ends: the first matching event, or the time limit. */
@@ -195,8 +195,14 @@ const PULLEY_QUANTITIES = [
   ["displacement", "Displacement", "s", "m"],
   ["speed", "Rope speed", "v", "m/s"],
   ["acceleration", "Acceleration", "a", "m/s²"],
-  ["tension", "Tension", "T", "N"],
+  ["tension", "Left tension", "T₁", "N"],
+  ["rightTension", "Right tension", "T₂", "N"],
+  ["leftY", "Left weight height", "y₁", "m"],
+  ["rightY", "Right weight height", "y₂", "m"],
+  ["wheelSpeed", "Wheel rim speed", "vᵣ", "m/s"],
 ] as const;
+/** Pulley columns read from the engine: weight heights and the rope speed. */
+const PULLEY_ENGINE = new Set(["displacement", "speed", "leftY", "rightY"]);
 const PENDULUM_QUANTITIES = [
   ["angle", "Angle", "θ", "rad"],
   ["omega", "Angular velocity", "ω", "rad/s"],
@@ -267,7 +273,7 @@ export function sceneQuantities(scene: LabScene): Quantity[] {
           label,
           symbol,
           unit,
-          source: "ideal-atwood",
+          source: PULLEY_ENGINE.has(name) ? "rapier" : "derived",
         });
   }
   for (const [name, label, symbol, unit] of SYSTEM_QUANTITIES)
@@ -425,14 +431,20 @@ export function createRecorder(
       push(`${id}.displacement`, state.displacement);
       push(`${id}.speed`, state.speed);
       push(`${id}.acceleration`, state.acceleration);
-      push(`${id}.tension`, state.tension ?? Number.NaN);
-      // Positive displacement lowers the right weight and raises the left one.
-      kinetic += 0.5 * (pulley.leftMass + pulley.rightMass) * state.speed ** 2;
+      push(`${id}.tension`, state.tension);
+      push(`${id}.rightTension`, state.rightTension);
+      push(`${id}.leftY`, state.left.y);
+      push(`${id}.rightY`, state.right.y);
+      push(`${id}.wheelSpeed`, state.wheelSpeed);
+      const { left, right } = state;
+      // The wheel is a uniform disc, so its energy is M v_rim² / 4.
+      kinetic +=
+        0.5 * pulley.leftMass * left.vy ** 2 +
+        0.5 * pulley.rightMass * right.vy ** 2 +
+        0.25 * pulley.wheelMass * state.wheelSpeed ** 2;
       potential +=
-        scene.gravity *
-        (pulley.leftMass - pulley.rightMass) *
-        state.displacement;
-      momentum[1] += (pulley.leftMass - pulley.rightMass) * state.speed;
+        scene.gravity * (pulley.leftMass * left.y + pulley.rightMass * right.y);
+      momentum[1] += pulley.leftMass * left.vy + pulley.rightMass * right.vy;
     }
     push(`${SYSTEM}.kinetic`, kinetic);
     push(`${SYSTEM}.potential`, potential);

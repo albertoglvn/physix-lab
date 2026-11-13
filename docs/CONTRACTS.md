@@ -202,7 +202,7 @@ acts along −y. The floor is the plane y = 0. At most 32 objects, each with a u
 | `block` | `y`, `size`, `mass`, `rotation`, `vx` | A cube. `y` is its centre height and `rotation` is about z. |
 | `ball` | `y`, `radius`, `mass`, `vx` | A solid sphere (I = 2/5 m r²). |
 | `ramp` | `length`, `width`, `angle`, `friction` | A fixed wedge rising towards −x. |
-| `pulley` | `leftMass`, `rightMass` | An ideal Atwood machine. |
+| `pulley` | `leftMass`, `rightMass`, `wheelMass` | An Atwood machine: two weights on an inextensible rope over a wheel. `wheelMass` (kg, 0 to 20) makes the wheel a uniform disc, I = M R²/2. It is optional and defaults to 0, a massless wheel. |
 | `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle` | A solid bob on a rigid, massless rod hinged about z. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. |
 | `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
 
@@ -210,7 +210,7 @@ Validation rejects a pendulum whose swing would reach the floor. It also rejects
 whose cube would reach the floor or the anchor at any point of the undamped swing.
 
 A `physix.lab/1` scene holds only blocks, ramps and pulleys with the same fields, so it
-migrates by its version alone. A migrated scene has a new run identity, because the
+migrates by its version alone (its pulleys get a massless wheel). A migrated scene has a new run identity, because the
 identity hashes the scene.
 
 Contacts use a friction coefficient of 1 on blocks and balls, combined by product with the
@@ -219,6 +219,15 @@ Each spring force is held over one step. The elastic part is read at a lead posi
 y + h·v·(N−1)/(2N), with N = 8 solver substeps, and the damper at the mean of the step's
 start and end velocities. Under these rules the undamped engine period matches 2π √(m/k),
 and the pendulum period matches the exact elliptic-integral period within 10⁻⁶.
+
+The pulley's frame (base plate 0.16 m high, upright and wheel of radius 0.58 m at 4 m) is
+fixed colliders. Both weights (0.5 × 0.54 × 0.5 m) start with their centres at 1.8 m and
+hang at x ± 0.58 m. The engine steps the rope as one system: while it is taut the weights
+move with a = g (m₂ − m₁)/(m₁ + m₂ + M/2), integrated exactly. A slack rope lets each
+weight fall freely while the wheel spins on. Landing on the base plate and meeting the
+wheel are inelastic stops. A rope pulled tight again takes an inelastic jerk that
+conserves momentum along the rope. The weights are kinematic Rapier bodies that follow
+this model, so they push other parts but are not pushed back.
 
 ## Motion run (`physix.run/1`)
 
@@ -232,9 +241,9 @@ view replays the same steps.
 | `engine` | `name` (`rapier3d-compat`), `version`, `solverIterations` and `reproducibility` (`"same build and browser engine"`) |
 | `seed` | `null`. Motion runs are not stochastic yet. |
 | `timing` | `wallMs` and its `boundary`: engine set-up, every step and probe sampling, without rendering |
-| `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a part id or `system`, and `source` is `rapier`, `derived` or `ideal-atwood`. |
+| `quantities` | `{key, target, label, symbol, unit, source}`. `key` is `<target>.<name>`, `target` is a part id or `system`, and `source` is `rapier` or `derived` (`ideal-atwood` in runs recorded before the simulated pulley). |
 | `series` | `t` (s) and one column per quantity key with the same length. Samples sit on the `1/rate` grid, plus a final sample at the stop. A missing value is `NaN` in memory and `null` in JSON. |
-| `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` and `pulley_stop`, resolved to one time step |
+| `events` | `{type, target, t}` with `type` in `rest`, `leaves_ramp`, `floor_contact` and `pulley_stop` (a weight lands on the base or meets the wheel), resolved to one time step |
 | `stop` | `{reason: "event" \| "time", t, event?}` |
 
 A protocol is `{stop, maxTime}`: `stop` is an event type or `"time"`, and `maxTime` lies
@@ -242,10 +251,13 @@ between 0.5 and 60 s. A run ends at the first matching event or at `maxTime`.
 
 Block quantities are position, velocity, speed, acceleration, kinetic and potential energy.
 Acceleration is a backward finite difference of velocity over one sample, and the first
-sample repeats the second. Pulley quantities come from the ideal Atwood model. System
-quantities are total kinetic, potential and mechanical energy and linear momentum.
-Block potential energy is m g y from y = 0. A pulley's potential energy is measured from its
-starting position. A ball's kinetic energy includes its rotation. A pendulum records `angle`
+sample repeats the second. A pulley records rope `displacement` and `speed` (positive
+when the right weight goes down), `acceleration` (change in rope speed over the latest
+step), the mean rope force on each weight over the step (`tension` on the left,
+`rightTension`, 0 while slack), both weight heights (`leftY`, `rightY`) and the wheel's
+`wheelSpeed` at the rim. System quantities are total kinetic, potential and mechanical
+energy and linear momentum. Potential energy is m g y from y = 0, for pulley weights too,
+and the wheel's kinetic energy is M v_rim²/4. A ball's kinetic energy includes its rotation. A pendulum records `angle`
 (rad, from straight down), `omega` (rad/s), bob position, speed, rod `tension`, and its
 energies. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
 `extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system

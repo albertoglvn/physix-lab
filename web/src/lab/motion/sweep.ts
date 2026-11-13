@@ -117,6 +117,7 @@ const FIELDS: Record<
   pulley: [
     ["leftMass", "left mass", "m₁", "kg", limits.mass],
     ["rightMass", "right mass", "m₂", "kg", limits.mass],
+    ["wheelMass", "wheel mass", "M", "kg", limits.wheelMass],
   ],
   ball: [
     ["mass", "mass", "m", "kg", limits.mass],

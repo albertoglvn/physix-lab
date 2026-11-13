@@ -6,9 +6,10 @@ with theory, varies parameters, and exports evidence that holds up in a report o
 keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the style rules, and
 this plan cites it wherever the UI changes.
 
-Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables and
-oscillator slices; each phase lists its own status. The plan started from the `web/src/lab/`
-workspace, `browser-fem` worker, `Home` page and `physix.lab/1` scene contract.
+Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
+oscillator and simulated-pulley slices; each phase lists its own status. The plan started
+from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
+scene contract.
 
 ---
 
@@ -659,10 +660,33 @@ Determinism behaves as documented in §4.1.
   2 SE of 9.81 m/s², with SE below 0.03. Without noise, the small-angle law fits
   g = 9.8054 m/s², a model bias of 0.05% from the amplitude and the bob's inertia. A spring
   mass sweep recovers k = 80 N/m within 5 × 10⁻³.
-- *Still to do in Phase 3:* cylinders, rods, ropes, simulated pulley, applied forces,
-  launcher, drag, restitution and materials, contact-force probes, run history and
-  comparison, a residual plot, two-variable grids, seeded initial-condition perturbations,
-  and Stress sweeps with the convergence study sheet.
+
+*Status, simulated pulley (done):*
+
+- The pulley is now a frame of fixed Rapier colliders (base plate, upright, wheel) with
+  two kinematic weights. The engine steps the rope as one system: while it is taut the
+  weights move with a = g (m₂ − m₁)/(m₁ + m₂ + M/2), integrated exactly over each step. A
+  slack rope lets each weight fall freely while the wheel spins on. Landing on the base and
+  meeting the wheel are inelastic stops, and a rope pulled tight again takes an inelastic
+  jerk that conserves momentum along the rope. The kinematic weights push other parts out
+  of their way but are not pushed back.
+- `wheelMass` (0 to 20 kg, optional, default 0) makes the wheel a uniform disc. Tensions
+  split into T₁ = m₁ (g + a) and T₂ = m₂ (g − a), and both are recorded with the weight
+  heights and the wheel's rim speed. Energy includes the wheel (M v²/4), and potential
+  energy is measured from y = 0 like every other part. The wheel mass is a sweep field.
+- References: the acceleration, the tension (both tensions with a massive wheel) and the
+  time for the descending weight to land after 1.37 m of rope travel.
+- *Exit evidence, measured.* With the default 2 kg and 3 kg weights and a massless wheel,
+  the engine's acceleration and tension equal the ideal Atwood values within 10⁻¹⁵ at
+  steps of 1/120, 1/240 and 1/480 s. The landing time is 1.18333 s against the ideal
+  1.18175 s, inside one step. With a 2 kg wheel, a = 1.635 m/s², T₁ = 22.890 N and
+  T₂ = 24.525 N match the closed forms to the same precision. The landing time is 1.30000 s
+  at 1/120 s and 1.29583 s at 1/240 s and 1/480 s against the ideal 1.29454 s. Every mass
+  pair tested settles at its stop with the rope holding the lighter weight (T = m g).
+- *Still to do in Phase 3:* cylinders, rods, ropes, applied forces, launcher, drag,
+  restitution and materials, contact-force probes, run history and comparison, a residual
+  plot, two-variable grids, seeded initial-condition perturbations, and Stress sweeps with
+  the convergence study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

@@ -5,6 +5,7 @@ import {
   makeScene,
   radians,
   type LabScene,
+  type Pulley,
   type Preset,
 } from "../scene";
 import { defaultProtocol } from "./probes";
@@ -46,7 +47,7 @@ describe("closed-form references", () => {
     ["incline", 2],
     ["friction", 2],
     ["projectile", 2],
-    ["pulley", 2],
+    ["pulley", 3],
     ["rolling", 2],
     ["pendulum", 2],
     ["spring", 1],
@@ -67,6 +68,23 @@ describe("closed-form references", () => {
       }
     },
   );
+
+  it("adds the wheel's inertia and both tensions to the Atwood references", async () => {
+    const scene = makeScene("pulley");
+    scene.objects = [{ ...(scene.objects[0] as Pulley), wheelMass: 2 }];
+    const references = referencesFor(scene);
+    expect(references.map(({ id }) => id)).toEqual([
+      "pulley-1.atwood.a",
+      "pulley-1.atwood.T",
+      "pulley-1.atwood.T2",
+      "pulley-1.atwood.t",
+    ]);
+    expect(byId(scene, "atwood.a").value).toBeCloseTo(9.81 / 6, 12);
+    expect(byId(scene, "atwood.a").formula).toContain("M/2");
+    const run = await runProtocol(scene, defaultProtocol(scene));
+    for (const reference of references)
+      expect(compare(reference, run).within, reference.id).toBe(true);
+  });
 
   it("predicts no motion when the ramp holds the block", async () => {
     const scene = makeScene("incline");

@@ -122,7 +122,7 @@ const TEMPLATE_NOTES: Record<Preset, string> = {
   incline: "Block sliding down a rough ramp",
   friction: "Block sliding to rest on the floor",
   projectile: "Horizontal launch from a height",
-  pulley: "Ideal Atwood machine",
+  pulley: "Atwood machine",
   rolling: "Solid ball rolling down a ramp",
   pendulum: "Rigid pendulum released from rest",
   spring: "Mass on a vertical spring",
@@ -464,6 +464,14 @@ function ObjectFields({
         value={object.rightMass}
         {...range(limits.mass)}
         onCommit={(rightMass) => onChange({ ...object, rightMass })}
+      />
+      <UnitInput
+        label="Wheel mass"
+        dimension="mass"
+        unit="kg"
+        value={object.wheelMass}
+        {...range(limits.wheelMass)}
+        onCommit={(wheelMass) => onChange({ ...object, wheelMass })}
       />
     </div>
   );
@@ -876,7 +884,7 @@ export function MotionStudy({
       : "";
   const help =
     object?.kind === "pulley"
-      ? "Ideal Atwood machine with a massless rope and wheel. Motion ends when a weight reaches its stop. Positive acceleration lowers the right mass. Edits set the starting state and reset the run. Metres, Y up."
+      ? "Two weights on a massless, inextensible rope over a wheel, a uniform disc on a frictionless axle (wheel mass 0 makes it massless). The rope goes slack instead of pushing. The default stop is a weight landing on the base or meeting the wheel. Positive acceleration lowers the right mass. Edits reset the run. Metres, Y up."
       : object?.kind === "pendulum"
         ? "Rigid, massless rod on a frictionless hinge. The release angle is measured from straight down, positive anticlockwise seen from +Z. Edits reset the run. Metres, Y up."
         : object?.kind === "spring"

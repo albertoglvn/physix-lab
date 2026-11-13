@@ -10,6 +10,7 @@ import {
   rampPlacement,
   SCENE_VERSION,
   type Preset,
+  type Pulley,
 } from "./scene";
 
 describe("mechanics scene contract", () => {
@@ -66,6 +67,23 @@ describe("mechanics scene contract", () => {
     expect(() =>
       parseScene({ ...makeScene("rolling"), version: "physix.lab/1" }),
     ).toThrow("physix.lab/2");
+  });
+
+  it("defaults a pulley's wheel to massless and checks a given wheel mass", () => {
+    const scene = makeScene("pulley");
+    const bare: Partial<Pulley> = { ...(scene.objects[0] as Pulley) };
+    delete bare.wheelMass;
+    expect(parseScene({ ...scene, objects: [bare] }).objects[0]).toEqual({
+      ...bare,
+      wheelMass: 0,
+    });
+    const heavy = { ...bare, wheelMass: 4 };
+    expect(parseScene({ ...scene, objects: [heavy] }).objects[0]).toEqual(
+      heavy,
+    );
+    expect(() =>
+      parseScene({ ...scene, objects: [{ ...bare, wheelMass: 21 }] }),
+    ).toThrow("wheelMass must be a number between 0 and 20.");
   });
 
   it("rejects a pendulum or spring that would reach the floor or anchor", () => {

@@ -13,7 +13,7 @@ import {
   type Ramp,
   type Spring,
 } from "../scene";
-import { PULLEY_TRAVEL } from "../simulation";
+import { atwood, PULLEY_TRAVEL } from "../simulation";
 import {
   bodyLowest,
   CONTACT_GAP,
@@ -531,10 +531,16 @@ function projectileReferences(
 
 function atwoodReferences(pulley: Pulley, scene: LabScene): Reference[] {
   const g = scene.gravity;
-  const { leftMass: m1, rightMass: m2 } = pulley;
+  const { wheelMass } = pulley;
+  const ideal = atwood(pulley, g);
+  const a = ideal.acceleration;
+  const massless = wheelMass === 0;
   const assumptions = [
-    "Massless, inextensible rope over a massless, frictionless wheel.",
-    "The engine uses this ideal model, so the difference checks the bookkeeping only.",
+    "Massless, inextensible rope that does not slip on the wheel.",
+    massless
+      ? "Massless wheel on a frictionless axle."
+      : "The wheel is a uniform disc (I = M R² / 2) on a frictionless axle.",
+    "The engine moves two rigid weights through a rope constraint; the reference checks that coupling and the integrator.",
   ];
   const early = (run: MotionRun) =>
     run.series.t.find((t) => t > 0 && t < run.stop.t);
@@ -542,15 +548,16 @@ function atwoodReferences(pulley: Pulley, scene: LabScene): Reference[] {
     const t = early(run);
     return t === undefined ? undefined : valueAt(run, `${pulley.id}.${key}`, t);
   };
-  return [
+  const denominator = massless ? "(m₁ + m₂)" : "(m₁ + m₂ + M/2)";
+  const list: Reference[] = [
     {
       id: `${pulley.id}.atwood.a`,
       target: pulley.id,
       label: "Acceleration",
       symbol: "a",
       unit: "m/s²",
-      formula: "a = g (m₂ − m₁) / (m₁ + m₂)",
-      value: (g * (m2 - m1)) / (m1 + m2),
+      formula: `a = g (m₂ − m₁) / ${denominator}`,
+      value: a,
       assumptions,
       tolerance: 1e-6,
       floor: 1e-6,
@@ -559,17 +566,50 @@ function atwoodReferences(pulley: Pulley, scene: LabScene): Reference[] {
     {
       id: `${pulley.id}.atwood.T`,
       target: pulley.id,
-      label: "Tension",
-      symbol: "T",
+      label: massless ? "Tension" : "Left tension",
+      symbol: massless ? "T" : "T₁",
       unit: "N",
-      formula: "T = 2 m₁ m₂ g / (m₁ + m₂)",
-      value: (2 * m1 * m2 * g) / (m1 + m2),
+      formula: massless ? "T = 2 m₁ m₂ g / (m₁ + m₂)" : "T₁ = m₁ (g + a)",
+      value: ideal.leftTension,
       assumptions,
       tolerance: 1e-6,
       floor: 1e-6,
       measure: read("tension"),
     },
   ];
+  if (!massless)
+    list.push({
+      id: `${pulley.id}.atwood.T2`,
+      target: pulley.id,
+      label: "Right tension",
+      symbol: "T₂",
+      unit: "N",
+      formula: "T₂ = m₂ (g − a)",
+      value: ideal.rightTension,
+      assumptions,
+      tolerance: 1e-6,
+      floor: 1e-6,
+      measure: read("rightTension"),
+    });
+  if (a !== 0)
+    list.push({
+      id: `${pulley.id}.atwood.t`,
+      target: pulley.id,
+      label: "Time to land",
+      symbol: "t",
+      unit: "s",
+      formula: "t = √(2 d / |a|)",
+      value: Math.sqrt((2 * PULLEY_TRAVEL) / Math.abs(a)),
+      assumptions: [
+        ...assumptions,
+        `The descending weight lands after d = ${PULLEY_TRAVEL.toFixed(2)} m of rope travel; the event resolves to one time step.`,
+      ],
+      tolerance: 0.01,
+      floor: 1e-3,
+      event: "pulley_stop",
+      measure: (run) => eventTime(run, "pulley_stop", pulley.id),
+    });
+  return list;
 }
 
 /** Closed-form references that apply to the parts in a scene. */
@@ -607,9 +647,7 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
     references.find((reference) => reference.id === id);
   for (const part of scene.objects) {
     if (part.kind === "pulley") {
-      const a =
-        (g * (part.rightMass - part.leftMass)) /
-        (part.rightMass + part.leftMass);
+      const a = atwood(part, g).acceleration;
       const until = a === 0 ? 60 : Math.sqrt((2 * PULLEY_TRAVEL) / Math.abs(a));
       curves.push(
         { key: `${part.id}.speed`, at: (t) => a * t, until },
