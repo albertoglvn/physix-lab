@@ -327,8 +327,32 @@ potential energy includes the elastic energy.
 `{schema, id, name, studies: {motion: {scene}}, probes, protocol, runs, units: {display}, sweep?}`.
 `id` is `sha256:` of `{schema, scene, protocol}`, so re-exporting the same set-up keeps the
 id. `runs` holds `physix.run/1` records. Importing an experiment restores the scene and
-protocol, re-runs it and reports whether the stored run is reproduced exactly, with the
-largest difference.
+protocol, re-runs it and reports whether the stored run is reproduced bit for bit, within
+tolerance or not, with the largest difference, and adds its runs to the run history.
+Exporting writes the live run first, then the baseline and any runs compared with it.
+
+## Run history
+
+The lab keeps finished `physix.run/1` records in the browser's IndexedDB (database
+`physix-lab`, object store `runs`), one record per experiment holding `[{run, savedAt,
+pinned}]` newest first. `savedAt` is milliseconds since the epoch. The key is
+`motion:<scene name>`, not the experiment `id`: the `id` hashes the scene and protocol,
+so a history per `id` could only hold identical runs. A run joins the history when the live
+run reaches its stop, when it is kept by hand, or when an experiment is imported; a run
+already there moves to the front. The history keeps 30 runs, dropping the oldest unpinned
+run first. At most one run is pinned as the baseline. Where IndexedDB is missing or
+refuses a write, the history lives in memory for the session.
+
+The dock overlays the baseline and the runs chosen for comparison on the live plot, up to
+six series in all with the live run, in data-palette colours other than the live
+series'. Each chip names how that run's inputs differ from the current scene, in the stored
+run's values (`g 1.62`, `block-1 mass 3`, `with ball-2`, `Δt 1/240 s`).
+
+"Re-run and check" repeats a stored run from its inputs and compares every sample of `t`
+and every column. It reports *bit for bit* when all samples are identical, *within
+tolerance* when no sample differs by more than 10⁻⁹ × max(1, |stored value|), and
+*different* otherwise, including a different sample count, a sample that is missing in
+only one run, and a different Rapier version, which it names.
 
 `sweep` is optional: `{record, fit?}` with the last `physix.sweep/1` record and the fit made
 on it. It does not change the experiment `id`. Importing shows the stored points without

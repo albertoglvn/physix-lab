@@ -13,7 +13,7 @@ import {
   type FitResult,
 } from "../data/fit";
 import { readingUncertainty } from "../data/noise";
-import type { ScatterFit } from "../data/SweepPlot";
+import type { ScatterFit, ScatterPoint } from "../data/SweepPlot";
 import { isBody, type LabScene } from "../scene";
 import { startingRamp } from "./probes";
 import { fitData, type SweepPoint, type SweepSpec } from "./sweep";
@@ -104,6 +104,34 @@ export function knownParameters(
         : { value: start.ramp.friction, source: `${start.ramp.id} friction` };
   return known;
 }
+
+/**
+ * Residual points, reading − fit, for the residual plot. Values left out of the fit are left
+ * out here too, and a point's clean value is shown as its residual beside the readings.
+ */
+export function residualPoints(
+  points: SweepPoint[],
+  fit: SweepFit,
+): ScatterPoint[] {
+  const excluded = new Set(fit.excluded?.values ?? []);
+  return points
+    .filter((point) => !excluded.has(point.x))
+    .map((point) => {
+      const at = fit.curve.at(point.x);
+      return {
+        x: point.x,
+        value: point.value - at,
+        readings: point.readings.map((reading) => reading - at),
+      };
+    });
+}
+
+/** The residual plot's reference: zero, inside the fit's band. */
+export const residualFit = (fit: SweepFit): ScatterFit => ({
+  at: () => 0,
+  band: fit.curve.band,
+  label: fit.curve.label,
+});
 
 /** Fits the sweep's readings when it has synthetic noise, else its clean values. */
 export function fitSweep(

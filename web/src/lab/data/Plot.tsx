@@ -16,6 +16,14 @@ export type PlotCurve = { at: (t: number) => number; until: number };
 /** Sampled reference data (a solver profile, say), drawn dashed like a curve. */
 export type PlotReference = { t: number[]; values: number[] };
 
+/** Another run's series drawn under the main one for comparison. */
+export type PlotOverlay = {
+  label: string;
+  color: string;
+  t: number[];
+  values: number[];
+};
+
 /** The horizontal axis; time in seconds unless a plot says otherwise. */
 export type PlotAxis = { label: string; symbol: string; unit: string };
 
@@ -85,6 +93,8 @@ export type PlotProps = {
   axis?: PlotAxis;
   /** Key labels for the series and the dashed reference. */
   keys?: { series?: string; reference?: string };
+  /** Stored runs drawn in full under the series. */
+  overlays?: PlotOverlay[];
   height?: number;
 };
 
@@ -208,6 +218,7 @@ export function Plot({
   until = Infinity,
   axis = TIME_AXIS,
   keys = {},
+  overlays = [],
   height = 180,
 }: PlotProps) {
   const [node, setNode] = useState<HTMLElement | null>(null);
@@ -226,6 +237,7 @@ export function Plot({
     ...series.values,
     ...curveValues,
     ...(reference?.values ?? []),
+    ...overlays.flatMap((overlay) => overlay.values),
   ]);
   const inner = {
     width: width - MARGIN.left - MARGIN.right,
@@ -277,7 +289,7 @@ export function Plot({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${series.label} against ${axis.label.toLowerCase()}${hasReference ? `, with the ${keys.reference ? `${keys.reference} reference` : "closed-form curve"}` : ""}`}
+        aria-label={`${series.label} against ${axis.label.toLowerCase()}${hasReference ? `, with the ${keys.reference ? `${keys.reference} reference` : "closed-form curve"}` : ""}${overlays.length ? `, compared with ${overlays.length} stored run${overlays.length > 1 ? "s" : ""}` : ""}`}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHover(null)}
       >
@@ -292,6 +304,17 @@ export function Plot({
           yTitle={axisTitle}
         />
         {dashed ? <path className="lab-plot-ref" d={dashed} /> : null}
+        {overlays.map((overlay, index) => {
+          const d = tracePath(overlay.t, overlay.values, Infinity, x, y);
+          return d ? (
+            <path
+              key={index}
+              className="lab-plot-line lab-plot-line--overlay"
+              d={d}
+              style={{ stroke: overlay.color }}
+            />
+          ) : null;
+        })}
         {path ? (
           <path
             className="lab-plot-line"
@@ -337,6 +360,16 @@ export function Plot({
               />
               {keys.series ?? "Simulated"}
             </span>
+            {overlays.map((overlay, index) => (
+              <span key={index}>
+                <i
+                  className="lab-plot-swatch"
+                  style={{ background: overlay.color }}
+                  aria-hidden="true"
+                />
+                {overlay.label}
+              </span>
+            ))}
             {hasReference ? (
               <span>
                 <i

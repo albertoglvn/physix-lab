@@ -5,7 +5,12 @@ import { SweepPlot } from "../data/SweepPlot";
 import type { LabScene } from "../scene";
 import { canonicalJson } from "./run";
 import { metricOption, sweepVariables, type SweepSpec } from "./sweep";
-import { fitSweep, type SweepFit } from "./sweepFit";
+import {
+  fitSweep,
+  residualFit,
+  residualPoints,
+  type SweepFit,
+} from "./sweepFit";
 import type { SweepState } from "./useSweep";
 
 const DISPLAY_NAMES: Record<string, string> = { mu: "μ" };
@@ -314,14 +319,31 @@ export function SweepData({
               {state.error}
             </p>
           ) : (
-            <SweepPlot
-              points={state.points}
-              xAxis={axes.x}
-              yAxis={axes.y}
-              domain={[values[0], values[values.length - 1]]}
-              color={color}
-              fit={state.fit?.curve}
-            />
+            <>
+              <SweepPlot
+                points={state.points}
+                xAxis={axes.x}
+                yAxis={axes.y}
+                domain={[values[0], values[values.length - 1]]}
+                color={color}
+                fit={state.fit?.curve}
+              />
+              {state.fit ? (
+                <SweepPlot
+                  points={residualPoints(state.points, state.fit)}
+                  xAxis={axes.x}
+                  yAxis={{
+                    label: "Residual",
+                    symbol: `${axes.y.symbol} − fit`,
+                    unit: axes.y.unit,
+                  }}
+                  domain={[values[0], values[values.length - 1]]}
+                  color={color}
+                  fit={residualFit(state.fit)}
+                  height={130}
+                />
+              ) : null}
+            </>
           )}
         </div>
         <aside className="lab-data-side" aria-label="Fit">

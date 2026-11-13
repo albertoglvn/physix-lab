@@ -96,7 +96,13 @@ import {
   SYSTEM,
   type Protocol,
 } from "./probes";
-import { reproduce, runProtocol, type MotionRun } from "./run";
+import {
+  reproduce,
+  reproductionMessage,
+  runProtocol,
+  type MotionRun,
+} from "./run";
+import { historyKey, overlaidRuns, useRunHistory } from "../state/runs";
 import { metricTarget } from "./sweep";
 import { SweepData } from "./SweepData";
 import { SweepSheet } from "./SweepSheet";
@@ -813,6 +819,9 @@ export function MotionStudy({
   const [protocolChoice, setProtocolChoice] = useState<Protocol | null>(null);
   const [record, setRecord] = useState<RunRecord>();
   const [check, setCheck] = useState<StepCheck & { runId: string }>();
+  const runHistory = useRunHistory(historyKey(scene));
+  const keepRuns = runHistory.add;
+  const [checking, setChecking] = useState<string>();
 
   const current =
     runtime?.scene === scene && runtime.revision === revision
@@ -911,6 +920,8 @@ export function MotionStudy({
       if (stopTick !== undefined && ticks() >= stopTick) {
         setClock({ simulation, time: simulation.time });
         setRunning(false);
+        // A run that reaches its stop joins the history (LAB_PLAN.md §4.3).
+        if (recorded) keepRuns([recorded]);
         toasts.push({ tone: "info", message: `Stopped: ${stopMessage}` });
         return;
       }
@@ -918,7 +929,7 @@ export function MotionStudy({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [running, simulation, active, stopTick, stopMessage]);
+  }, [running, simulation, active, stopTick, stopMessage, recorded, keepRuns]);
 
   /** Validates and commits an edit as one undo step. Returns false when it was rejected. */
   function apply(next: LabScene, nextSelected = selected): boolean {
@@ -1037,12 +1048,37 @@ export function MotionStudy({
     );
   }
 
+  /** Re-run and check: repeats a stored run and reports how closely it matches. */
+  function recheck(stored: MotionRun) {
+    setChecking(stored.id);
+    reproduce(stored)
+      .then(
+        (outcome) => toasts.push(reproductionMessage(outcome, stored)),
+        (error: unknown) =>
+          toasts.push({
+            tone: "bad",
+            message: `The stored run could not be repeated. ${message(error)}`,
+          }),
+      )
+      .finally(() =>
+        setChecking((previous) =>
+          previous === stored.id ? undefined : previous,
+        ),
+      );
+  }
+
   async function exportExperiment() {
     if (!recorded) return;
+    // The live run first, then the baseline and the runs compared with it.
+    const compared = overlaidRuns(
+      runHistory.runs,
+      runHistory.compared,
+      recorded.id,
+    ).map((entry) => entry.run);
     const experiment = await makeExperiment(
       scene,
       protocol,
-      [recorded],
+      [recorded, ...compared],
       sweepRecord ? { record: sweepRecord, fit: sweepFit } : undefined,
     );
     download(
@@ -1061,26 +1097,8 @@ export function MotionStudy({
     if (experiment.sweep) restoreSweep(experiment.sweep);
     const [stored] = experiment.runs;
     if (!stored) return;
-    reproduce(stored).then(
-      (outcome) =>
-        toasts.push(
-          outcome.identical
-            ? { tone: "ok", message: "The stored run reproduced exactly." }
-            : {
-                tone: "warn",
-                message: `The re-run differs from the stored run by up to ${outcome.largestDifference.toPrecision(3)}${
-                  outcome.sameEngine
-                    ? "."
-                    : `; it was recorded with Rapier ${stored.engine.version}, this lab uses ${outcome.run.engine.version}.`
-                }`,
-              },
-        ),
-      (error: unknown) =>
-        toasts.push({
-          tone: "bad",
-          message: `The stored run could not be repeated. ${message(error)}`,
-        }),
-    );
+    keepRuns(experiment.runs, historyKey(next));
+    recheck(stored);
   }
 
   function restoreSweep({ record, fit }: NonNullable<Experiment["sweep"]>) {
@@ -1780,6 +1798,16 @@ export function MotionStudy({
           onExport={() => setSheet("export")}
           view={view}
           onViewChange={setView}
+          history={{
+            runs: runHistory.runs,
+            compared: runHistory.compared,
+            checking,
+            onKeep: () => recorded && keepRuns([recorded]),
+            onToggle: runHistory.toggle,
+            onPin: runHistory.pin,
+            onRemove: runHistory.remove,
+            onRecheck: recheck,
+          }}
           renderSweep={(switcher) => (
             <SweepData
               state={sweep.state}

@@ -3,10 +3,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { makeObject, makeScene } from "../scene";
 import {
   MotionData,
+  overlayColours,
   probeTarget,
   revealTime,
   seriesColour,
   type MotionDataProps,
+  type RunHistoryControls,
 } from "./MotionData";
 import { defaultProtocol, SYSTEM } from "./probes";
 import { runProtocol, type MotionRun } from "./run";
@@ -116,5 +118,93 @@ describe("motion data dock", () => {
     );
     expect(failed).toContain('role="alert"');
     expect(failed).toContain("Engine failed.");
+  });
+});
+
+describe("run history chips", () => {
+  const history = (
+    overrides: Partial<RunHistoryControls> = {},
+  ): RunHistoryControls => ({
+    runs: [],
+    compared: [],
+    onKeep: () => {},
+    onToggle: () => {},
+    onPin: () => {},
+    onRemove: () => {},
+    onRecheck: () => {},
+    ...overrides,
+  });
+  const stored = (id: string, gravity: number, pinned = false) => {
+    const copy = structuredClone(run);
+    copy.id = id;
+    copy.inputs.scene.gravity = gravity;
+    return { run: copy, savedAt: 1, pinned };
+  };
+
+  it("offers to keep the live run until it is kept", () => {
+    const empty = renderToStaticMarkup(
+      <MotionData {...props({ history: history() })} />,
+    );
+    expect(empty).toContain("Keep run");
+    expect(empty).toContain("Finished runs are kept here.");
+    const kept = renderToStaticMarkup(
+      <MotionData
+        {...props({
+          history: history({
+            runs: [{ run, savedAt: 1, pinned: false }],
+          }),
+        })}
+      />,
+    );
+    expect(kept).toContain("Kept");
+    expect(kept).toContain("This run");
+  });
+
+  it("overlays the baseline and compared runs in palette colours", () => {
+    const html = renderToStaticMarkup(
+      <MotionData
+        {...props({
+          history: history({
+            runs: [
+              stored("sha256:moon", 1.62, true),
+              stored("sha256:mars", 3.71),
+              stored("sha256:idle", 5),
+            ],
+            compared: ["sha256:mars"],
+            checking: "sha256:mars",
+          }),
+        })}
+      />,
+    );
+    expect(html.match(/lab-plot-line--overlay/g)).toHaveLength(2);
+    expect(html).toContain("Baseline · g 1.62");
+    expect(html).toContain("g 3.71");
+    expect(html).toContain("g 5");
+    // The live run keeps series 1; the baseline and comparison take the next colours.
+    expect(html).toContain("stroke:var(--px-series-2)");
+    expect(html).toContain("stroke:var(--px-series-3)");
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(3);
+    expect(html).toContain('aria-label="Unpin baseline"');
+    expect(html.match(/aria-label="Re-run and check"/g)).toHaveLength(3);
+    expect(html).toMatch(
+      /disabled=""[^>]*aria-label="Re-run and check"|aria-label="Re-run and check"[^>]*disabled=""/,
+    );
+  });
+
+  it("hides the chips outside the plot view", () => {
+    const html = renderToStaticMarkup(
+      <MotionData {...props({ view: "table", history: history() })} />,
+    );
+    expect(html).not.toContain("Keep run");
+  });
+
+  it("leaves the palette's other colours for comparisons", () => {
+    expect(overlayColours("var(--px-series-2)")).toEqual([
+      "var(--px-series-1)",
+      "var(--px-series-3)",
+      "var(--px-series-4)",
+      "var(--px-series-5)",
+      "var(--px-series-6)",
+    ]);
   });
 });

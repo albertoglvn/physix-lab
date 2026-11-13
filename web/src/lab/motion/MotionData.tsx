@@ -1,9 +1,24 @@
-import { Download, Info, Ruler } from "lucide-react";
+import {
+  BookmarkPlus,
+  Download,
+  Info,
+  Pin,
+  RotateCcw,
+  Ruler,
+  X,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Segmented } from "../../ui/controls";
 import { formatDelta, formatStep } from "../data/methods";
-import { Plot } from "../data/Plot";
+import { Plot, type PlotOverlay } from "../data/Plot";
 import type { LabScene } from "../scene";
+import {
+  COMPARE_LIMIT,
+  inputDifferences,
+  overlaidRuns,
+  runLabel,
+  type SavedRun,
+} from "../state/runs";
 import type { ConvergenceResult } from "./convergence";
 import { SYSTEM, type Quantity } from "./probes";
 import { eventOf, type MotionRun } from "./run";
@@ -59,6 +74,152 @@ export type StepCheck = {
 
 export type DataView = "plot" | "table" | "sweep";
 
+/** The run history the dock shows as chips over the plot. */
+export type RunHistoryControls = {
+  runs: SavedRun[];
+  compared: string[];
+  /** The id of the stored run being re-run, while the check runs. */
+  checking?: string;
+  onKeep: () => void;
+  onToggle: (id: string) => void;
+  onPin: (id: string) => void;
+  onRemove: (id: string) => void;
+  onRecheck: (run: MotionRun) => void;
+};
+
+/** Colours for compared runs: the data palette less the live series' colour. */
+export const overlayColours = (current: string) =>
+  SERIES_COLOURS.filter((colour) => colour !== current);
+
+/** The stored runs overlaid on the plot, each with its colour and chip label. */
+export function runOverlays(
+  history: RunHistoryControls,
+  run: MotionRun,
+  colour: string,
+): { entry: SavedRun; color: string; label: string }[] {
+  const colours = overlayColours(colour);
+  return overlaidRuns(history.runs, history.compared, run.id).map(
+    (entry, index) => {
+      const label = runLabel(inputDifferences(entry.run.inputs, run.inputs));
+      return {
+        entry,
+        color: colours[index % colours.length],
+        label: entry.pinned ? `Baseline · ${label}` : label,
+      };
+    },
+  );
+}
+
+function RunChips({
+  history,
+  run,
+  colour,
+  overlays,
+}: {
+  history: RunHistoryControls;
+  run: MotionRun;
+  colour: string;
+  overlays: ReturnType<typeof runOverlays>;
+}) {
+  const colourOf = new Map(
+    overlays.map(({ entry, color }) => [entry.run.id, color]),
+  );
+  const kept = history.runs.some((entry) => entry.run.id === run.id);
+  const full = overlays.length >= COMPARE_LIMIT - 1;
+  return (
+    <div className="lab-runs" role="group" aria-label="Run history">
+      <button
+        type="button"
+        className="lab-button"
+        disabled={kept}
+        onClick={history.onKeep}
+        title="Keep this run in the history. Runs that reach their stop are kept on their own."
+      >
+        <BookmarkPlus size={15} aria-hidden="true" />
+        <span>{kept ? "Kept" : "Keep run"}</span>
+      </button>
+      {history.runs.length ? (
+        <ul className="lab-runs-list">
+          {history.runs.map((entry) => {
+            const id = entry.run.id;
+            const live = id === run.id;
+            const differences = inputDifferences(entry.run.inputs, run.inputs);
+            const shown = live ? colour : colourOf.get(id);
+            const label = live ? "This run" : runLabel(differences);
+            return (
+              <li
+                key={id}
+                className="lab-runs-item"
+                data-on={shown ? "" : undefined}
+              >
+                <button
+                  type="button"
+                  className="lab-runs-toggle"
+                  aria-pressed={Boolean(shown)}
+                  disabled={live || entry.pinned || (!shown && full)}
+                  onClick={() => history.onToggle(id)}
+                  title={[
+                    live
+                      ? "The live run"
+                      : entry.pinned
+                        ? "The baseline, always overlaid"
+                        : !shown && full
+                          ? `Up to ${COMPARE_LIMIT} series at once`
+                          : "Overlay on the plot",
+                    ...differences,
+                    `Run ${id.slice(7, 19)}`,
+                  ].join("\n")}
+                >
+                  <i
+                    className="lab-plot-swatch"
+                    style={{ background: shown ?? "transparent" }}
+                    aria-hidden="true"
+                  />
+                  {entry.pinned ? <small>Baseline · </small> : null}
+                  <span>{label}</span>
+                </button>
+                <button
+                  type="button"
+                  className="px-icon-button"
+                  aria-pressed={entry.pinned}
+                  aria-label={
+                    entry.pinned ? "Unpin baseline" : "Pin as baseline"
+                  }
+                  title={entry.pinned ? "Unpin baseline" : "Pin as baseline"}
+                  onClick={() => history.onPin(id)}
+                >
+                  <Pin size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="px-icon-button"
+                  aria-label="Re-run and check"
+                  title="Re-run and check: repeat this run and compare it sample by sample"
+                  disabled={history.checking === id}
+                  onClick={() => history.onRecheck(entry.run)}
+                >
+                  <RotateCcw size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="px-icon-button"
+                  aria-label="Remove run"
+                  title="Remove from the history"
+                  onClick={() => history.onRemove(id)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <span className="lab-note">Finished runs are kept here.</span>
+      )}
+    </div>
+  );
+}
+
 export type MotionDataProps = {
   scene: LabScene;
   target: string;
@@ -76,6 +237,8 @@ export type MotionDataProps = {
   onViewChange?: (view: DataView) => void;
   /** Renders the sweep view around the dock's view switcher. */
   renderSweep?: (switcher: ReactNode) => ReactNode;
+  /** Stored runs to compare with the live one. */
+  history?: RunHistoryControls;
 };
 
 function StepCheckLine({ check }: { check: StepCheck }) {
@@ -202,6 +365,7 @@ export function MotionData({
   view: controlledView,
   onViewChange,
   renderSweep,
+  history,
 }: MotionDataProps) {
   const [ownView, setOwnView] = useState<DataView>("plot");
   const view = controlledView ?? ownView;
@@ -224,6 +388,14 @@ export function MotionData({
   const rows = run
     ? run.series.t.flatMap((t, index) => (t <= time + 1e-9 ? [index] : []))
     : [];
+  const colour = seriesColour(scene, target);
+  const compared = history && run ? runOverlays(history, run, colour) : [];
+  const overlays: PlotOverlay[] = compared.flatMap(
+    ({ entry, color, label }) => {
+      const values = quantity && entry.run.series.columns[quantity.key];
+      return values ? [{ label, color, t: entry.run.series.t, values }] : [];
+    },
+  );
 
   const switcher = (
     <Segmented
@@ -287,6 +459,14 @@ export function MotionData({
           </button>
         </span>
       </div>
+      {history && run && view === "plot" ? (
+        <RunChips
+          history={history}
+          run={run}
+          colour={colour}
+          overlays={compared}
+        />
+      ) : null}
       <div className="lab-data-body">
         <div className="lab-data-main">
           {runError ? (
@@ -303,13 +483,18 @@ export function MotionData({
                 label: quantity.label,
                 symbol: quantity.symbol,
                 unit: quantity.unit,
-                color: seriesColour(scene, target),
+                color: colour,
                 t: run.series.t,
                 values: run.series.columns[quantity.key],
               }}
               curve={curve}
-              domain={run.stop.t}
+              domain={Math.max(
+                run.stop.t,
+                ...compared.map(({ entry }) => entry.run.stop.t),
+              )}
               until={time}
+              overlays={overlays}
+              keys={overlays.length ? { series: "This run" } : undefined}
             />
           ) : (
             <div className="lab-table-wrap">

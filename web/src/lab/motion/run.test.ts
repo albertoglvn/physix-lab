@@ -7,6 +7,8 @@ import {
   canonicalJson,
   eventOf,
   reproduce,
+  reproductionMessage,
+  REPRODUCE_TOLERANCE,
   runIdentity,
   runProtocol,
   RUN_SCHEMA,
@@ -118,6 +120,53 @@ describe("headless motion runs", () => {
       largestDifference: 0,
       sameEngine: true,
     });
+  });
+
+  it("tells bit-for-bit, within-tolerance and different re-runs apart", async () => {
+    const scene = makeScene("incline");
+    const run = await runProtocol(scene, defaultProtocol(scene));
+    const key = Object.keys(run.series.columns).find((name) =>
+      name.endsWith(".speed"),
+    )!;
+    const exact = await reproduce(structuredClone(run));
+    expect(exact.verdict).toBe("identical");
+    expect(reproductionMessage(exact, run)).toEqual({
+      tone: "ok",
+      message: "The re-run matches the stored run bit for bit.",
+    });
+
+    const nudged = structuredClone(run);
+    nudged.series.columns[key][5] += 1e-12;
+    const within = await reproduce(nudged);
+    expect(within.verdict).toBe("within");
+    expect(within.largestDifference).toBeGreaterThan(0);
+    expect(within.relativeDifference).toBeLessThanOrEqual(REPRODUCE_TOLERANCE);
+    expect(reproductionMessage(within, nudged).message).toMatch(
+      /^The re-run matches within tolerance/,
+    );
+
+    const changed = structuredClone(run);
+    changed.series.columns[key][5] += 0.1;
+    const different = await reproduce(changed);
+    expect(different.verdict).toBe("different");
+    expect(reproductionMessage(different, changed)).toMatchObject({
+      tone: "warn",
+    });
+
+    const missing = structuredClone(run);
+    missing.series.columns[key][5] = Number.NaN;
+    expect((await reproduce(missing)).verdict).toBe("different");
+
+    const short = structuredClone(run);
+    short.series.t.pop();
+    for (const name of Object.keys(short.series.columns))
+      short.series.columns[name].pop();
+    short.engine.version = "0.0.1";
+    const shorter = await reproduce(short);
+    expect(shorter.verdict).toBe("different");
+    expect(reproductionMessage(shorter, short).message).toMatch(
+      /recorded \d+ samples where the stored run has \d+\. It was recorded with Rapier 0\.0\.1/,
+    );
   });
 
   it("interpolates a column between samples", async () => {

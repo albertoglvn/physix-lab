@@ -2,6 +2,46 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { niceTicks, Plot, valueRange } from "./Plot";
 
+describe("plot overlays", () => {
+  it("draws stored runs under the series and lists them in the key", () => {
+    const html = renderToStaticMarkup(
+      <Plot
+        series={{
+          label: "Speed",
+          symbol: "v",
+          unit: "m/s",
+          color: "var(--px-series-1)",
+          t: [0, 1, 2],
+          values: [0, 1, 2],
+        }}
+        domain={2}
+        keys={{ series: "This run" }}
+        overlays={[
+          {
+            label: "Baseline · g 1.62",
+            color: "var(--px-series-2)",
+            t: [0, 1, 2],
+            values: [0, 4, 8],
+          },
+          {
+            label: "Empty",
+            color: "var(--px-series-3)",
+            t: [0, 1],
+            values: [Number.NaN, Number.NaN],
+          },
+        ]}
+      />,
+    );
+    expect(html.match(/lab-plot-line--overlay/g)).toHaveLength(1);
+    expect(html).toContain("stroke:var(--px-series-2)");
+    expect(html).toContain("Baseline · g 1.62");
+    expect(html).toContain("This run");
+    expect(html).toContain("compared with 2 stored runs");
+    // The overlay's values widen the axis beyond the series' own range.
+    expect(html).toMatch(/>5<\/text>/);
+  });
+});
+
 describe("plot scales", () => {
   it("places ticks 1, 2 or 5 × 10ⁿ apart", () => {
     expect(niceTicks(0, 1).ticks).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1]);

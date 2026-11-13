@@ -15,7 +15,9 @@ pivot on a slack rope, or a blank scene. Edit starting conditions in the inspect
 including each body's material (wood, steel, rubber, ice or felt), restitution, launch
 velocity, applied force and drag coefficient, a pendulum's link (rod or rope) and rod
 mass, and the scene's air density and linear drag, then run, pause, step, or reset the
-simulation. The
+simulation. Runs that reach their stop are kept in the data dock's run history, where
+any run can be pinned as a baseline, overlaid on the live plot or re-run and checked
+against its stored samples. A fitted sweep shows its residuals under the sweep plot. The
 **Scene JSON** editor imports and exports `physix.lab/2` scenes that agents can generate and
 run headlessly:
 

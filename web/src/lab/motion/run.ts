@@ -155,32 +155,92 @@ export const eventOf = (
   target: string,
 ) => run.events.find((event) => event.type === type && event.target === target);
 
-/** Compares a re-run with a stored run: identical series, or the largest difference. */
-export async function reproduce(run: MotionRun) {
+/**
+ * A re-run matches within tolerance when every sample differs by at most this share of
+ * max(1, |stored value|): rounding-level drift, far below any probe's resolution.
+ */
+export const REPRODUCE_TOLERANCE = 1e-9;
+
+export type Reproduction = {
+  run: MotionRun;
+  sameIdentity: boolean;
+  sameShape: boolean;
+  identical: boolean;
+  /** Largest absolute difference over every sample of every column. */
+  largestDifference: number;
+  /** Largest difference as a share of max(1, |stored value|). */
+  relativeDifference: number;
+  verdict: "identical" | "within" | "different";
+  sameEngine: boolean;
+};
+
+/** Compares a re-run with a stored run: bit for bit, within tolerance, or different. */
+export async function reproduce(run: MotionRun): Promise<Reproduction> {
   const again = await runProtocol(run.inputs.scene, run.inputs.protocol, {
     timeStep: run.inputs.timeStep,
     rate: run.inputs.rate,
   });
   let largest = 0;
+  let relative = 0;
   const keys = Object.keys(run.series.columns);
   const sameShape =
     again.series.t.length === run.series.t.length &&
     keys.every((key) => key in again.series.columns);
   if (sameShape)
-    for (const key of keys) {
-      const a = run.series.columns[key];
-      const b = again.series.columns[key];
+    for (const key of ["t", ...keys]) {
+      const a = key === "t" ? run.series.t : run.series.columns[key];
+      const b = key === "t" ? again.series.t : again.series.columns[key];
       for (let index = 0; index < a.length; index++) {
+        if (Object.is(a[index], b[index])) continue;
         if (Number.isNaN(a[index]) && Number.isNaN(b[index])) continue;
-        largest = Math.max(largest, Math.abs(a[index] - b[index]));
+        const difference = Math.abs(a[index] - b[index]);
+        // A sample missing in only one run, or an infinity, counts as a full mismatch.
+        const gap = Number.isFinite(difference)
+          ? difference
+          : Number.POSITIVE_INFINITY;
+        largest = Math.max(largest, gap);
+        relative = Math.max(relative, gap / Math.max(1, Math.abs(a[index])));
       }
     }
+  const identical = sameShape && largest === 0;
   return {
     run: again,
     sameIdentity: again.id === run.id,
     sameShape,
-    identical: sameShape && largest === 0,
+    identical,
     largestDifference: sameShape ? largest : Number.POSITIVE_INFINITY,
+    relativeDifference: sameShape ? relative : Number.POSITIVE_INFINITY,
+    verdict: identical
+      ? "identical"
+      : sameShape && relative <= REPRODUCE_TOLERANCE
+        ? "within"
+        : "different",
     sameEngine: again.engine.version === run.engine.version,
+  };
+}
+
+/** A one-line report of a reproduction, with a toast tone. */
+export function reproductionMessage(
+  outcome: Reproduction,
+  stored: MotionRun,
+): { tone: "ok" | "warn"; message: string } {
+  const engine = outcome.sameEngine
+    ? ""
+    : ` It was recorded with Rapier ${stored.engine.version}; this lab uses ${outcome.run.engine.version}.`;
+  if (outcome.verdict === "identical")
+    return {
+      tone: "ok",
+      message: `The re-run matches the stored run bit for bit.${engine}`,
+    };
+  if (outcome.verdict === "within")
+    return {
+      tone: "ok",
+      message: `The re-run matches within tolerance: samples differ by up to ${outcome.largestDifference.toPrecision(3)}, ${outcome.relativeDifference.toPrecision(2)} relative.${engine}`,
+    };
+  return {
+    tone: "warn",
+    message: outcome.sameShape
+      ? `The re-run differs from the stored run by up to ${outcome.largestDifference.toPrecision(3)}.${engine}`
+      : `The re-run recorded ${outcome.run.series.t.length} samples where the stored run has ${stored.series.t.length}.${engine}`,
   };
 }

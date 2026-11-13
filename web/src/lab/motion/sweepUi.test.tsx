@@ -12,7 +12,12 @@ import {
   SweepData,
   sweepAxes,
 } from "./SweepData";
-import { fitSweep, knownParameters } from "./sweepFit";
+import {
+  fitSweep,
+  knownParameters,
+  residualFit,
+  residualPoints,
+} from "./sweepFit";
 import {
   defaultRange,
   defaultSweepForm,
@@ -131,6 +136,35 @@ describe("sweep fit", () => {
     expect(fit.curve.at(30)).toBeCloseTo(
       9.81 * (Math.sin(Math.PI / 6) - mu.value * Math.cos(Math.PI / 6)),
       9,
+    );
+  });
+
+  it("plots each reading's residual against the fit, around zero", () => {
+    const fit = fitSweep(incline, spec, record.points, "incline", "");
+    const residuals = residualPoints(record.points, fit);
+    expect(residuals).toHaveLength(record.points.length);
+    residuals.forEach((point, index) => {
+      const source = record.points[index];
+      const at = fit.curve.at(source.x);
+      expect(point.value).toBeCloseTo(source.value - at, 12);
+      expect(point.readings).toEqual(
+        source.readings.map((reading) => reading - at),
+      );
+    });
+    // The unweighted residuals the fit reports are these readings' residuals.
+    const flat = residuals.flatMap((point) => point.readings);
+    flat.forEach((value, index) =>
+      expect(value).toBeCloseTo(fit.result.residuals[index], 9),
+    );
+    const zero = residualFit(fit);
+    expect(zero.at(30)).toBe(0);
+    expect(zero.band(30)).toBe(fit.curve.band(30));
+    const excluded = {
+      ...fit,
+      excluded: { values: [record.points[0].x], reason: "" },
+    };
+    expect(residualPoints(record.points, excluded)).toHaveLength(
+      record.points.length - 1,
     );
   });
 

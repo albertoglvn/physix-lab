@@ -7,8 +7,8 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator, simulated-pulley, materials, forces-and-drag and links-and-contact-forces
-slices; each phase lists its own status. The
+oscillator, simulated-pulley, materials, forces-and-drag, links-and-contact-forces and
+run-history slices; each phase lists its own status. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
@@ -787,9 +787,31 @@ Determinism behaves as documented in §4.1.
   and 35.73249 N against 35.73187. The slack rope pulls taut at 0.78155, 0.78180 and
   0.78193 s against 0.78206, and leaves the jerk at 6.63880, 6.64146 and 6.64305 m/s
   against 6.64417, both converging at first order.
-- *Still to do in Phase 3:* run history and comparison, a residual plot, two-variable
-  grids, seeded initial-condition perturbations, and Stress sweeps with the convergence
-  study sheet.
+
+*Status, run history, comparison and residuals (done):*
+
+- Runs that reach their stop, runs kept by hand and imported runs persist in IndexedDB.
+  History is kept per experiment *name* rather than per experiment ID, because the ID
+  hashes the scene and protocol: a history per ID could only ever hold identical runs, so
+  comparing a changed mass with the original would be impossible. Each experiment keeps 30
+  runs and never drops the pinned baseline; without IndexedDB the history lives in memory.
+- Run chips in the dock overlay the baseline and chosen runs on the live plot, up to six
+  series with the live run, in the data-palette colours the live series does not use. A
+  chip names how its run's inputs differ from the current scene, such as `g 1.62` or
+  `block-1 mass 3`. Exports carry the live run, the baseline and the compared runs.
+- "Re-run and check" compares every sample and reports bit for bit, within a relative
+  tolerance of 10⁻⁹, or different, naming a sample-count change or a different Rapier
+  version. Importing an experiment uses the same check.
+- A fitted sweep draws a residual plot under the sweep plot: each reading (or clean value)
+  less the fit, about a zero line inside the fit's ±2 SE band, with the values the fit left
+  out also left out.
+- *Exit evidence, measured:* re-running each of the 14 presets from its exported JSON
+  matched bit for bit on every sample and column (40 to 601 samples, 14 to 30 columns).
+  Tests cover a nudge of 10⁻¹² (within tolerance), 0.1 (different), a NaN in one run and a
+  missing sample (different), the history's ordering, cap and single baseline, loads that
+  finish after a run is kept, and an IndexedDB round trip that keeps NaN samples.
+- *Still to do in Phase 3:* two-variable grids, seeded initial-condition perturbations, and
+  Stress sweeps with the convergence study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 
