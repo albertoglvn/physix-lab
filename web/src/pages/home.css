@@ -1,7 +1,6 @@
 @import "@fontsource/inter/latin-500.css";
 @import "@fontsource/inter/latin-600.css";
 @import "@fontsource/bricolage-grotesque/latin-600.css";
-@import "@fontsource/instrument-serif/latin-400.css";
 
 .pastoral {
   color-scheme: light;
@@ -79,50 +78,44 @@ a.pastoral-action--glass {
 .home h1,
 .home h2 {
   margin: 0;
-  font: 400 48px/1.1 var(--display);
-  letter-spacing: -0.02em;
+  font: 600 clamp(32px, 3.8vw, 48px) / 1.12 var(--px-font-wordmark);
+  letter-spacing: -0.035em;
 }
 .home-nav {
   position: fixed;
-  z-index: 20;
+  z-index: var(--px-z-topbar);
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 17px;
+  gap: 18px;
   width: max-content;
-  height: 54px;
   max-width: calc(100% - 24px);
-  padding: 0 8px 0 15px;
-  border: 1px solid color-mix(in srgb, var(--px-white) 75%, transparent);
+  min-height: 54px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--px-edge-strong) 70%, transparent);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--px-daylight) 91%, transparent);
+  background: var(--px-glass);
   backdrop-filter: blur(9px);
-  box-shadow: var(--px-shadow-photo);
-  transition:
-    background 0.25s ease,
-    color 0.25s ease,
-    border-color 0.25s ease;
+  box-shadow: var(--px-shadow-float);
 }
-.home-nav.is-landscape {
-  color: var(--px-white);
-  border-color: color-mix(in srgb, var(--px-white) 31%, transparent);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--px-home-slate) 35%, transparent),
-    color-mix(in srgb, var(--px-home-slate-2) 33%, transparent)
-  );
-}
-.home-nav-mark {
-  display: grid;
-  place-items: center;
+.home-nav-mark,
+.home-footer-wordmark {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
   flex-shrink: 0;
+  font: 600 23px/1 var(--wordmark);
+  letter-spacing: -0.035em;
+  color: var(--px-ink);
 }
 .home-nav nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 16px;
+  color: var(--px-ink-muted);
 }
 .home-nav nav a {
   white-space: nowrap;
@@ -134,146 +127,107 @@ a.pastoral-action--glass {
 .home-hero {
   position: relative;
   isolation: isolate;
-  min-height: 750px;
-  height: min(1000px, max(100svh, 58vw));
+  display: flex;
+  align-items: center;
+  min-height: clamp(550px, 43vw, 720px);
+  padding: 118px max(32px, calc((100% - 1160px) / 2)) 110px;
   overflow: hidden;
-  color: var(--px-white);
+  color: var(--px-ink);
   background: var(--px-home-hero);
 }
-.home-hero-art,
-.home-invitation > img,
-.home-horizon > img,
-.home-experiment > img {
+.home-hero-art {
   position: absolute;
+  z-index: -1;
   inset: 0;
+  pointer-events: none;
+}
+.home-hero-art img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  pointer-events: none;
+  object-position: right bottom;
 }
-.home-hero-art {
-  object-position: 53% 50%;
-}
-.home-hero::after {
+.home-hero-art::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 0;
   background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--px-home-night) 25%, transparent),
-    transparent 27%,
-    transparent 56%,
-    color-mix(in srgb, var(--px-home-forest) 20%, transparent)
+    90deg,
+    var(--px-home-hero) 0%,
+    color-mix(in srgb, var(--px-home-hero) 94%, transparent) 22%,
+    transparent 58%
   );
-  pointer-events: none;
-}
-.home-hero-identity {
-  position: absolute;
-  z-index: 1;
-  inset: 105px 0 auto;
-  width: fit-content;
-  margin-inline: auto;
-  text-align: center;
-  font: 600 29px/1.15 var(--wordmark);
-  letter-spacing: -0.04em;
-  font-variant-ligatures: none;
-  text-shadow: 0 1px 7px
-    color-mix(in srgb, var(--px-home-sky-ink) 74%, transparent);
-}
-.home-hero-identity span {
-  display: block;
-  font: 400 23px/1.2 var(--display);
-  letter-spacing: 0;
-}
-.home-hero-panel {
-  position: absolute;
-  z-index: 1;
-  bottom: clamp(40px, 9vh, 100px);
-  left: clamp(16px, 3vw, 56px);
-  width: min(500px, calc(100% - 32px));
-  display: grid;
-  justify-items: start;
-  gap: 16px;
-  padding: 32px 24px 32px 32px;
-  border: 1px solid color-mix(in srgb, var(--px-white) 27%, transparent);
-  border-radius: var(--px-radius-panel);
-  background: linear-gradient(
-    105deg,
-    color-mix(in srgb, var(--px-home-umber) 42%, transparent),
-    color-mix(in srgb, var(--px-home-umber-2) 38%, transparent)
-  );
-  backdrop-filter: blur(15px);
-  box-shadow: var(--px-shadow-photo);
 }
 .home-hero-panel h1 {
-  font-size: 40px;
-  max-width: 355px;
+  font-size: clamp(42px, 5.5vw, 76px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  max-width: 12ch;
   text-wrap: balance;
 }
 .home-hero-panel p {
-  max-width: 350px;
-  color: var(--px-white);
+  margin-top: 20px;
+  max-width: 355px;
+  color: var(--px-ink-2);
+  line-height: 1.6;
 }
-
-.home-stripes {
-  display: grid;
-  gap: 2px;
-  background: var(--px-white);
-}
-.home-stripes i {
-  height: 6px;
-}
-.home-stripes--dusk i:nth-child(1) {
-  background: var(--px-home-dusk-1);
-}
-.home-stripes--dusk i:nth-child(2) {
-  background: var(--px-home-dusk-2);
-}
-.home-stripes--dusk i:nth-child(3) {
-  background: var(--px-home-dusk-3);
-}
-.home-stripes--dusk i:nth-child(4) {
-  background: var(--px-home-dusk-4);
-}
-.home-stripes--dusk i:nth-child(5) {
-  background: var(--px-home-dusk-5);
-}
-.home-stripes--mint i:nth-child(1) {
-  background: var(--px-home-mint-1);
-}
-.home-stripes--mint i:nth-child(2) {
-  background: var(--px-home-mint-2);
-}
-.home-stripes--mint i:nth-child(3) {
-  background: var(--px-home-mint-3);
-}
-
-.home-editorial {
-  width: min(1080px, 100%);
-  margin: 0 auto;
-  padding-inline: 48px;
-}
-.home-vision {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 64px;
+.home-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding-block: clamp(95px, 13.9vw, 200px);
+  gap: 8px 18px;
+  margin-top: 22px;
 }
-.home-vision img {
-  display: block;
-  width: min(220px, 76%);
-  margin-inline: auto;
+.home-editorial {
+  width: min(1160px, 100%);
+  margin: 0 auto;
+  padding-inline: 24px;
 }
-.home-vision p {
-  color: var(--prose);
-  max-width: 330px;
-  margin-bottom: 64px;
+.home-connect {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 6vw, 72px);
+  padding-top: clamp(44px, 6vw, 84px);
+  padding-bottom: clamp(44px, 6vw, 84px);
+  border-bottom: 1px solid var(--px-rule);
+  scroll-margin-top: 76px;
+}
+.home-connect p {
+  max-width: 52ch;
+  margin-top: 16px;
+  color: var(--px-ink-muted);
+  line-height: 1.6;
+}
+.home-connect-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 16px;
+}
+.home-connect-config {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--px-edge);
+  border-radius: var(--px-radius-panel);
+  background: var(--px-wash);
+}
+.home-connect-config h3 {
+  margin: 0;
+  font: 600 20px/1.2 var(--px-font-wordmark);
+}
+.home-connect .home-connect-config p {
+  margin: 0;
 }
 .home-method {
-  padding-bottom: clamp(100px, 13.9vw, 200px);
-  scroll-margin-top: 110px;
+  padding-top: clamp(44px, 6vw, 84px);
+  padding-bottom: clamp(52px, 8vw, 106px);
+  scroll-margin-top: 76px;
 }
 .home-method > h2 {
   max-width: 680px;
@@ -285,10 +239,6 @@ a.pastoral-action--glass {
   text-decoration-color: var(--px-home-sage-rule);
   text-decoration-thickness: 1px;
   text-underline-offset: 6px;
-}
-.home-method > p {
-  color: var(--prose);
-  margin-top: 24px;
 }
 .home-method-layout {
   display: grid;
@@ -345,52 +295,11 @@ a.pastoral-action--glass {
   text-align: right;
 }
 
-.home-invitation {
-  position: relative;
-  isolation: isolate;
-  min-height: clamp(560px, 55.5vw, 800px);
-  margin: 0 24px;
-  overflow: hidden;
-  border-radius: 24px;
-  color: var(--px-white);
-  background: var(--sky);
-  box-shadow:
-    0 2px 2px color-mix(in srgb, var(--px-black) 6%, transparent),
-    0 0 0 5px color-mix(in srgb, var(--px-black) 4%, transparent);
-}
-.home-invitation > img {
-  object-position: 63% center;
-}
-.home-invitation::after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  background: linear-gradient(
-    110deg,
-    color-mix(in srgb, var(--px-home-sky-deep) 53%, transparent) 1%,
-    color-mix(in srgb, var(--px-home-sky-mid) 26%, transparent) 38%,
-    transparent 61%
-  );
-}
-.home-invitation > div {
-  position: relative;
-  z-index: 1;
-  padding: 128px 80px 80px;
-}
-.home-invitation h2 {
-  font-size: 54px;
-}
-.home-invitation p {
-  margin: 24px 0 15px;
-  max-width: 315px;
-}
-
 .home-experiments {
   width: min(1280px, 100%);
   margin-inline: auto;
-  padding: clamp(100px, 13.9vw, 200px) 20px;
-  scroll-margin-top: -40px;
+  padding: clamp(52px, 8vw, 106px) 20px;
+  scroll-margin-top: 76px;
 }
 .home-section-heading {
   display: flex;
@@ -405,44 +314,41 @@ a.pastoral-action--glass {
   gap: 24px;
 }
 .home-experiment {
-  position: relative;
-  isolation: isolate;
   display: grid;
-  align-items: end;
-  overflow: hidden;
-  aspect-ratio: 8 / 7;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--px-edge);
   border-radius: var(--px-radius-panel);
-  background: var(--px-home-meadow);
+  background: var(--px-daylight);
 }
 .home-experiment img {
-  object-position: center 42%;
-  transition: transform 0.3s ease;
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1.55;
+  object-fit: cover;
+  background: var(--px-wash);
 }
 .home-experiment:hover {
+  border-color: var(--px-edge-strong);
   text-decoration: none;
 }
-.home-experiment:hover img {
-  transform: scale(1.035);
+.home-experiment:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 .home-experiment-caption {
-  position: relative;
   display: grid;
   gap: 5px;
-  margin: 0 clamp(14px, 2.7vw, 40px) 24px;
-  padding: 18px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--px-white) 87%, transparent);
-  backdrop-filter: blur(10px);
-  text-align: center;
+  padding: 14px 16px 17px;
 }
 .home-experiment-caption strong {
-  font-size: 17px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
 }
 .home-experiment-caption > span {
-  font-size: 13px;
   color: var(--px-ink-muted);
+  font-size: 13px;
 }
 
 .home-footer {
@@ -456,8 +362,9 @@ a.pastoral-action--glass {
   text-align: center;
   gap: 22px;
 }
-.home-footer-intro > svg {
-  color: var(--px-ink-icon);
+.home-footer-intro p {
+  max-width: 48ch;
+  color: var(--px-ink-muted);
 }
 .home-utilities {
   display: flex;
@@ -475,153 +382,111 @@ a.pastoral-action--glass {
   flex-wrap: wrap;
   gap: 16px;
 }
-.home-footer-wordmark {
-  font: 600 23px/1 var(--wordmark);
-  letter-spacing: -0.035em;
-}
-.home-horizon {
-  height: 500px;
-  position: relative;
-  overflow: hidden;
-  background: var(--px-home-horizon);
-}
-.home-horizon img {
-  object-position: center 55%;
-}
-.home-horizon::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    transparent 75%,
-    color-mix(in srgb, var(--px-black) 53%, transparent)
-  );
-}
-
-@media (max-width: 850px) {
+@media (max-width: 860px) {
   .home-hero {
-    min-height: 640px;
-  }
-  .home-editorial {
-    padding-inline: 32px;
-  }
-  .home-method-layout {
-    gap: 24px;
-  }
-  .home-invitation > div {
-    padding: 86px 48px;
-  }
-  .home-experiment-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-  }
-}
-
-@media (max-width: 600px) {
-  .home h1,
-  .home h2 {
-    font-size: 36px;
-  }
-  .home-nav {
-    top: 10px;
-    justify-content: space-between;
-    width: calc(100% - 20px);
-    max-width: none;
-    gap: 8px;
-    padding-left: 10px;
-  }
-  .home-nav nav {
-    gap: 10px;
-    font-size: 12px;
-  }
-  .home-nav .pastoral-action {
-    font-size: 13px;
-    padding-inline: 10px;
-  }
-  .home-nav nav a:first-child {
-    display: none;
-  }
-  .home-hero {
-    min-height: 620px;
-    height: 92svh;
+    align-items: flex-start;
+    min-height: 0;
+    padding: 112px 24px clamp(208px, 37vw, 330px);
   }
   .home-hero-art {
-    object-position: 58% 50%;
+    top: auto;
+    height: clamp(240px, 47vw, 410px);
   }
-  .home-hero-identity {
-    top: 97px;
+  .home-hero-art img {
+    object-position: 78% bottom;
   }
-  .home-hero-panel {
-    bottom: 24px;
-    padding: 20px;
+  .home-hero-art::after {
+    background: linear-gradient(var(--px-home-hero), transparent 40%);
   }
   .home-hero-panel h1 {
-    max-width: 290px;
+    font-size: clamp(40px, 9.5vw, 62px);
   }
+  .home-hero-panel p {
+    margin-top: 14px;
+  }
+  .home-hero-actions {
+    margin-top: 14px;
+  }
+}
+@media (max-width: 700px) {
   .home-editorial {
-    padding-inline: 20px;
+    padding-inline: 16px;
   }
-  .home-vision {
-    grid-template-columns: 1fr;
-    gap: 28px;
-    padding-block: 76px 96px;
-  }
-  .home-vision img {
-    width: 125px;
-  }
-  .home-vision p {
-    margin-bottom: 24px;
+  .home-connect {
+    grid-template-columns: minmax(0, 1fr);
   }
   .home-method-layout {
     grid-template-columns: 1fr;
-    gap: 15px;
-    margin-top: 28px;
+    gap: 14px;
   }
   .home-method-description {
-    min-height: 60px;
-    max-width: 360px;
-  }
-  .home-diagram-tray {
-    padding: 10px;
-  }
-  .home-invitation {
-    margin-inline: 12px;
-    min-height: 515px;
-  }
-  .home-invitation > div {
-    padding: 48px 20px;
-  }
-  .home-invitation > img {
-    object-position: 72% center;
-  }
-  .home-invitation::after {
-    background: linear-gradient(
-      155deg,
-      color-mix(in srgb, var(--px-home-sky-deep) 66%, transparent) 1%,
-      color-mix(in srgb, var(--px-home-sky-deep) 16%, transparent) 55%,
-      transparent
-    );
+    min-height: auto;
+    max-width: 38ch;
   }
   .home-experiments {
-    scroll-margin-top: -12px;
+    padding-inline: 16px;
+  }
+  .home-experiment-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
   .home-section-heading {
     align-items: start;
     flex-direction: column;
-    gap: 4px;
-    margin-bottom: 24px;
+    gap: 6px;
   }
-  .home-experiment-grid {
-    grid-template-columns: 1fr;
+}
+@media (max-width: 680px) {
+  .home-nav {
+    top: 10px;
+    display: grid;
+    reading-flow: grid-rows;
+    grid-template-columns: 1fr auto;
+    gap: 0 12px;
+    width: min(380px, calc(100% - 24px));
+    padding: 3px 8px 0 12px;
   }
-  .home-experiment {
-    max-height: 360px;
+  .home-nav-mark {
+    width: fit-content;
+    min-height: 44px;
+    font-size: 20px;
   }
-  .home-footer-intro {
-    padding-block: 70px 52px;
+  .home-nav-mark .physix-mark {
+    width: 20px;
+    height: 20px;
   }
-  .home-horizon img {
-    object-position: 52% center;
+  .home-nav nav {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 8px;
+    padding-inline: 4px;
+    border-top: 1px solid var(--px-rule);
+    font-size: 13px;
+  }
+  .home-nav nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .home-nav > .pastoral-action {
+    grid-row: 1;
+    grid-column: 2;
+    min-height: 44px;
+    padding-inline: 10px;
+    font-size: 13px;
+  }
+  .home-hero {
+    padding: 137px 20px 208px;
+  }
+  .home-hero-actions .pastoral-action {
+    min-height: 44px;
+  }
+  .home-connect,
+  .home-method,
+  .home-experiments,
+  .home-stress.home-editorial {
+    scroll-margin-top: 112px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

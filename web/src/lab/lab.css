@@ -47,7 +47,7 @@
 .lab-brand:hover {
   text-decoration: none;
 }
-.lab-brand svg {
+.lab-brand .physix-mark {
   width: 20px;
   height: 20px;
 }
@@ -238,6 +238,12 @@
 }
 .lab-viewport canvas:active {
   cursor: grabbing;
+}
+.lab-viewport canvas[data-dragging="true"] {
+  cursor: move;
+}
+.lab-viewport canvas:focus-visible {
+  outline-offset: -3px;
 }
 .lab-viewport-error {
   display: grid;
@@ -867,7 +873,13 @@
     max-height: 60%;
   }
   .lab-hint {
-    display: none;
+    font-size: 11px;
+  }
+  .lab-hud {
+    flex-wrap: wrap;
+  }
+  .lab-hud .lab-hint {
+    flex-basis: fit-content;
   }
   .lab-keys > div {
     grid-template-columns: 1fr;

@@ -117,7 +117,7 @@
   overflow-wrap: anywhere;
 }
 .lab-model-card .card-section h2 {
-  font: 400 22px/1.1 var(--display);
+  font: 600 22px/1.15 var(--px-font-wordmark);
 }
 .lab-model-card .card-section > p {
   margin-bottom: 10px;

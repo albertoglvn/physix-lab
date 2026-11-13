@@ -11,6 +11,7 @@ import {
   GitCommitVertical,
   Home,
   Info,
+  ArrowUpDown,
   Keyboard,
   LayoutTemplate,
   ListTree,
@@ -44,6 +45,7 @@ import {
   limits,
   makeObject,
   makeScene,
+  movePart,
   materialNames,
   MATERIALS,
   withMaterial,
@@ -57,6 +59,7 @@ import {
   type LabObject,
   type LabScene,
   type Preset,
+  type PartMove,
   type Ramp,
 } from "../scene";
 import { createSimulation, TIME_STEP, type Simulation } from "../simulation";
@@ -799,6 +802,7 @@ export function MotionStudy({
   );
   const [revision, setRevision] = useState(0);
   const [viewRevision, setViewRevision] = useState(0);
+  const [axis, setAxis] = useState<"plane" | "height">("plane");
   const [runtime, setRuntime] = useState<Runtime>();
   const [running, setRunning] = useState(false);
   const [clock, setClock] = useState<{
@@ -830,6 +834,8 @@ export function MotionStudy({
   const simulation = current?.simulation;
   const object = scene.objects.find((part) => part.id === selected);
   const time = clock && clock.simulation === simulation ? clock.time : 0;
+  const canPlace = active && !running && time === 0;
+  const canLift = object?.kind !== "ramp" && object?.kind !== "pulley";
   const select = useCallback((id: string | null) => setSelected(id), []);
   const protocol = useMemo(
     () => protocolFor(scene, protocolChoice),
@@ -840,6 +846,8 @@ export function MotionStudy({
       ? record
       : undefined;
   const recorded = result?.run;
+  const preparingRun = !result;
+  const readyToRun = !!simulation && !!recorded;
   const stopTick = recorded
     ? Math.round(recorded.stop.t / TIME_STEP)
     : undefined;
@@ -857,19 +865,19 @@ export function MotionStudy({
   const stepCheck = check && check.runId === recorded?.id ? check : undefined;
 
   useEffect(() => {
-    let cancelled = false;
-    runProtocol(scene, protocol).then(
+    if (!active) return;
+    const controller = new AbortController();
+    runProtocol(scene, protocol, { signal: controller.signal }).then(
       (run) => {
-        if (!cancelled) setRecord({ scene, protocol, run });
+        if (!controller.signal.aborted) setRecord({ scene, protocol, run });
       },
       (error: unknown) => {
-        if (!cancelled) setRecord({ scene, protocol, error: message(error) });
+        if (!controller.signal.aborted)
+          setRecord({ scene, protocol, error: message(error) });
       },
     );
-    return () => {
-      cancelled = true;
-    };
-  }, [scene, protocol]);
+    return () => controller.abort();
+  }, [active, scene, protocol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -957,6 +965,12 @@ export function MotionStudy({
     apply(replaceObject(scene, next));
   }
 
+  function moveObject(id: string, offset: PartMove) {
+    if (!canPlace) return;
+    const next = movePart(scene, id, offset);
+    if (next !== scene) apply(next, id);
+  }
+
   function placeOnRamp(ramp: Ramp) {
     if (!object || !isBody(object)) return;
     const placed = findRampPlacement(object, ramp, scene.objects);
@@ -1006,7 +1020,7 @@ export function MotionStudy({
   }
 
   function run() {
-    if (!simulation) return;
+    if (!simulation || !readyToRun) return;
     if (stopped && !running) {
       // Replay: a fresh simulation from the starting state, running as soon as it loads.
       setRevision((value) => value + 1);
@@ -1018,7 +1032,7 @@ export function MotionStudy({
   }
 
   function advance() {
-    if (!simulation || running || stopped) return;
+    if (!simulation || !readyToRun || running || stopped) return;
     simulation.step();
     setClock({ simulation, time: simulation.time });
   }
@@ -1157,13 +1171,14 @@ export function MotionStudy({
     redo,
   });
 
-  const engine: { value: string; tone: StatusTone } = current?.error
-    ? { value: "Unavailable", tone: "bad" }
-    : !simulation
-      ? { value: "Loading", tone: "busy" }
-      : running
-        ? { value: "Running", tone: "ok" }
-        : { value: time > 0 ? "Paused" : "Ready", tone: "idle" };
+  const engine: { value: string; tone: StatusTone } =
+    current?.error || result?.error
+      ? { value: "Unavailable", tone: "bad" }
+      : !simulation || preparingRun
+        ? { value: "Loading", tone: "busy" }
+        : running
+          ? { value: "Running", tone: "ok" }
+          : { value: time > 0 ? "Paused" : "Ready", tone: "idle" };
   const readings = measure(scene, object, simulation, time);
   const ramps = scene.objects.filter((part) => part.kind === "ramp");
   const full = scene.objects.length >= OBJECT_LIMIT;
@@ -1344,7 +1359,7 @@ export function MotionStudy({
             type="button"
             className="lab-button lab-button--dark lab-run"
             onClick={run}
-            disabled={!simulation}
+            disabled={!readyToRun}
             title={
               stopped && !running
                 ? "Replay from the start (Space)"
@@ -1364,7 +1379,7 @@ export function MotionStudy({
             type="button"
             className="lab-button lab-secondary"
             onClick={advance}
-            disabled={!simulation || running || stopped}
+            disabled={!readyToRun || running || stopped}
             title="Step 1/120 s (.)"
           >
             <SkipForward size={15} aria-hidden="true" />
@@ -1625,6 +1640,11 @@ export function MotionStudy({
         simulation={simulation}
         selected={selected}
         onSelect={select}
+        onMove={moveObject}
+        active={active}
+        running={running}
+        editable={canPlace}
+        axis={canLift ? axis : "plane"}
         viewRevision={viewRevision}
       />
       <div className="lab-hud">
@@ -1637,7 +1657,31 @@ export function MotionStudy({
         >
           <Focus size={16} aria-hidden="true" />
         </button>
-        <span className="lab-hint">Drag to orbit · Scroll to zoom</span>
+        <button
+          type="button"
+          className="lab-button lab-hud-button"
+          aria-pressed={axis === "height" && canLift}
+          disabled={!canPlace || !canLift}
+          title="Switch between floor movement and height adjustment"
+          onClick={() =>
+            setAxis((value) => (value === "plane" ? "height" : "plane"))
+          }
+        >
+          <ArrowUpDown size={15} aria-hidden="true" />
+          Height
+        </button>
+        <span id="motion-viewport-help" className="lab-hint">
+          {canPlace
+            ? axis === "height" && canLift
+              ? "Drag up or down to change height."
+              : "Drag a part to move it. Drag empty space to orbit."
+            : "Reset the run to move parts."}
+          <span className="px-visually-hidden">
+            Select a part and focus this view. Arrow keys move it across the
+            floor. Page Up or Page Down adjusts height. Hold Shift for larger
+            steps.
+          </span>
+        </span>
       </div>
 
       <FloatingPanel

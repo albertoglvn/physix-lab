@@ -2,7 +2,7 @@
   "name": "physix",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @physix/web run build --mode sites --outDir ../dist --emptyOutDir"
+    "build": "pnpm --filter @physix/web run build --mode sites --outDir ../dist/client --emptyOutDir && node scripts/build_sites_worker.mjs"
   },
   "packageManager": "pnpm@11.25.0",
   "engines": {

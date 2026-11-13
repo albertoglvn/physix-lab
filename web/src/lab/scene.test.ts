@@ -12,6 +12,7 @@ import {
   makeObject,
   MATERIALS,
   makeScene,
+  movePart,
   OBJECT_LIMIT,
   parseScene,
   rampHeight,
@@ -25,6 +26,36 @@ import {
 } from "./scene";
 
 describe("mechanics scene contract", () => {
+  it("moves a ramp and its placed body together within the scene bounds", () => {
+    const original = makeScene("incline");
+    const [ramp, body] = original.objects;
+    const result = movePart(original, ramp.id, { x: 25, y: 3, z: -4 });
+    const [movedRamp, movedBody] = result.objects;
+    expect(movedRamp.x).toBe(20);
+    expect(movedBody.x - movedRamp.x).toBeCloseTo(body.x - ramp.x);
+    expect(movedBody.z).toBe(body.z - 4);
+    expect(parseScene(result)).toEqual(result);
+    expect(original.objects[0].x).toBe(0);
+    expect(movePart(result, ramp.id, { x: 1, y: 0, z: 0 })).toBe(result);
+  });
+
+  it("lifts bodies and pendulum pivots without changing launch settings", () => {
+    const projectile = makeScene("projectile");
+    const body = projectile.objects[0];
+    const raised = movePart(projectile, body.id, { x: 0, y: 100, z: 0 });
+    expect(raised.objects[0]).toEqual({ ...body, y: 20 });
+    expect(movePart(raised, body.id, { x: 0, y: 1, z: 0 })).toBe(raised);
+    expect(movePart(projectile, body.id, { x: NaN, y: 0, z: 0 })).toBe(
+      projectile,
+    );
+    const pendulum = makeScene("pendulum");
+    const pivot = pendulum.objects[0] as Pendulum;
+    const lowered = movePart(pendulum, pivot.id, { x: 0, y: -20, z: 0 });
+    expect((lowered.objects[0] as Pendulum).pivotHeight).toBeCloseTo(
+      pivot.length + pivot.bobRadius + 0.05,
+    );
+    expect(parseScene(lowered)).toEqual(lowered);
+  });
   it.each<Preset>([
     "incline",
     "friction",

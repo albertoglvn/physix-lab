@@ -1,32 +1,34 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Action, PhysixMark } from "../ui/pastoral";
+import { ChatGPTConnect } from "./ChatGPTConnect";
 import { StressSampler } from "../ui/StressSampler";
-import campus from "../assets/pastoral/campus.webp";
-import sunflowers from "../assets/pastoral/sunflowers.webp";
-import horizon from "../assets/pastoral/horizon.webp";
-import incline from "../assets/pastoral/incline.webp";
-import friction from "../assets/pastoral/friction.webp";
-import pulley from "../assets/pastoral/pulley.webp";
-import specimen from "../assets/pastoral/specimen.svg";
+import apparatus from "../assets/studio/halftone-1920.webp";
+import apparatusCompact from "../assets/studio/halftone-1040.webp";
+import incline from "../assets/studio/incline.webp";
+import friction from "../assets/studio/friction.webp";
+import pulley from "../assets/studio/pulley.webp";
 import "./home.css";
 
 const chapters = [
   {
     name: "Build",
-    text: "Start with a block, a ramp, or a pulley. Place the parts in 3D and set the starting conditions.",
+    text: "Add a block, ramp, or pulley. Drag it into position and set its starting conditions.",
     caption: "Parts and initial conditions",
   },
   {
     name: "Run",
-    text: "Press play or advance one step at a time. Change gravity, friction, or mass to isolate a variable.",
+    text: "Run the scene or step through it. Change one input, such as friction, and run it again.",
     caption: "Motion and interactions",
   },
   {
     name: "Measure",
-    text: "Read the motion as it happens. Export the scene as JSON so a classmate or an agent can run the same setup.",
-    caption: "Measurements and a reusable scene",
+    text: "Read the plot as the experiment runs. Export Scene JSON to share the setup or ask your agent to change it.",
+    caption: "Motion over time",
   },
 ];
+
+const connectHref =
+  import.meta.env.MODE === "sites" ? "/connect/start" : "#/connect";
 
 const experiments = [
   {
@@ -137,23 +139,11 @@ function Schematic({ step }: { step: number }) {
 }
 
 export function Home({ route }: { route: string }) {
-  const hero = useRef<HTMLElement>(null);
-  const [overHero, setOverHero] = useState(true);
   const [step, setStep] = useState(0);
 
   useEffect(() => {
-    const target = hero.current;
-    if (!target) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setOverHero(entry.isIntersecting),
-      { rootMargin: "-75px 0px 0px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
     if (
+      route !== "/connect" &&
       route !== "/experiments" &&
       route !== "/how-it-works" &&
       route !== "/stress-tools"
@@ -167,65 +157,52 @@ export function Home({ route }: { route: string }) {
 
   return (
     <div className="pastoral home">
-      <header className={`home-nav${overHero ? " is-landscape" : ""}`}>
+      <header className="home-nav">
         <a href="#/" className="home-nav-mark" aria-label="Physix home">
           <PhysixMark />
+          <span>Physix</span>
         </a>
         <nav aria-label="Main navigation">
           <a href="#/how-it-works">How it works</a>
           <a href="#/experiments">Experiments</a>
           <a href="#/stress-tools">Stress tools</a>
         </nav>
-        <Action href="#/lab">Open lab</Action>
+        <Action href={connectHref} target="_top">
+          Connect your agent
+        </Action>
       </header>
 
       <main>
-        <section className="home-hero" ref={hero} aria-labelledby="home-title">
-          <img
-            className="home-hero-art"
-            src={campus}
-            alt=""
-            fetchPriority="high"
-          />
-          <div className="home-hero-identity">
-            Physix<span>A physics playground</span>
-          </div>
+        <section className="home-hero" aria-labelledby="home-title">
+          <picture className="home-hero-art" aria-hidden="true">
+            <source media="(max-width: 860px)" srcSet={apparatusCompact} />
+            <img
+              src={apparatus}
+              alt=""
+              width={1920}
+              height={640}
+              fetchPriority="high"
+            />
+          </picture>
           <div className="home-hero-panel">
-            <h1 id="home-title">Put physics to the test.</h1>
+            <h1 id="home-title">A physics lab for your agent.</h1>
             <p>
-              Build 3D experiments or explore how plates and brackets respond to
-              loads. A browser lab for university physics.
+              Connect Physix to your AI agent to test how plates and brackets
+              respond to loads. Open the browser lab to build and run 3D
+              mechanics experiments.
             </p>
-            <Action href="#/lab" variant="text">
-              Enter the lab
-            </Action>
+            <div className="home-hero-actions">
+              <Action href={connectHref} target="_top">
+                Connect your agent
+              </Action>
+              <Action href="#/lab" variant="text">
+                Open the lab
+              </Action>
+            </div>
           </div>
         </section>
-        <div className="home-stripes home-stripes--dusk" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-        </div>
 
-        <section
-          className="home-vision home-editorial"
-          aria-labelledby="vision-title"
-        >
-          <img src={specimen} alt="" loading="lazy" />
-          <div>
-            <p>
-              A free afternoon in the lab can change how a topic clicks. Physix
-              gives you a bench to come back to, wherever you study.
-            </p>
-            <h2 id="vision-title">
-              Make a prediction.
-              <br />
-              Then give it a push.
-            </h2>
-          </div>
-        </section>
+        <ChatGPTConnect />
 
         <section
           className="home-method home-editorial"
@@ -233,9 +210,8 @@ export function Home({ route }: { route: string }) {
           aria-labelledby="method-title"
         >
           <h2 id="method-title">
-            From a few parts to a <em>repeatable experiment.</em>
+            Build a scene. <em>Run the experiment.</em>
           </h2>
-          <p>Assemble the apparatus, run it, and read the motion.</p>
           <div className="home-method-layout">
             <div>
               <div className="home-method-tabs" aria-label="Experiment steps">
@@ -261,33 +237,15 @@ export function Home({ route }: { route: string }) {
           </div>
         </section>
 
-        <section className="home-invitation" aria-labelledby="invitation-title">
-          <img src={sunflowers} alt="" loading="lazy" />
-          <div>
-            <h2 id="invitation-title">
-              What happens if
-              <br />
-              you change one thing?
-            </h2>
-            <p>
-              Start with a ready-to-run experiment or build your own from an
-              empty scene.
-            </p>
-            <Action href="#/lab?study=motion&template=blank" variant="glass">
-              Build an experiment
-            </Action>
-          </div>
-        </section>
-
         <section
           className="home-experiments"
           id="experiments"
           aria-labelledby="experiments-title"
         >
           <div className="home-section-heading">
-            <h2 id="experiments-title">Experiments to try</h2>
-            <Action href="#/lab" variant="text">
-              Browse in the lab
+            <h2 id="experiments-title">Start with a mechanics experiment</h2>
+            <Action href="#/lab?study=motion&template=blank" variant="text">
+              Open a blank scene
             </Action>
           </div>
           <div className="home-experiment-grid">
@@ -297,7 +255,14 @@ export function Home({ route }: { route: string }) {
                 className="home-experiment"
                 href={`#/lab?study=motion&template=${experiment.id}`}
               >
-                <img src={experiment.image} alt="" loading="lazy" />
+                <img
+                  src={experiment.image}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width={600}
+                  height={600}
+                />
                 <span className="home-experiment-caption">
                   <strong>{experiment.title}</strong>
                   <span>{experiment.subject}</span>
@@ -311,33 +276,25 @@ export function Home({ route }: { route: string }) {
 
       <footer className="home-footer">
         <div className="home-footer-intro">
-          <PhysixMark />
-          <h2>
-            Bring a question.
-            <br />
-            See where it goes.
-          </h2>
-          <Action href="#/lab" variant="text">
-            Open the physics lab
+          <h2>Bring a mechanics problem to your agent</h2>
+          <p>
+            Export a template from Scene JSON. Ask your agent to edit the{" "}
+            <code>physix.lab/2</code> file, then load it to run the new setup.
+          </p>
+          <Action href="#/lab?study=motion&template=blank" variant="text">
+            Open the mechanics lab
           </Action>
         </div>
         <div className="home-utilities">
           <a className="home-footer-wordmark" href="#/">
-            Physix
+            <PhysixMark />
+            <span>Physix</span>
           </a>
           <nav aria-label="Footer navigation">
             <a href="#/experiments">Experiments</a>
             <a href="#/stress-tools">Stress tools</a>
             <a href="#/lab?study=stress&sheet=model">Model card</a>
           </nav>
-        </div>
-        <div className="home-stripes home-stripes--mint" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="home-horizon">
-          <img src={horizon} alt="" loading="lazy" />
         </div>
       </footer>
     </div>

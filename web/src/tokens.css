@@ -103,7 +103,7 @@
   --px-part-coil: #4f6a7d;
 
   /* Home illustrations and photography overlays */
-  --px-home-hero: #2679a2;
+  --px-home-hero: #f5eedc;
   --px-home-sky-deep: #003a61;
   --px-home-sky-mid: #00476b;
   --px-home-sky-ink: #16374f;
@@ -155,7 +155,6 @@
   --px-z-palette: 70;
 
   /* Type */
-  --px-font-display: "Instrument Serif", Georgia, serif;
   --px-font-wordmark: "Bricolage Grotesque", Inter, Arial, sans-serif;
   --px-font-copy: Inter, Arial, sans-serif;
   --px-font-mono:
@@ -188,7 +187,6 @@
   --prose: var(--px-prose);
   --rule: var(--px-editorial-rule);
   --sky: var(--px-sky);
-  --display: var(--px-font-display);
   --wordmark: var(--px-font-wordmark);
   --copy: var(--px-font-copy);
   color-scheme: light;

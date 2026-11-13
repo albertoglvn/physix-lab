@@ -550,6 +550,80 @@ export function replaceObject(scene: LabScene, next: LabObject): LabScene {
   return { ...scene, objects };
 }
 
+export type PartMove = { x: number; y: number; z: number };
+
+/** Applies a world-space translation to the starting scene, including bodies on a ramp. */
+export function movePart(
+  scene: LabScene,
+  id: string,
+  offset: PartMove,
+): LabScene {
+  const object = scene.objects.find((part) => part.id === id);
+  if (!object || ![offset.x, offset.y, offset.z].every(Number.isFinite))
+    return scene;
+  const moving =
+    object.kind === "ramp"
+      ? [
+          object,
+          ...scene.objects.filter(
+            (part) => isBody(part) && rampPlacement(part, object),
+          ),
+        ]
+      : [object];
+  const [min, max] = limits.position;
+  const clamp = (value: number, lower: number, upper: number) =>
+    Math.max(lower, Math.min(upper, value));
+  const bounded = (axis: "x" | "z") => {
+    const values = moving.map((part) => part[axis]);
+    return clamp(
+      offset[axis],
+      min - Math.min(...values),
+      max - Math.max(...values),
+    );
+  };
+  const x = object.x + bounded("x");
+  const z = object.z + bounded("z");
+  const planarMove = x !== object.x || z !== object.z;
+  let next: LabObject;
+  if (isBody(object)) {
+    const y = clamp(object.y + offset.y, limits.height[0], limits.height[1]);
+    if (!planarMove && y === object.y) return scene;
+    next = { ...object, x, y, z };
+  } else if (object.kind === "pendulum" || object.kind === "spring") {
+    const height =
+      object.kind === "pendulum" ? object.pivotHeight : object.anchorHeight;
+    const floorClearance =
+      object.kind === "pendulum"
+        ? object.length + object.bobRadius
+        : object.restLength +
+          springSag(object, scene.gravity) +
+          object.size +
+          Math.abs(object.offset);
+    const minimum = Math.max(
+      limits.pivotHeight[0],
+      floorClearance + 0.050000001,
+    );
+    // Imported scenes may intentionally contain an oscillator that touches the floor.
+    const moved =
+      offset.y === 0
+        ? height
+        : clamp(
+            height + offset.y,
+            Math.min(height, minimum),
+            limits.pivotHeight[1],
+          );
+    if (!planarMove && moved === height) return scene;
+    next =
+      object.kind === "pendulum"
+        ? { ...object, x, z, pivotHeight: moved }
+        : { ...object, x, z, anchorHeight: moved };
+  } else {
+    if (!planarMove) return scene;
+    next = { ...object, x, z };
+  }
+  return replaceObject(scene, next);
+}
+
 export function makeScene(preset: Preset): LabScene {
   const scene: LabScene = {
     version: SCENE_VERSION,

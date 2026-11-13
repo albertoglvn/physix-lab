@@ -1,12 +1,12 @@
 # Physix design system
 
-This document records the Physix visual language, the pastoral style used by the home page,
-the lab and the stress views, and the rules for the single-lab workspace described in
+This document records the Physix visual language for the home page, the lab and the stress
+views, and the rules for the single-lab workspace described in
 [LAB_PLAN.md](LAB_PLAN.md). It is the reference for every UI change in `web/`.
 
-The style is calm, light and precise: a daylight background, green-grey ink, thin rules,
-generous radii and dense, well-aligned numbers. The lab should look like a well-kept
-instrument, not a dashboard.
+The style is calm, light and precise. Use a daylight background, green-grey ink, thin rules,
+generous radii and well-aligned numbers. Editorial studio photography shows simple apparatus
+in soft daylight. Oak, sage, and brass give the home page the warmth of a university lab.
 
 ---
 
@@ -33,7 +33,7 @@ Canvas and three.js code read tokens through `getComputedStyle`; see
 `web/src/lab/viewportPalette.ts`.
 
 `tokens.css` also keeps the legacy aliases (`--bg`, `--panel`, `--line`, `--text`, `--muted`,
-`--accent`, `--display`, `--copy` and others) that `styles.css` and the home page use. New
+`--accent`, `--copy` and others) that `styles.css` and the home page use. New
 code uses the `--px-*` names.
 
 ### 2.1 Surfaces and ink
@@ -140,10 +140,19 @@ From Phase 2, bodies take series colours in creation order so that a body's plot
 matches its 3D colour, and velocity vectors use the body colour while forces use `--px-ink`
 with labelled arrowheads.
 
-### 2.7 Home page and illustrations
+### 2.7 Home page imagery and navigation
 
-The `--px-home-*` group holds the landscape, stripe and overlay colours of the home page,
-and `--px-logo-low|mid|high` holds the logo gradient. They are not used in the lab.
+Use the pine-green P and brass block as the Physix mark in the home navigation, footer
+and lab top bar. Pair it with the Physix wordmark where there is space. The favicon uses
+the same mark on a light tile so the shape reads against light and dark browser chrome.
+
+Lead with a clear lab link, a short description of what students can do, and a full-width
+halftone illustration of apparatus in warm paper, sage, deep green and brass. Keep the
+headline and actions on the quiet part of the illustration. Use a compact, floating top
+bar, with two rows on small screens so all navigation links remain available. Use separate
+wide and compact WebP crops for the hero and lazy load the experiment card photographs.
+Keep the cards linked directly to their templates. Stress examples use actual scikit-fem
+results with their own labelled scales.
 `--px-mesh-line` is the stroke for FEM mesh previews drawn on a canvas.
 
 ---
@@ -152,16 +161,14 @@ and `--px-logo-low|mid|high` holds the logo gradient. They are not used in the l
 
 | Role | Family | Size and weight | Use |
 | --- | --- | --- | --- |
-| Display | Instrument Serif 400 | 44–72 px | Home page headlines only |
-| Wordmark and titles | Bricolage Grotesque 600 | 18–43 px | Brand, experiment name, sheet titles |
+| Wordmark and titles | Bricolage Grotesque 600 | 18–68 px | Home page headlines, brand, experiment name, sheet titles |
 | UI | Inter 500 and 600 | 13 px controls, 12 px labels, 11 px captions | Everything in the lab |
 | Numbers | Inter 500 with `font-variant-numeric: tabular-nums` | Same as context | Readouts, tables, axes |
 
 - Letter spacing is `-0.01em` for body text and `-0.02em` for titles.
 - Numbers default to three significant figures. Units follow in `--px-ink-muted` at 0.85 em
   after a thin space, for example `3.18 m/s`.
-- Do not add another typeface. A monospace stack (`ui-monospace, "Cascadia Mono", Menlo,
-  monospace`) is allowed only in the Scene JSON editor.
+- Use the monospace stack for code samples and editors.
 
 ---
 
@@ -209,7 +216,7 @@ diagram.
 | Region | Rules |
 | --- | --- |
 | Top bar | 48 px high, `--px-daylight` with a bottom `--px-rule`. Left: mark and editable name. Centre: Study switch and transport. Right: three status dots and the ⋯ menu. No other buttons. |
-| Parts rail | 48 px wide, floating 12 px from the left edge, vertically centred. Icon buttons only, each with a tooltip and a shortcut. |
+| Parts rail | 78 px wide at the left. Show a short label with each icon. On compact screens use the same labels in a bottom toolbar. |
 | Inspector | 280 px wide, floating 12 px from the right edge and below the top bar. It scrolls internally and collapses to a 28 px edge tab. Groups are collapsible and remember their state. |
 | Data dock | Full width minus 12 px gutters, floating 12 px above the bottom edge. Collapsed height is 36 px (one readout line). Expanded height ranges from 200 px to 60 vh. |
 | HUD | Axes gizmo bottom-left, scale bar bottom-centre, colour bar right of centre (Stress), provenance chip top-left under the bar. HUD items move clear of the open panels. |
@@ -222,6 +229,17 @@ diagram.
 - Opening one flyout closes any other flyout. The Inspector and dock can stay open together.
 - `\` hides all chrome except the top bar ("focus viewport"), and pressing it again restores
   the previous layout.
+
+### Positioning parts
+
+- At the start of a Motion experiment, drag a part across the X–Z plane. Drag empty space to
+  orbit. The Height toggle changes the release height of free bodies or the anchor of an
+  oscillator. Ramps and pulleys stay on the floor.
+- Highlight the part under edit. Show the move as a preview, commit it on release, and keep
+  it as one undo step. Escape cancels the preview. Reset a run before moving its starting parts.
+- With the viewport focused, arrows move the selected part by 0.1 m and Page Up or Page Down
+  changes height. Shift increases the increment to 1 m. The Outline and numeric inspector
+  provide another way to select and position each part.
 
 ### Breakpoints
 
@@ -257,6 +275,9 @@ diagram.
 ---
 
 ## 7. Copy and density
+
+Use [COPYWRITING.md](COPYWRITING.md) for product positioning, homepage copy, interface
+wording and engineering claims.
 
 - Use sentence case everywhere, except proper names and units.
 - Headings in panels use two words at most, for example "Initial state" or "Probes".

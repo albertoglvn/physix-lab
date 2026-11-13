@@ -131,6 +131,10 @@ The Python targets accept `ARGS="..."`; pass `--help` for options.
 
 ### Connect an agent
 
+For the hosted ChatGPT plugin and its supported stress experiments, see
+[Connect Physix to ChatGPT](docs/CHATGPT.md). The following configuration starts the
+local MCP server for a client that supports stdio.
+
 ```json
 {
   "mcpServers": {

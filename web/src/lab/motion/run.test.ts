@@ -17,6 +17,23 @@ import {
 import { referencesFor } from "./theory";
 
 describe("headless motion runs", () => {
+  it("cancels a browser preview without changing the result of a completed preview", async () => {
+    const scene = makeScene("incline");
+    const protocol = defaultProtocol(scene);
+    const controller = new AbortController();
+    const abandoned = runProtocol(scene, protocol, {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(abandoned).rejects.toMatchObject({ name: "AbortError" });
+    const direct = await runProtocol(scene, protocol);
+    const preview = await runProtocol(scene, protocol, {
+      signal: new AbortController().signal,
+    });
+    expect(preview.id).toBe(direct.id);
+    expect(preview.stop).toEqual(direct.stop);
+    expect(preview.series).toEqual(direct.series);
+  });
   it("stops at the protocol's event and samples on the probe grid", async () => {
     const scene = makeScene("incline");
     const run = await runProtocol(scene, defaultProtocol(scene));

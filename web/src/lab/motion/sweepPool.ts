@@ -53,11 +53,11 @@ export const TIMING_BOUNDARY =
 export const sweepIdentity = (scene: LabScene, spec: SweepSpec) =>
   sha256(canonicalJson({ schema: SWEEP_SCHEMA, scene, spec }));
 
-/** One less than the logical processors, so the page keeps a core; at least one. */
+/** Leave a core for the page and cap the number of resident Rapier instances. */
 export function poolSize(
   concurrency = globalThis.navigator?.hardwareConcurrency,
 ) {
-  return Math.max(1, (concurrency || 2) - 1);
+  return Math.min(4, Math.max(1, (concurrency || 2) - 1));
 }
 
 /** Runs points in this thread. */

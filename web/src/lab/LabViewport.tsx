@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { isBody } from "./scene";
+import { isBody, movePart } from "./scene";
 import type {
   Ball,
   Body,
   Cylinder,
+  LabObject,
   LabScene,
+  PartMove,
   Pendulum,
   Pulley,
   Spring,
@@ -34,7 +36,7 @@ import {
 function forceArrow(
   object: Body,
   palette: ViewportPalette,
-  current: Simulation | undefined,
+  current: () => Simulation | undefined,
 ) {
   const force = object.force!;
   const magnitude = Math.hypot(force.x, force.y);
@@ -48,8 +50,8 @@ function forceArrow(
   );
   arrow.visible = magnitude > 0;
   const update = () => {
-    const time = current?.time ?? 0;
-    const position = current?.block(object.id)?.position ?? object;
+    const time = current()?.time ?? 0;
+    const position = current()?.block(object.id)?.position ?? object;
     arrow.position.set(position.x, position.y, position.z);
     arrow.visible = magnitude > 0 && time < force.end;
   };
@@ -59,10 +61,20 @@ function forceArrow(
 type Drawable = {
   root: THREE.Object3D;
   outline: THREE.LineSegments;
+  arrow?: THREE.ArrowHelper;
+  base?: THREE.Vector3;
   update?: () => void;
 };
+type ViewOptions = {
+  active: boolean;
+  running: boolean;
+  editable: boolean;
+  axis: "plane" | "height";
+  simulation?: Simulation;
+};
 type View = {
-  mount: (scene: LabScene, simulation?: Simulation) => void;
+  mount: (scene: LabScene) => void;
+  update: (options: ViewOptions) => void;
   select: (id: string | null) => void;
   reset: () => void;
   dispose: () => void;
@@ -94,7 +106,7 @@ function edges(
 function pulleyMesh(
   object: Pulley,
   palette: ViewportPalette,
-  simulation?: Simulation,
+  simulation: () => Simulation | undefined,
 ): THREE.Group {
   const root = new THREE.Group();
   const frame = palette.frame;
@@ -157,7 +169,7 @@ function pulleyMesh(
     return { weight, rope };
   });
   root.userData.update = () => {
-    const state = simulation?.pulley(object.id);
+    const state = simulation()?.pulley(object.id);
     wheel.rotation.z = -(state?.wheelAngle ?? 0);
     weights.forEach(({ weight, rope }, i) => {
       weight.position.y =
@@ -182,7 +194,7 @@ const cage = (radius: number, color: THREE.ColorRepresentation) => {
 function ballMesh(
   object: Ball,
   palette: ViewportPalette,
-  simulation?: Simulation,
+  simulation: () => Simulation | undefined,
 ): Drawable {
   const mesh = solid(
     new THREE.SphereGeometry(object.radius, 32, 20),
@@ -199,7 +211,7 @@ function ballMesh(
     root: mesh,
     outline,
     update: () => {
-      const { position, rotation } = simulation?.block(object.id) ?? initial;
+      const { position, rotation } = simulation()?.block(object.id) ?? initial;
       mesh.position.set(position.x, position.y, position.z);
       mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
     },
@@ -210,7 +222,7 @@ function ballMesh(
 function cylinderMesh(
   object: Cylinder,
   palette: ViewportPalette,
-  simulation?: Simulation,
+  simulation: () => Simulation | undefined,
 ): Drawable {
   const { radius, length } = object;
   const geometry = new THREE.CylinderGeometry(radius, radius, length, 40);
@@ -228,7 +240,7 @@ function cylinderMesh(
     root: mesh,
     outline,
     update: () => {
-      const { position, rotation } = simulation?.block(object.id) ?? initial;
+      const { position, rotation } = simulation()?.block(object.id) ?? initial;
       mesh.position.set(position.x, position.y, position.z);
       mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
     },
@@ -267,7 +279,7 @@ function pendulumMesh(
   object: Pendulum,
   palette: ViewportPalette,
   gravity: number,
-  simulation?: Simulation,
+  simulation: () => Simulation | undefined,
 ): Drawable {
   const root = new THREE.Group();
   root.position.set(object.x, 0, object.z);
@@ -301,7 +313,7 @@ function pendulumMesh(
     root,
     outline,
     update: () => {
-      const { position } = simulation?.block(object.id) ?? initial;
+      const { position } = simulation()?.block(object.id) ?? initial;
       const dx = position.x - object.x;
       const dy = object.pivotHeight - position.y;
       bob.position.set(dx, position.y, position.z - object.z);
@@ -350,7 +362,7 @@ function springMesh(
   object: Spring,
   palette: ViewportPalette,
   gravity: number,
-  simulation?: Simulation,
+  simulation: () => Simulation | undefined,
 ): Drawable {
   const root = new THREE.Group();
   root.position.set(object.x, 0, object.z);
@@ -373,7 +385,7 @@ function springMesh(
     root,
     outline,
     update: () => {
-      const { position } = simulation?.block(object.id) ?? initial;
+      const { position } = simulation()?.block(object.id) ?? initial;
       const top = position.y + object.size / 2;
       cube.position.y = position.y;
       coil.position.y = top;
@@ -396,6 +408,7 @@ function disposeTree(object: THREE.Object3D) {
 function createView(
   host: HTMLDivElement,
   onSelect: (id: string | null) => void,
+  onMove: (id: string, offset: PartMove) => void,
 ): View {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -405,7 +418,10 @@ function createView(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.domElement.setAttribute("aria-label", "3D view of the experiment");
-  host.append(renderer.domElement);
+  const canvas = renderer.domElement;
+  canvas.tabIndex = 0;
+  canvas.setAttribute("aria-describedby", "motion-viewport-help");
+  host.append(canvas);
 
   const palette = documentViewportPalette();
   const stage = new THREE.Scene();
@@ -451,11 +467,22 @@ function createView(
   controls.saveState();
 
   const drawables = new Map<string, Drawable>();
+  let scene: LabScene | undefined;
+  let options: ViewOptions = {
+    active: true,
+    running: false,
+    editable: true,
+    axis: "plane",
+  };
   let dirty = true;
   let time = -1;
-  let simulation: Simulation | undefined;
   let frame = 0;
   let selected: string | null = null;
+  const getSimulation = () => options.simulation;
+  const invalidate = () => {
+    dirty = true;
+    if (!frame && options.active) frame = requestAnimationFrame(draw);
+  };
   const resize = () => {
     const { clientWidth: width, clientHeight: height } = host;
     if (!width || !height) return;
@@ -467,24 +494,28 @@ function createView(
     camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
-    dirty = true;
+    invalidate();
   };
   const observer = new ResizeObserver(resize);
   observer.observe(host);
   resize();
 
   const ray = new THREE.Raycaster();
-  let pointer = { x: 0, y: 0 };
-  const down = (event: PointerEvent) => {
-    pointer = { x: event.clientX, y: event.clientY };
-  };
-  const up = (event: PointerEvent) => {
-    if (
-      event.button !== 0 ||
-      Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 5
-    )
-      return;
-    const bounds = renderer.domElement.getBoundingClientRect();
+  let click: { pointerId: number; x: number; y: number } | undefined;
+  let gesture:
+    | {
+        id: string;
+        pointerId: number;
+        start: THREE.Vector3;
+        screen: THREE.Vector2;
+        plane: THREE.Plane;
+        pixelsPerMetre: number;
+        axis: ViewOptions["axis"];
+        offset?: PartMove;
+      }
+    | undefined;
+  const setRay = (event: PointerEvent) => {
+    const bounds = canvas.getBoundingClientRect();
     ray.setFromCamera(
       new THREE.Vector2(
         ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
@@ -492,47 +523,231 @@ function createView(
       ),
       camera,
     );
-    for (const hit of ray.intersectObjects(parts.children, true)) {
+  };
+  const pick = (event: PointerEvent) => {
+    setRay(event);
+    for (const hit of ray.intersectObjects(
+      [...drawables.values()].map(({ root }) => root),
+      true,
+    )) {
       if (!(hit.object instanceof THREE.Mesh)) continue;
       let part: THREE.Object3D | null = hit.object;
       while (part && !part.userData.id) part = part.parent;
-      if (part) {
-        onSelect(part.userData.id as string);
-        return;
-      }
+      if (part) return { id: part.userData.id as string, point: hit.point };
     }
-    onSelect(null);
   };
-  renderer.domElement.addEventListener("pointerdown", down);
-  renderer.domElement.addEventListener("pointerup", up);
+  const down = (event: PointerEvent) => {
+    if (
+      gesture ||
+      event.button !== 0 ||
+      !event.isPrimary ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return;
+    click = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    const hit = pick(event);
+    if (!options.editable || !hit || !scene) return;
+    const part = scene.objects.find(({ id }) => id === hit.id);
+    const axis =
+      options.axis === "height" &&
+      part?.kind !== "ramp" &&
+      part?.kind !== "pulley"
+        ? "height"
+        : "plane";
+    const pointY = hit.point.clone().project(camera).y;
+    const higherY = hit.point
+      .clone()
+      .add(new THREE.Vector3(0, 1, 0))
+      .project(camera).y;
+    gesture = {
+      id: hit.id,
+      pointerId: event.pointerId,
+      start: hit.point,
+      screen: new THREE.Vector2(event.clientX, event.clientY),
+      plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y),
+      pixelsPerMetre: Math.max(
+        1,
+        ((higherY - pointY) * canvas.clientHeight) / 2,
+      ),
+      axis,
+    };
+    click = undefined;
+    canvas.setPointerCapture(event.pointerId);
+    controls.enabled = false;
+    canvas.focus({ preventScroll: true });
+    onSelect(hit.id);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  const updateDrag = (event: PointerEvent) => {
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    if (
+      !gesture.offset &&
+      gesture.screen.distanceTo(
+        new THREE.Vector2(event.clientX, event.clientY),
+      ) < 5
+    )
+      return;
+    if (gesture.axis === "height") {
+      gesture.offset = {
+        x: 0,
+        y: (gesture.screen.y - event.clientY) / gesture.pixelsPerMetre,
+        z: 0,
+      };
+    } else {
+      setRay(event);
+      const point = ray.ray.intersectPlane(gesture.plane, new THREE.Vector3());
+      if (!point) return;
+      gesture.offset = {
+        x: point.x - gesture.start.x,
+        y: 0,
+        z: point.z - gesture.start.z,
+      };
+    }
+    canvas.dataset.dragging = "true";
+    invalidate();
+  };
+  function finishDrag(commit: boolean) {
+    if (!gesture) return;
+    const { id, offset, pointerId } = gesture;
+    gesture = undefined;
+    if (canvas.hasPointerCapture(pointerId))
+      canvas.releasePointerCapture(pointerId);
+    controls.enabled = true;
+    delete canvas.dataset.dragging;
+    invalidate();
+    if (commit && offset && options.editable) onMove(id, offset);
+  }
+  const up = (event: PointerEvent) => {
+    if (gesture?.pointerId === event.pointerId) {
+      updateDrag(event);
+      finishDrag(true);
+      return;
+    }
+    if (click?.pointerId !== event.pointerId) return;
+    const { x, y } = click;
+    click = undefined;
+    if (Math.hypot(event.clientX - x, event.clientY - y) <= 5) {
+      onSelect(pick(event)?.id ?? null);
+    }
+  };
+  const cancel = (event: PointerEvent) => {
+    if (gesture?.pointerId === event.pointerId) finishDrag(false);
+    if (click?.pointerId === event.pointerId) click = undefined;
+  };
+  const keydown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && gesture) {
+      event.preventDefault();
+      finishDrag(false);
+      return;
+    }
+    if (
+      !selected ||
+      !options.editable ||
+      event.altKey ||
+      event.metaKey ||
+      event.ctrlKey
+    )
+      return;
+    const step = event.shiftKey ? 1 : 0.1;
+    let offset: PartMove;
+    switch (event.key) {
+      case "ArrowLeft":
+        offset = { x: -step, y: 0, z: 0 };
+        break;
+      case "ArrowRight":
+        offset = { x: step, y: 0, z: 0 };
+        break;
+      case "ArrowUp":
+        offset = { x: 0, y: 0, z: -step };
+        break;
+      case "ArrowDown":
+        offset = { x: 0, y: 0, z: step };
+        break;
+      case "PageUp":
+        offset = { x: 0, y: step, z: 0 };
+        break;
+      case "PageDown":
+        offset = { x: 0, y: -step, z: 0 };
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    onMove(selected, offset);
+  };
+  canvas.addEventListener("pointerdown", down, true);
+  canvas.addEventListener("pointermove", updateDrag);
+  canvas.addEventListener("pointerup", up);
+  canvas.addEventListener("pointercancel", cancel);
+  canvas.addEventListener("lostpointercapture", cancel);
+  canvas.addEventListener("keydown", keydown);
+  controls.addEventListener("change", invalidate);
 
-  const animate = () => {
-    frame = requestAnimationFrame(animate);
+  function draw() {
+    frame = 0;
+    if (!options.active) return;
     const moved = controls.update();
-    const nextTime = simulation?.time ?? 0;
-    if (!dirty && time === nextTime && !moved) return;
-    drawables.forEach(({ update }) => update?.());
-    renderer.render(stage, camera);
-    dirty = false;
-    time = nextTime;
-  };
-  animate();
+    const nextTime = options.simulation?.time ?? 0;
+    if (dirty || time !== nextTime || moved) {
+      for (const drawable of drawables.values()) {
+        drawable.update?.();
+        // Group-based drawables store their fixed base here after mounting.
+        if (drawable.base) drawable.root.position.copy(drawable.base);
+      }
+      const draft =
+        gesture?.offset && scene
+          ? movePart(scene, gesture.id, gesture.offset)
+          : scene;
+      if (draft && scene && draft !== scene) {
+        draft.objects.forEach((part, index) => {
+          const before = scene!.objects[index];
+          const item = drawables.get(part.id);
+          if (!item || before === part) return;
+          const y =
+            isBody(part) && isBody(before)
+              ? part.y - before.y
+              : part.kind === "pendulum" && before.kind === "pendulum"
+                ? part.pivotHeight - before.pivotHeight
+                : part.kind === "spring" && before.kind === "spring"
+                  ? part.anchorHeight - before.anchorHeight
+                  : 0;
+          item.root.position.x += part.x - before.x;
+          item.root.position.y += y;
+          item.root.position.z += part.z - before.z;
+          if (item.arrow) {
+            item.arrow.position.x += part.x - before.x;
+            item.arrow.position.y += y;
+            item.arrow.position.z += part.z - before.z;
+          }
+        });
+      }
+      renderer.render(stage, camera);
+      dirty = false;
+      time = nextTime;
+    }
+    if (!frame && (options.running || moved))
+      frame = requestAnimationFrame(draw);
+  }
 
   function select(id: string | null) {
     selected = id;
     drawables.forEach(({ outline }, key) => {
       outline.visible = key === id;
     });
-    dirty = true;
+    invalidate();
   }
 
   return {
-    mount(scene, current) {
-      simulation = current;
+    mount(next) {
+      finishDrag(false);
+      scene = next;
       disposeTree(parts);
       parts.clear();
       drawables.clear();
-      scene.objects.forEach((object) => {
+      next.objects.forEach((object: LabObject) => {
         let drawable: Drawable;
         if (object.kind === "block") {
           const mesh = solid(
@@ -545,7 +760,13 @@ function createView(
             ),
             palette.block,
           );
-          const outline = edges(mesh.geometry, palette.blockEdge);
+          const bounds = new THREE.BoxGeometry(
+            object.size * 1.025,
+            object.size * 1.025,
+            object.size * 1.025,
+          );
+          const outline = edges(bounds, palette.blockEdge);
+          bounds.dispose();
           mesh.add(outline);
           const initial = initialBlockState(object);
           drawable = {
@@ -553,7 +774,7 @@ function createView(
             outline,
             update: () => {
               const { position, rotation } =
-                current?.block(object.id) ?? initial;
+                getSimulation()?.block(object.id) ?? initial;
               mesh.position.set(position.x, position.y, position.z);
               mesh.quaternion.set(
                 rotation.x,
@@ -564,13 +785,13 @@ function createView(
             },
           };
         } else if (object.kind === "ball") {
-          drawable = ballMesh(object, palette, current);
+          drawable = ballMesh(object, palette, getSimulation);
         } else if (object.kind === "cylinder") {
-          drawable = cylinderMesh(object, palette, current);
+          drawable = cylinderMesh(object, palette, getSimulation);
         } else if (object.kind === "pendulum") {
-          drawable = pendulumMesh(object, palette, scene.gravity, current);
+          drawable = pendulumMesh(object, palette, next.gravity, getSimulation);
         } else if (object.kind === "spring") {
-          drawable = springMesh(object, palette, scene.gravity, current);
+          drawable = springMesh(object, palette, next.gravity, getSimulation);
         } else if (object.kind === "ramp") {
           const geometry = new THREE.BufferGeometry();
           geometry.setAttribute(
@@ -588,9 +809,13 @@ function createView(
           const outline = edges(flat, palette.partEdge);
           mesh.position.set(object.x, 0, object.z);
           mesh.add(outline);
-          drawable = { root: mesh, outline };
+          drawable = {
+            root: mesh,
+            outline,
+            update: () => mesh.position.set(object.x, 0, object.z),
+          };
         } else {
-          const root = pulleyMesh(object, palette, current);
+          const root = pulleyMesh(object, palette, getSimulation);
           const bounds = new THREE.BoxGeometry(2.05, 4.65, 1.18);
           const outline = edges(bounds, palette.partEdge);
           bounds.dispose();
@@ -604,7 +829,8 @@ function createView(
           };
         }
         if (isBody(object) && object.force) {
-          const { arrow, update } = forceArrow(object, palette, current);
+          const { arrow, update } = forceArrow(object, palette, getSimulation);
+          drawable.arrow = arrow;
           const body = drawable.update;
           drawable.update = () => {
             body?.();
@@ -613,22 +839,38 @@ function createView(
           parts.add(arrow);
         }
         drawable.root.userData.id = object.id;
+        if (drawable.root instanceof THREE.Group)
+          drawable.base = drawable.root.position.clone();
         drawable.update?.();
         parts.add(drawable.root);
         drawables.set(object.id, drawable);
       });
       select(selected);
     },
+    update(next) {
+      options = next;
+      if (!next.active || !next.editable) finishDrag(false);
+      if (!next.active && frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      invalidate();
+    },
     select,
     reset() {
       controls.reset();
-      dirty = true;
+      invalidate();
     },
     dispose() {
       cancelAnimationFrame(frame);
       observer.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", down);
-      renderer.domElement.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointerdown", down, true);
+      canvas.removeEventListener("pointermove", updateDrag);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", cancel);
+      canvas.removeEventListener("lostpointercapture", cancel);
+      canvas.removeEventListener("keydown", keydown);
+      controls.removeEventListener("change", invalidate);
       controls.dispose();
       disposeTree(stage);
       sun.shadow.dispose();
@@ -643,22 +885,38 @@ export function LabViewport({
   simulation,
   selected,
   onSelect,
+  onMove,
+  active,
+  running,
+  editable,
+  axis,
   viewRevision,
 }: {
   scene: LabScene;
   simulation?: Simulation;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  onMove: (id: string, offset: PartMove) => void;
+  active: boolean;
+  running: boolean;
+  editable: boolean;
+  axis: ViewOptions["axis"];
   viewRevision: number;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<View | null>(null);
   const [available, setAvailable] = useState(true);
+  const move = useRef(onMove);
+  useEffect(() => {
+    move.current = onMove;
+  }, [onMove]);
 
   useEffect(() => {
     if (!host.current) return;
     try {
-      const current = createView(host.current, onSelect);
+      const current = createView(host.current, onSelect, (id, offset) =>
+        move.current(id, offset),
+      );
       view.current = current;
       return () => {
         current.dispose();
@@ -671,8 +929,11 @@ export function LabViewport({
   }, [onSelect]);
 
   useEffect(() => {
-    view.current?.mount(scene, simulation);
-  }, [scene, simulation]);
+    view.current?.update({ active, running, editable, axis, simulation });
+  }, [active, running, editable, axis, simulation]);
+  useEffect(() => {
+    view.current?.mount(scene);
+  }, [scene]);
   useEffect(() => {
     view.current?.select(selected);
   }, [selected]);

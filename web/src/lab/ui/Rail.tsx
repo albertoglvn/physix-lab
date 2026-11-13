@@ -31,7 +31,7 @@ function FlyoutBody({
 }
 
 /**
- * The parts rail on the left of the viewport. Each icon opens one flyout over the viewport;
+ * Each rail button opens one flyout over the viewport;
  * Escape or a click outside closes it and focus returns to the icon (LAB_PLAN.md §3.2).
  */
 export function Rail({
@@ -60,8 +60,9 @@ export function Rail({
     const onPointerDown = (event: PointerEvent) => {
       if (!rail.current?.contains(event.target as Node)) setOpenId(null);
     };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
   }, [openId]);
 
   const close = () => {
@@ -96,6 +97,7 @@ export function Rail({
             onClick={() => setOpenId(openId === entry.id ? null : entry.id)}
           >
             {entry.icon}
+            <span aria-hidden="true">{entry.label}</span>
           </button>
         ))}
       </div>

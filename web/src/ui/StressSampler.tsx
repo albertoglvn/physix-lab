@@ -33,11 +33,10 @@ export function StressSampler() {
       aria-labelledby="stress-tools-title"
     >
       <div className="home-stress-copy">
-        <h2 id="stress-tools-title">Where does the stress go?</h2>
+        <h2 id="stress-tools-title">See where stress concentrates</h2>
         <p>
-          Change a hole, a material, or a load and see how stress redistributes
-          across a plate or bracket. Compare the prediction with a finite
-          element solve of the same part.
+          Change the hole size or load on a plate or bracket. Compare the stress
+          estimate with a finite element solve of the same case.
         </p>
         <div className="home-stress-actions">
           <Action href={`#/lab?study=stress&example=${family}`}>

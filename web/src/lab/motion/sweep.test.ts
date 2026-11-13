@@ -288,7 +288,9 @@ describe("running sweeps", () => {
   });
 
   it("sizes the pool to leave one processor free", () => {
-    expect(poolSize(8)).toBe(7);
+    expect(poolSize(8)).toBe(4);
+    expect(poolSize(32)).toBe(4);
+    expect(poolSize(3)).toBe(2);
     expect(poolSize(1)).toBe(1);
     expect(poolSize(0)).toBe(1);
   });

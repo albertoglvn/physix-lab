@@ -77,8 +77,18 @@ export const runIdentity = (inputs: RunInputs) =>
 export async function runProtocol(
   input: unknown,
   protocolInput: unknown,
-  { timeStep = TIME_STEP, rate = PROBE_RATE } = {},
+  {
+    timeStep = TIME_STEP,
+    rate = PROBE_RATE,
+    signal,
+  }: {
+    timeStep?: number;
+    rate?: number;
+    /** Browser callers can cancel a stale preview and yield to input between batches. */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<MotionRun> {
+  signal?.throwIfAborted();
   const scene = parseScene(input);
   const protocol = parseProtocol(protocolInput);
   if (!(timeStep > 0 && timeStep <= MAX_TIME_STEP))
@@ -93,15 +103,22 @@ export async function runProtocol(
   const started = performance.now();
   const simulation = await createSimulation(scene, { timeStep });
   try {
+    signal?.throwIfAborted();
     const recorder = createRecorder(scene, simulation, rate);
     const limit = Math.round(protocol.maxTime / timeStep);
     let stop: MotionRun["stop"] | undefined;
+    let nextYield = performance.now() + 8;
     for (let tick = 0; tick < limit && !stop; tick++) {
       simulation.step();
       const event = recorder
         .afterStep()
         .find((raised) => raised.type === protocol.stop);
       if (event) stop = { reason: "event", t: event.t, event };
+      if (signal && tick % 16 === 15 && performance.now() >= nextYield) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        signal.throwIfAborted();
+        nextYield = performance.now() + 8;
+      }
     }
     stop ??= { reason: "time", t: simulation.time };
     recorder.sample();
@@ -120,8 +137,9 @@ export async function runProtocol(
       seed: null,
       timing: {
         wallMs,
-        boundary:
-          "engine set-up, every step and probe sampling; excludes rendering",
+        boundary: signal
+          ? "engine set-up, steps and probe sampling, including time yielded to the browser"
+          : "engine set-up, every step and probe sampling; excludes rendering",
       },
       quantities: recorder.quantities,
       series: recorder.series,
