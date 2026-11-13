@@ -41,7 +41,7 @@ test("supports current Sites discovery and legacy MCP initialization", async () 
   const list = await rpc("tools/list", {}, { signedIn: false });
   assert.deepEqual(
     (await list.json()).result.tools.map(({ name }) => name),
-    ["describe_domain", "compare_stress", "build_scene"],
+    ["describe_domain", "compare_stress", "build_scene", "simulate_scene"],
   );
 });
 
@@ -171,6 +171,134 @@ test("reports the field of an invalid scene request", async () => {
     assert.equal(result.structuredContent.error, "invalid_scene");
     assert.equal(result.structuredContent.field, field);
   }
+});
+
+async function simulate(args) {
+  const reply = await rpc("tools/call", {
+    name: "simulate_scene",
+    arguments: args,
+  });
+  return (await reply.json()).result;
+}
+
+test("simulates a motion scene and checks it against theory", async () => {
+  const reply = await simulate({
+    request: {
+      name: "Block on a 30 degree incline",
+      objects: [
+        { kind: "ramp", angle: 30, friction: 0.25 },
+        { kind: "block", mass: 5, on_ramp: { ramp: "ramp-1" } },
+      ],
+    },
+  });
+  const result = reply.structuredContent;
+  assert.equal(reply.isError, undefined);
+  assert.equal(result.schema, "physix.hosted-run/1");
+  assert.equal(result.source, "rapier");
+  assert.equal(result.run.engine.name, "rapier3d-compat");
+  assert.equal(result.protocol.stop, "leaves_ramp");
+  assert.equal(result.run.stop.reason, "event");
+  assert.deepEqual(result.defaults["block-1"], ["size", "restitution"]);
+  const a = result.references.find((r) => r.id === "block-1.incline.a");
+  const g = 9.81;
+  const theory = g * (Math.sin(Math.PI / 6) - 0.25 * Math.cos(Math.PI / 6));
+  assert.ok(Math.abs(a.theory - theory) < 1e-4, `${a.theory} vs ${theory}`);
+  assert.equal(a.within, true);
+  assert.ok(Math.abs(a.measured - theory) / theory < 0.02);
+  assert.ok(result.summary.some((row) => row.key === "block-1.speed"));
+  assert.deepEqual(
+    result.graphs.map(({ id }) => id),
+    reply._meta.graphs.map(({ id }) => id),
+  );
+  // The model-visible result carries no series; the chart view gets them in _meta.
+  assert.equal(JSON.stringify(result).includes('"values"'), false);
+  const velocity = reply._meta.graphs.find((g) => g.id === "block-1.velocity");
+  assert.equal(velocity.unit, "m/s");
+  assert.equal(velocity.t.length, velocity.series[0].values.length);
+  assert.ok(velocity.t.length <= 120);
+  const query = new URLSearchParams(
+    new URL(result.share_url).hash.replace(/^#\/lab\?/, ""),
+  );
+  assert.deepEqual(await decodeShare(query.get("scene")), result.scene);
+});
+
+test("simulates a built scene with a chosen stop and sample count", async () => {
+  const built = await build({ template: "pendulum" });
+  const reply = await simulate({
+    scene: built.structuredContent.scene,
+    stop: "time",
+    max_time_s: 2,
+    points: 30,
+  });
+  const result = reply.structuredContent;
+  assert.equal(result.run.stop.reason, "time");
+  assert.equal(result.run.stop.t, 2);
+  assert.equal(result.run.samples, 121);
+  assert.equal(result.defaults, undefined);
+  assert.ok(reply._meta.graphs.every((g) => g.t.length === 30));
+  assert.ok(result.graphs.some(({ id }) => id === "system.energy"));
+});
+
+test("reports the field of an invalid run request", async () => {
+  for (const [args, field] of [
+    [{}, "request"],
+    [{ request: {}, scene: {} }, "request"],
+    [{ request: {}, colour: 1 }, "colour"],
+    [
+      { request: { objects: [{ kind: "ball", mass: 500 }] } },
+      "request.objects[0].mass",
+    ],
+    [{ request: { template: "rocket" } }, "request.template"],
+    [{ scene: { version: "nope" } }, "scene"],
+    [{ request: { template: "pendulum" }, stop: "bounce" }, "stop"],
+    [{ request: {}, max_time_s: 600 }, "max_time_s"],
+    [{ request: {}, points: 5000 }, "points"],
+  ]) {
+    const result = await simulate(args);
+    assert.equal(result.isError, true, JSON.stringify(args));
+    assert.equal(result.structuredContent.error, "invalid_run");
+    assert.equal(result.structuredContent.field, field, JSON.stringify(args));
+    assert.equal(result._meta, undefined);
+  }
+});
+
+test("serves the chart view that simulate_scene and compare_stress show", async () => {
+  const list = await (await rpc("tools/list", {}, { signedIn: false })).json();
+  const byName = Object.fromEntries(
+    list.result.tools.map((tool) => [tool.name, tool]),
+  );
+  const uri = byName.simulate_scene._meta.ui.resourceUri;
+  assert.match(uri, /^ui:\/\//);
+  assert.equal(byName.simulate_scene._meta["openai/outputTemplate"], uri);
+  assert.equal(byName.compare_stress._meta.ui.resourceUri, uri);
+  assert.equal(byName.build_scene._meta, undefined);
+
+  const init = await (await rpc("initialize", {})).json();
+  assert.ok(init.result.capabilities.resources);
+  const resources = await (
+    await rpc("resources/list", {}, { signedIn: false })
+  ).json();
+  assert.deepEqual(
+    resources.result.resources.map((resource) => resource.uri),
+    [uri],
+  );
+  const read = await (
+    await rpc("resources/read", { uri }, { signedIn: false })
+  ).json();
+  const [view] = read.result.contents;
+  assert.equal(view.mimeType, "text/html;profile=mcp-app");
+  assert.match(view.text, /^<!doctype html>/);
+  assert.match(view.text, /ui\/notifications\/tool-result/);
+  assert.doesNotMatch(view.text, /<script[^>]+src=|<link[^>]+href=/);
+  assert.deepEqual(view._meta.ui.csp, {
+    connectDomains: [],
+    resourceDomains: [],
+  });
+  assert.deepEqual(view._meta["openai/widgetCSP"].redirect_domains, [site]);
+  const missing = await (
+    await rpc("resources/read", { uri: "ui://physix/none.html" })
+  ).json();
+  assert.equal(missing.error.code, -32002);
 });
 
 test("returns explicit errors for unsupported and malformed experiments", async () => {

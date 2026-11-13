@@ -78,7 +78,8 @@ blocks.
 
 ## Hosted Physix in ChatGPT
 
-The hosted plugin offers `describe_domain`, `compare_stress` and `build_scene`. Call
+The hosted plugin offers `describe_domain`, `compare_stress`, `build_scene` and
+`simulate_scene`. Call
 `describe_domain` first: it lists the stress domain and, under `motion`, the scene
 conventions, templates, part kinds, fields, units, limits and defaults.
 
@@ -92,6 +93,15 @@ conventions, templates, part kinds, fields, units, limits and defaults.
   defaults the result lists when they matter, such as a block's size on a ramp. The scene
   is not simulated: do not quote results from it. The lab simulates it and draws its graphs
   when the link opens.
+- `simulate_scene` runs the same request, or a scene from `build_scene`, with the lab's
+  engine (source `rapier`) and shows its graphs in the chat. Use it when the student wants
+  numbers, graphs or a check against theory. Quote numbers only from its `references`,
+  `summary` and `events`, with their units. A theory value holds only under its
+  `assumptions` and the result's `contact_model`. Report `within: false` or a `broken`
+  reason as found rather than explaining it away, and say when `references_omitted` or
+  `events_omitted` is not zero. The graphs reach only the chart view, so describe them from
+  `summary`. If it returns `invalid_run`, fix the named `field`. If it returns
+  `engine_unavailable`, give the `share_url` so the lab runs the scene in the browser.
 
 Every result carries a `share_url`. Give the student that link for each case or scene you
 report, so they can open it in the Physix lab. Never edit a link or build one by hand.

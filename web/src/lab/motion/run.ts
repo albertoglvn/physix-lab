@@ -1,5 +1,5 @@
-import { parseScene, type LabScene } from "../scene";
-import { createSimulation, MAX_TIME_STEP, TIME_STEP } from "../simulation";
+import { parseScene, type LabScene } from "../scene.ts";
+import { createSimulation, MAX_TIME_STEP, TIME_STEP } from "../simulation.ts";
 import {
   createRecorder,
   parseProtocol,
@@ -8,7 +8,7 @@ import {
   type Quantity,
   type RunEvent,
   type Series,
-} from "./probes";
+} from "./probes.ts";
 
 export const RUN_SCHEMA = "physix.run/1";
 export const ENGINE_NAME = "rapier3d-compat";

@@ -20,6 +20,8 @@ consumer in the same change.
 | Line probe | `physix.probe/1` | `physics/probe.py`, `web/src/lab/stress/probe.ts` | `tests/fixtures/line_probe_v1.json` |
 | Share link | `physix.share/1` | `web/src/share.ts`, `mcp/sites/worker.mjs` | `share.test.ts`, `lab/shared.test.ts`, `worker.test.mjs` |
 | Scene request | `physix.scene-request/1` | `web/src/lab/buildScene.ts` | `buildScene.test.ts`, `worker.test.mjs` |
+| Run request | `physix.run-request/1` | `web/src/lab/motion/hostedRun.ts` | `hostedRun.test.ts`, `worker.test.mjs` |
+| Hosted run | `physix.hosted-run/1` | `web/src/lab/motion/hostedRun.ts` | `hostedRun.test.ts`, `worker.test.mjs` |
 
 ## Units and coordinates
 
@@ -458,10 +460,69 @@ JSON Schema of a request. A test checks both against the lab's part defaults.
 ### Hosted scene (`physix.hosted-scene/1`)
 
 `build_scene` returns `{schema, source: "scene_builder", scene, defaults, share_url,
-simulated: false, note}`. The scene is validated but not simulated. The lab simulates it in
-the browser, with its graphs, when the link opens. An invalid request returns
-`{error: "invalid_scene", message, field?}` with `isError`. `describe_domain` adds
-`motion`, the output of `motionDomain()`, beside the stress domain.
+simulated: false, note}`. The scene is validated but not simulated: `simulate_scene` runs
+it, and the lab simulates it in the browser, with its graphs, when the link opens. An
+invalid request returns `{error: "invalid_scene", message, field?}` with `isError`.
+`describe_domain` adds `motion`, the output of `motionDomain()`, beside the stress domain.
+
+## Run request (`physix.run-request/1`)
+
+The hosted `simulate_scene` tool runs a Motion scene on the server with the lab's own
+engine. `parseRunRequest` (`web/src/lab/motion/hostedRun.ts`) validates its arguments:
+
+| Field | Meaning |
+| --- | --- |
+| `request` | A `physix.scene-request/1`, built with `buildScene` |
+| `scene` | A `physix.lab/2` scene, such as one `build_scene` returned. Give exactly one of `request` and `scene`. |
+| `stop` | `"time"` or an event the scene can raise (`availableStops`). Defaults to the lab's choice (`defaultProtocol`). |
+| `max_time_s` | Time limit in seconds, 0.5 to 60. Defaults to the lab's. |
+| `points` | Samples per plotted graph, an integer from 20 to 400, default 120 |
+
+Unknown fields are rejected. Errors are `RunRequestError` with a `field`: `request`,
+`scene`, `stop`, `max_time_s`, `points`, an unknown key, or a scene-request path under
+`request.`, such as `request.objects[0].mass`. `runRequestSchema()` is the JSON Schema.
+
+### Hosted run (`physix.hosted-run/1`)
+
+`simulateScene` runs the request with `runProtocol`, so the run is a `physix.run/1` with
+the default time step and probe rate, and condenses it into what a chat can quote:
+
+| Field | Meaning |
+| --- | --- |
+| `source` | `rapier`: the lab's rigid-body engine, run on the server |
+| `scene`, `defaults` | The scene that ran, and for a `request` the fields taken from defaults |
+| `protocol` | `{stop, max_time_s}` |
+| `run` | `id` (the `physix.run/1` id, equal to the lab's for the same scene and protocol), `engine`, `time_step_s`, `sample_rate_hz`, `samples`, `stop` (`{reason, t, event?}`) and `timing` (`{wall_ms, boundary}`) |
+| `events` | The first 20 events as `{type, label, target, t}`; `events_omitted` counts the rest |
+| `contact_model` | The contact law every reference assumes, stated once |
+| `references` | The first 16 closed-form checks from `referencesFor`: `{id, target, label, symbol, unit, formula, theory, measured, difference, relative, tolerance, within, assumptions, broken?}`. `difference` is relative when `relative` is true and absolute otherwise; `measured`, `difference` and `within` are `null` when the run did not reach the measured moment. `references_omitted` counts the rest. |
+| `summary` | `{key, label, unit, start, end, min, max}` over every sample of each plotted column |
+| `graphs` | `{id, title, unit, keys}` for each plotted graph |
+
+Values are rounded to 6 significant digits. Each part kind has fixed graphs, with at most 3
+columns in one unit: body position, velocity and contact forces; pulley rope displacement,
+speed and tension; pendulum angle, angular velocity and link tension; spring displacement and
+force; then system energy. Columns that stay at 0 are left out, and a run has at most 12
+graphs. The tool adds `share_url` and a `note`.
+
+The tool result keeps the plotted series out of `structuredContent`. Its `_meta.graphs`
+holds `{id, title, target, unit, t, series: [{key, label, symbol, values, theory?}]}`, with
+`points` samples spread evenly over the run, the first and last included. `theory` is the
+closed-form curve from `curvesFor` at the same times and `null` past the curve's validity.
+An invalid request returns `{error: "invalid_run", message, field?}`. An engine failure
+returns `{error: "engine_unavailable", message, share_url}`, so the lab can run the scene.
+
+### Chart view
+
+`simulate_scene` and `compare_stress` name the chart view `ui://physix/chart-v1.html`
+(`mcp/sites/chartView.mjs`) in their tool `_meta`, as `ui.resourceUri` (MCP Apps) and
+`openai/outputTemplate` (ChatGPT). The Worker lists it with `resources/list` and serves it
+with `resources/read` as `text/html;profile=mcp-app`: one self-contained page with no
+network access (`connectDomains` and `resourceDomains` are empty) whose links open only the
+Worker's own origin. The view reads the tool result from `ui/notifications/tool-result` or
+`window.openai`. A run shows the theory check, one line chart per graph with the theory
+curve dashed, a table per graph and the events. A stress comparison shows the hotspot von
+Mises stress of each case as a bar. Each result has a button that opens its `share_url`.
 
 ## Experiment (`physix.experiment/1`)
 

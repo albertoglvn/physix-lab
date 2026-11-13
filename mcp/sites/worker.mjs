@@ -5,6 +5,17 @@ import {
   SceneRequestError,
   sceneRequestSchema,
 } from "../../web/src/lab/buildScene.ts";
+import {
+  parseRunRequest,
+  RunRequestError,
+  runRequestSchema,
+  simulateScene,
+} from "../../web/src/lab/motion/hostedRun.ts";
+import {
+  CHART_VIEW_HTML,
+  CHART_VIEW_MIME,
+  CHART_VIEW_URI,
+} from "./chartView.mjs";
 
 const VERSION = "2026-07-28";
 const PREVIOUS_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
@@ -18,6 +29,14 @@ const domain = Object.entries(reference.families).map(([family, entry]) => ({
   example: entry.example,
   hole_radii_m: entry.results.map((row) => row.radius_m),
 }));
+
+/** Tool `_meta` that shows a result in the chat chart view (MCP Apps and its ChatGPT alias). */
+const chartView = (invoking, invoked) => ({
+  ui: { resourceUri: CHART_VIEW_URI },
+  "openai/outputTemplate": CHART_VIEW_URI,
+  "openai/toolInvocation/invoking": invoking,
+  "openai/toolInvocation/invoked": invoked,
+});
 
 const tools = [
   {
@@ -40,7 +59,7 @@ const tools = [
     name: "compare_stress",
     title: "Compare stress experiments",
     description:
-      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. Each result includes a share_url that opens the identical case in the Physix lab; give it to the user unchanged. This tool returns stress summaries and does not create a new mesh or simulate motion.",
+      "Compare up to six hole radii and load magnitudes on a supported thin plate or L-bracket. Returns peak and hotspot von Mises stress in Pa and hotspot location in metres, and shows them as a bar chart in the chat. Uses scikit-fem reference runs with exact linear scaling for a positive load multiplier. Fixed specimen, hole centre, material, support and load direction. Use describe_domain to get available radii. Each result includes a share_url that opens the identical case in the Physix lab; give it to the user unchanged. This tool returns stress summaries and does not create a new mesh or simulate motion.",
     inputSchema: {
       type: "object",
       required: ["family", "cases"],
@@ -78,18 +97,32 @@ const tools = [
       destructiveHint: false,
       openWorldHint: false,
     },
+    _meta: chartView("Comparing stress…", "Stress compared"),
   },
   {
     name: "build_scene",
     title: "Build a motion experiment",
     description:
-      "Build a rigid-body motion experiment (blocks, balls and cylinders on ramps or the floor, Atwood pulleys, pendulums, springs, launches, applied forces, air drag) in the Physix lab and return a share_url that opens it. Give only the values the problem states; every other field takes the lab default, and the result lists which defaults were used. The scene is validated, not simulated: the lab simulates it in the browser and plots its graphs when the link opens. Give the share_url to the user unchanged.",
+      "Build a rigid-body motion experiment (blocks, balls and cylinders on ramps or the floor, Atwood pulleys, pendulums, springs, launches, applied forces, air drag) in the Physix lab and return a share_url that opens it. Give only the values the problem states; every other field takes the lab default, and the result lists which defaults were used. The scene is validated, not simulated: use simulate_scene for numbers and graphs. Give the share_url to the user unchanged.",
     inputSchema: sceneRequestSchema(),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       openWorldHint: false,
     },
+  },
+  {
+    name: "simulate_scene",
+    title: "Simulate a motion experiment",
+    description:
+      "Simulate a motion experiment with the Physix lab's own rigid-body engine (Rapier) on the server and show its key graphs in the chat. Takes a scene request (the same fields as build_scene) or a scene that build_scene returned, an optional stop event and time limit (0.5 to 60 s). Returns the events, the closed-form theory values with the simulated values and their difference, the start, end, min and max of each plotted quantity in SI units, and a share_url that opens the scene in the Physix lab, which recomputes the run in the browser. Quote numbers only from this result; give the share_url to the user unchanged.",
+    inputSchema: runRequestSchema(sceneRequestSchema()),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    _meta: chartView("Simulating the experiment…", "Experiment simulated"),
   },
 ];
 
@@ -103,11 +136,13 @@ function onlyKeys(value, allowed) {
   );
 }
 
-function toolResult(data) {
+/** `meta` reaches only the chart view; the model reads `content` and `structuredContent`. */
+function toolResult(data, meta) {
   return {
     content: [{ type: "text", text: JSON.stringify(data) }],
     structuredContent: data,
     ...(data.error ? { isError: true } : {}),
+    ...(meta ? { _meta: meta } : {}),
   };
 }
 
@@ -163,6 +198,77 @@ async function buildSceneResult(args, origin) {
     share_url: url,
     simulated: false,
     note: "The scene is validated but not simulated. The Physix lab simulates it in the browser and plots its graphs when the share_url opens.",
+  };
+}
+
+/**
+ * Runs a `physix.run-request/1` with the lab's engine. The graphs go to the chart view in
+ * the result `_meta`; the model gets the events, theory checks and column summaries.
+ */
+async function simulateSceneResult(args, origin) {
+  let parsed;
+  try {
+    parsed = parseRunRequest(args);
+  } catch (error) {
+    if (!(error instanceof RunRequestError)) throw error;
+    return {
+      data: {
+        error: "invalid_run",
+        message: error.message,
+        ...(error.field ? { field: error.field } : {}),
+      },
+    };
+  }
+  const url = await shareUrl(origin, "motion", parsed.scene);
+  if (!url)
+    return {
+      data: {
+        error: "invalid_run",
+        message: "The scene is too large for a share link; use fewer parts.",
+      },
+    };
+  let run;
+  try {
+    run = await simulateScene(parsed);
+  } catch (error) {
+    return {
+      data: {
+        error: "engine_unavailable",
+        message: `The motion engine could not run this scene on the server (${error instanceof Error ? error.message : String(error)}). The share_url opens it in the Physix lab, which runs it in the browser.`,
+        share_url: url,
+      },
+    };
+  }
+  return {
+    data: {
+      ...run.result,
+      share_url: url,
+      note: "Simulated on the server with the Physix lab's engine; the lab recomputes the run in the browser when the share_url opens. Theory values hold only under their listed assumptions.",
+    },
+    meta: { graphs: run.graphs },
+  };
+}
+
+/** The chart view as an MCP Apps resource. Links open the lab on this Worker's origin. */
+function chartResource(origin) {
+  return {
+    uri: CHART_VIEW_URI,
+    mimeType: CHART_VIEW_MIME,
+    text: CHART_VIEW_HTML,
+    _meta: {
+      ui: {
+        prefersBorder: true,
+        csp: { connectDomains: [], resourceDomains: [] },
+      },
+      "openai/widgetDescription":
+        "Shows the graphs and theory checks of a Physix motion run, or a bar chart of a stress comparison, with a button that opens the Physix lab.",
+      "openai/widgetPrefersBorder": true,
+      "openai/widgetCSP": {
+        connect_domains: [],
+        resource_domains: [],
+        redirect_domains: [origin],
+      },
+    },
   };
 }
 
@@ -332,7 +438,10 @@ async function handleMcp(request) {
 
   if (method === "server/discover")
     return jsonRpc(id, {
-      result: { supportedVersions: [VERSION], capabilities: { tools: {} } },
+      result: {
+        supportedVersions: [VERSION],
+        capabilities: { tools: {}, resources: {} },
+      },
     });
   if (method === "initialize") {
     const requested = params?.protocolVersion;
@@ -341,15 +450,37 @@ async function handleMcp(request) {
         protocolVersion: PREVIOUS_VERSIONS.includes(requested)
           ? requested
           : VERSION,
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "physix", title: "Physix", version: "1.0.0" },
         instructions:
-          "Call describe_domain first. compare_stress returns cached reference stress results; build_scene builds a motion experiment. Both return share_url links that open the identical case or scene in the Physix lab; give them to the user unchanged.",
+          "Call describe_domain first. compare_stress returns cached reference stress results. build_scene builds a motion experiment; simulate_scene also runs it with the lab's engine and shows its graphs in the chat. Each returns a share_url that opens the identical case or scene in the Physix lab; give it to the user unchanged.",
       },
     });
   }
   if (method === "ping") return jsonRpc(id, { result: {} });
   if (method === "tools/list") return jsonRpc(id, { result: { tools } });
+  if (method === "resources/list")
+    return jsonRpc(id, {
+      result: {
+        resources: [
+          {
+            uri: CHART_VIEW_URI,
+            name: "chart-view",
+            title: "Physix chart view",
+            mimeType: CHART_VIEW_MIME,
+          },
+        ],
+      },
+    });
+  if (method === "resources/templates/list")
+    return jsonRpc(id, { result: { resourceTemplates: [] } });
+  if (method === "resources/read") {
+    if (params?.uri !== CHART_VIEW_URI)
+      return rpcError(id, -32002, "Resource not found.");
+    return jsonRpc(id, {
+      result: { contents: [chartResource(new URL(request.url).origin)] },
+    });
+  }
   if (method !== "tools/call") return rpcError(id, -32601, "Method not found.");
   if (!request.headers.get(identityHeader))
     return rpcError(id, -32001, "Sign in and connect Physix in ChatGPT.", 401);
@@ -358,6 +489,7 @@ async function handleMcp(request) {
 
   const args = params.arguments === undefined ? {} : params.arguments;
   let result;
+  let meta;
   if (params.name === "describe_domain" && onlyKeys(args, [])) {
     result = {
       schema: reference.schema,
@@ -375,12 +507,17 @@ async function handleMcp(request) {
     };
   } else if (params.name === "build_scene") {
     result = await buildSceneResult(args, new URL(request.url).origin);
+  } else if (params.name === "simulate_scene") {
+    ({ data: result, meta } = await simulateSceneResult(
+      args,
+      new URL(request.url).origin,
+    ));
   } else if (params.name === "compare_stress") {
     result = await compareStress(args, new URL(request.url).origin);
   } else {
     return rpcError(id, -32602, "Unknown Physix tool.");
   }
-  return jsonRpc(id, { result: toolResult(result) });
+  return jsonRpc(id, { result: toolResult(result, meta) });
 }
 
 function pluginDetailsUrl(value) {

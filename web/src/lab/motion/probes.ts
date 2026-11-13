@@ -11,13 +11,13 @@ import {
   type Pendulum,
   type Ramp,
   type Spring,
-} from "../scene";
+} from "../scene.ts";
 import {
   springForce,
   type BlockState,
   type Simulation,
   type Vec3,
-} from "../simulation";
+} from "../simulation.ts";
 
 /** Default probe rate. Samples land on multiples of 1/60 s at every supported step size. */
 export const PROBE_RATE = 60;

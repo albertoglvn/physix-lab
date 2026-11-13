@@ -1,4 +1,4 @@
-import { ellipticK, meanPeriod } from "../data/period";
+import { ellipticK, meanPeriod } from "../data/period.ts";
 import {
   bodyHalf,
   contactFriction,
@@ -17,8 +17,8 @@ import {
   type Pulley,
   type Ramp,
   type Spring,
-} from "../scene";
-import { atwood, PULLEY_TRAVEL } from "../simulation";
+} from "../scene.ts";
+import { atwood, PULLEY_TRAVEL } from "../simulation.ts";
 import {
   bodyLowest,
   canLand,
@@ -27,8 +27,8 @@ import {
   startingRamp,
   startRotation,
   type EventType,
-} from "./probes";
-import { eventOf, valueAt, type MotionRun } from "./run";
+} from "./probes.ts";
+import { eventOf, valueAt, type MotionRun } from "./run.ts";
 
 /** Closed-form curve drawn dashed behind a probe series. */
 export type TheoryCurve = {
