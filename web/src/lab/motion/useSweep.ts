@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LabScene } from "../scene";
-import type { SweepPoint, SweepSpec } from "./sweep";
+import { pointCount, type SweepPoint, type SweepSpec } from "./sweep";
 import type { SweepFit } from "./sweepFit";
 import {
   localRunner,
@@ -51,7 +51,7 @@ export function useSweep() {
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
-    const runners = makeRunners(Math.min(poolSize(), spec.values.length));
+    const runners = makeRunners(Math.min(poolSize(), pointCount(spec)));
     const mine = (update: (previous: SweepState) => SweepState) =>
       setState((previous) =>
         previous && controller.current === current

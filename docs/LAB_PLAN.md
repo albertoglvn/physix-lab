@@ -7,8 +7,8 @@ keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the styl
 this plan cites it wherever the UI changes.
 
 Status: in progress. Phases 0 to 2 are done. Phase 3 has its studying-variables,
-oscillator, simulated-pulley, materials, forces-and-drag, links-and-contact-forces and
-run-history slices; each phase lists its own status. The
+oscillator, simulated-pulley, materials, forces-and-drag, links-and-contact-forces,
+run-history and grids-and-perturbations slices; each phase lists its own status. The
 plan started from the `web/src/lab/` workspace, `browser-fem` worker, `Home` page and `physix.lab/1`
 scene contract.
 
@@ -810,8 +810,37 @@ Determinism behaves as documented in §4.1.
   Tests cover a nudge of 10⁻¹² (within tolerance), 0.1 (different), a NaN in one run and a
   missing sample (different), the history's ordering, cap and single baseline, loads that
   finish after a run is kept, and an IndexedDB round trip that keeps NaN samples.
-- *Still to do in Phase 3:* two-variable grids, seeded initial-condition perturbations, and
-  Stress sweeps with the convergence study sheet.
+
+*Status, two-variable grids and perturbed starts (done):*
+
+- The sweep sheet can add a second variable. Every pair runs on a grid of up to 400 points,
+  each axis up to 200 values. The dock draws the grid as slices along the second variable:
+  up to six evenly spread values, one per data-palette colour, each joined by a line. A note
+  says when more slices exist, and the CSV export has every point. Grids are not fitted.
+  The fit panel says so and points to the export.
+- Repeats can rerun each point from a perturbed initial condition: a body's height or launch
+  velocity, a pendulum's release angle, or a spring's release offset. The perturbation adds a
+  seeded Gaussian draw with the student's σ and clamps the result to the variable's limits.
+  Its stream key is kept apart from the sensor-noise stream, so noise and perturbation can be
+  combined. The dock labels perturbed sweeps "Perturbed start" next to the "Synthetic noise"
+  label. Methods text and the CSV report the perturbed inputs apart from the unperturbed run.
+  A sweep runs at most 400 simulations in all, counting one per perturbed repeat.
+- The new fields are optional in `physix.sweep/1`, so one-variable sweeps keep their
+  identity and older files still load.
+- *Exit evidence, measured* (AMD Ryzen 9 7940HS, Node, one in-process runner):
+  - A 20 × 20 grid of pendulum length (1 to 2.9 m) and release angle (5° to 62°) ran all
+    400 points in 5.96 s, with every value finite.
+  - The period rose with length in 380 of 380 neighbouring pairs, and with amplitude in
+    380 of 380.
+  - At 2.9 m, T(62°)/T(5°) = 1.0774, against 1.0776 from the large-amplitude series
+    1 + θ²/16 + 11θ⁴/3072.
+  - With 20 perturbed repeats at 10° and σ = 2°, the drawn inputs had a standard deviation of
+    1.95°. The periods' standard deviation was 2.08 ms, against 2.12 ms predicted from
+    dT/dθ₀ ≈ T·θ₀/8.
+  - Tests cover grid enumeration and the 400-point and 400-run caps, specs and identities
+    for one-variable sweeps, clamped draws, the same perturbed grid on one runner and on three,
+    and a CSV and JSON round trip.
+- *Still to do in Phase 3:* Stress sweeps with the convergence study sheet.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

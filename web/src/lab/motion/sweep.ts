@@ -1,13 +1,15 @@
 /**
  * Parameter sweeps over a Motion scene (LAB_PLAN.md §3.2). One scene variable takes a list
- * of values; each value is simulated once, because a run is deterministic, and one metric
- * is read from the run. Synthetic repeats add seeded sensor noise to that clean value on
- * the main thread, keyed by (seed, point, repeat), so they never depend on worker order.
+ * of values, or two variables take every pair on a grid; each point is simulated once,
+ * because a run is deterministic, and one metric is read from the run. Repeats either add
+ * seeded sensor noise to that clean value on the main thread, or rerun the point from a
+ * seeded perturbation of one initial condition; both are keyed by (seed, point, repeat), so
+ * they never depend on worker order.
  */
 
 import { noiseProblem, noisyReading, type SensorNoise } from "../data/noise";
 import { finiteMean, meanPeriod } from "../data/period";
-import { MAX_SEED, stream } from "../data/random";
+import { gaussian, MAX_SEED, stream } from "../data/random";
 import {
   blockOnRamp,
   dragCoefficientOf,
@@ -31,10 +33,15 @@ import { runProtocol, type MotionRun, type StopReason } from "./run";
 import { referencesFor } from "./theory";
 
 export const SWEEP_SCHEMA = "physix.sweep/1";
+/** Values along one swept variable. */
 export const MAX_SWEEP_POINTS = 200;
 export const MAX_REPEATS = 20;
-/** Points × repeats; repeats cost no simulation, but every reading is stored. */
+/** Points × repeats; noisy repeats cost no simulation, but every reading is stored. */
 export const MAX_READINGS = 400;
+/** Simulations in one sweep: grid points, plus one run per perturbed repeat. */
+export const MAX_SWEEP_RUNS = 400;
+/** Extra stream key that keeps perturbation draws apart from sensor-noise draws. */
+export const PERTURBATION_KEY = 1;
 
 export type SweepVariable = {
   /**
@@ -73,27 +80,45 @@ export type MetricOption = {
   unit: string;
 };
 
+/** A second swept variable: the sweep runs every pair of values on a grid. */
+export type SweepAxis = { variable: string; values: number[] };
+
+/** Gaussian draws added to one initial condition, one per repeat, clamped to its limits. */
+export type Perturbation = { variable: string; sigma: number };
+
 export type SweepSpec = {
   variable: string;
   values: number[];
+  /** Absent for a one-variable sweep. */
+  second?: SweepAxis;
   metric: SweepMetric;
-  /** Synthetic readings per point; 1 when noise is off. */
+  /** Synthetic readings per point; 1 when there is neither noise nor a perturbation. */
   repeats: number;
   seed: number;
   noise: SensorNoise | null;
+  /** Absent when repeats start from the scene's own initial conditions. */
+  perturbation?: Perturbation;
   protocol: Protocol;
   timeStep: number;
 };
 
 export type SweepPoint = {
+  /** Row-major on a grid: first-variable index × second-axis length + second index. */
   index: number;
   x: number;
+  /** The second variable's value on a grid. */
+  x2?: number;
   /** The clean metric; NaN when the run does not define it. */
   value: number;
   /** The closed-form value at this x, for reference metrics. */
   theory?: number;
-  /** Synthetic noisy readings, empty when noise is off. */
+  /**
+   * Synthetic readings, one per repeat: the perturbed runs' metrics when there is a
+   * perturbation, with sensor noise added when there is noise; empty when there is neither.
+   */
   readings: number[];
+  /** The perturbed initial values, one per repeat, and the clean metric of each run. */
+  perturbed?: { inputs: number[]; values: number[] };
   runId: string;
   stop: { reason: StopReason; t: number };
   wallMs: number;
@@ -267,6 +292,43 @@ export function sweepVariables(scene: LabScene): SweepVariable[] {
   return variables;
 }
 
+/** Fields that set where and how fast a part starts, not what it is. */
+const INITIAL_CONDITIONS: Partial<Record<LabObject["kind"], string[]>> = {
+  block: ["y", "vx", "vy"],
+  ball: ["y", "vx", "vy"],
+  cylinder: ["y", "vx", "vy"],
+  pendulum: ["angle"],
+  spring: ["offset"],
+};
+
+/** Initial conditions a sweep can perturb: heights, launch speeds, release angles, offsets. */
+export function perturbationVariables(scene: LabScene): SweepVariable[] {
+  return sweepVariables(scene).filter((item) => {
+    if (isSceneField(item.path) || /\.force\./.test(item.path)) return false;
+    const { part, field } = locate(scene, item.path);
+    return !!part && !!INITIAL_CONDITIONS[part.kind]?.includes(field);
+  });
+}
+
+/** Points in a sweep: the grid size, or the value count without a second variable. */
+export const pointCount = (spec: Pick<SweepSpec, "values" | "second">) =>
+  spec.values.length * (spec.second?.values.length ?? 1);
+
+/** Simulations a sweep needs: every point, plus one per perturbed repeat. */
+export const runCount = (
+  spec: Pick<SweepSpec, "values" | "second" | "perturbation" | "repeats">,
+) => pointCount(spec) * (1 + (spec.perturbation ? spec.repeats : 0));
+
+/** The values a point takes, from its row-major index. */
+export function sweepCoordinates(
+  spec: Pick<SweepSpec, "values" | "second">,
+  index: number,
+): { x: number; x2?: number } {
+  const columns = spec.second?.values.length ?? 1;
+  const x = spec.values[Math.floor(index / columns)];
+  return spec.second ? { x, x2: spec.second.values[index % columns] } : { x };
+}
+
 /** The current value of a variable in the scene. */
 export function sweepValueOf(scene: LabScene, path: string): number {
   if (isSceneField(path)) return scene[path];
@@ -432,40 +494,109 @@ export function measureMetric(
   return { value };
 }
 
-/** Synthetic readings for one point: the same for a given seed, point and repeat. */
+/**
+ * Synthetic readings for one point: the same for a given seed, point and repeat. Without a
+ * perturbation every repeat reads the clean value; with one, each repeat reads its own run.
+ */
 export function readingsFor(
   spec: Pick<SweepSpec, "noise" | "repeats" | "seed">,
   index: number,
   value: number,
+  perturbed?: number[],
 ): number[] {
   const { noise } = spec;
+  if (perturbed)
+    return noise
+      ? perturbed.map((reading, repeat) =>
+          noisyReading(reading, noise, stream(spec.seed, index, repeat)),
+        )
+      : [...perturbed];
   if (!noise) return [];
   return Array.from({ length: spec.repeats }, (_, repeat) =>
     noisyReading(value, noise, stream(spec.seed, index, repeat)),
   );
 }
 
-/** Simulates one point of a sweep. Workers call this, as do tests in-process. */
+/** One repeat's perturbed initial value: base + σ·N(0, 1), clamped to the variable's limits. */
+export function perturbedInput(
+  base: number,
+  perturbation: Perturbation,
+  range: { min: number; max: number },
+  seed: number,
+  index: number,
+  repeat: number,
+): number {
+  const draw =
+    base +
+    perturbation.sigma *
+      gaussian(stream(seed, index, repeat, PERTURBATION_KEY));
+  return Math.min(range.max, Math.max(range.min, draw));
+}
+
+/** The scene at one point of the sweep, with both grid values applied. */
+export function sceneAt(scene: LabScene, spec: SweepSpec, index: number) {
+  const { x, x2 } = sweepCoordinates(spec, index);
+  const varied = applySweepValue(scene, spec.variable, x);
+  return spec.second
+    ? applySweepValue(varied, spec.second.variable, x2!)
+    : varied;
+}
+
+async function measuredRun(scene: LabScene, spec: SweepSpec) {
+  const run = await runProtocol(scene, protocolFor(scene, spec.protocol), {
+    timeStep: spec.timeStep,
+  });
+  return { run, measured: measureMetric(run, spec.metric, scene) };
+}
+
+/** Simulates one point of a sweep, and its perturbed repeats. Workers call this. */
 export async function runSweepPoint(
   scene: LabScene,
   spec: SweepSpec,
   index: number,
 ): Promise<Omit<SweepPoint, "readings"> & { engineVersion: string }> {
-  const x = spec.values[index];
-  const varied = applySweepValue(scene, spec.variable, x);
-  const run = await runProtocol(varied, protocolFor(varied, spec.protocol), {
-    timeStep: spec.timeStep,
-  });
-  const measured = measureMetric(run, spec.metric, varied);
+  const { x, x2 } = sweepCoordinates(spec, index);
+  const varied = sceneAt(scene, spec, index);
+  const { run, measured } = await measuredRun(varied, spec);
+  let perturbed: SweepPoint["perturbed"];
+  if (spec.perturbation) {
+    const { variable: path } = spec.perturbation;
+    const range = sweepVariables(varied).find((item) => item.path === path);
+    if (!range)
+      throw new Error(`“${path}” is not an initial condition of this scene.`);
+    const base = sweepValueOf(varied, path);
+    perturbed = { inputs: [], values: [] };
+    for (let repeat = 0; repeat < spec.repeats; repeat++) {
+      const input = perturbedInput(
+        base,
+        spec.perturbation,
+        range,
+        spec.seed,
+        index,
+        repeat,
+      );
+      let value = Number.NaN;
+      try {
+        value = (await measuredRun(applySweepValue(varied, path, input), spec))
+          .measured.value;
+      } catch {
+        // A start the scene rejects, such as a spring reaching its anchor, reads NaN.
+      }
+      perturbed.inputs.push(input);
+      perturbed.values.push(value);
+    }
+  }
   return {
     index,
     x,
+    ...(x2 !== undefined ? { x2 } : {}),
     value: measured.value,
     ...(measured.theory !== undefined ? { theory: measured.theory } : {}),
     runId: run.id,
     stop: { reason: run.stop.reason, t: run.stop.t },
     wallMs: run.timing.wallMs,
     ...(measured.note ? { note: measured.note } : {}),
+    ...(perturbed ? { perturbed } : {}),
     engineVersion: run.engine.version,
   };
 }
@@ -495,22 +626,45 @@ function parseMetric(input: unknown, scene: LabScene): SweepMetric {
   return metric;
 }
 
-/** Validates a sweep against the scene it varies. */
+function parseValues(input: unknown, path: string, scene: LabScene) {
+  if (
+    !Array.isArray(input) ||
+    input.length < 1 ||
+    input.length > MAX_SWEEP_POINTS ||
+    !input.every((value) => typeof value === "number")
+  )
+    throw new Error(`A sweep needs 1–${MAX_SWEEP_POINTS} numeric values.`);
+  const values = input as number[];
+  values.forEach((value) => applySweepValue(scene, path, value));
+  return values;
+}
+
+/**
+ * Validates a sweep against the scene it varies. Each axis is checked on its own; a pair the
+ * scene rejects, such as a pendulum longer than its pivot is high, fails as that point.
+ */
 export function parseSweepSpec(input: unknown, scene: LabScene): SweepSpec {
   const raw = record(input, "The sweep");
   if (typeof raw.variable !== "string")
     throw new Error("Choose a variable to sweep.");
-  if (
-    !Array.isArray(raw.values) ||
-    raw.values.length < 1 ||
-    raw.values.length > MAX_SWEEP_POINTS ||
-    !raw.values.every((value) => typeof value === "number")
-  )
-    throw new Error(`A sweep needs 1–${MAX_SWEEP_POINTS} numeric values.`);
-  const values = raw.values as number[];
-  values.forEach((value) =>
-    applySweepValue(scene, raw.variable as string, value),
-  );
+  const values = parseValues(raw.values, raw.variable, scene);
+  let second: SweepAxis | undefined;
+  if (raw.second !== null && raw.second !== undefined) {
+    const axis = record(raw.second, "The second sweep variable");
+    if (typeof axis.variable !== "string")
+      throw new Error("Choose a second variable to sweep.");
+    if (axis.variable === raw.variable)
+      throw new Error("The second variable must differ from the first.");
+    second = {
+      variable: axis.variable,
+      values: parseValues(axis.values, axis.variable, scene),
+    };
+    const points = pointCount({ values, second });
+    if (points > MAX_SWEEP_RUNS)
+      throw new Error(
+        `A ${values.length} × ${second.values.length} grid is ${points} points; keep it at ${MAX_SWEEP_RUNS} or fewer.`,
+      );
+  }
   const metric = parseMetric(raw.metric, scene);
   let noise: SensorNoise | null = null;
   if (raw.noise !== null && raw.noise !== undefined) {
@@ -530,13 +684,34 @@ export function parseSweepSpec(input: unknown, scene: LabScene): SweepSpec {
     repeats > MAX_REPEATS
   )
     throw new Error(`Repeats must be a whole number from 1 to ${MAX_REPEATS}.`);
-  if (repeats > 1 && !noise)
-    throw new Error(
-      "Runs repeat exactly, so repeats need synthetic noise to differ.",
+  let perturbation: Perturbation | undefined;
+  if (raw.perturbation !== null && raw.perturbation !== undefined) {
+    const parsed = record(raw.perturbation, "The perturbation");
+    const target = perturbationVariables(scene).find(
+      (item) => item.path === parsed.variable,
     );
-  if (values.length * repeats > MAX_READINGS)
+    if (!target)
+      throw new Error(
+        "Only a height, launch speed, release angle or release offset can be perturbed.",
+      );
+    const sigma = parsed.sigma;
+    if (typeof sigma !== "number" || !(sigma > 0) || !Number.isFinite(sigma))
+      throw new Error("The perturbation σ must be a positive number.");
+    perturbation = { variable: target.path, sigma };
+  }
+  if (repeats > 1 && !noise && !perturbation)
     throw new Error(
-      `Points × repeats is ${values.length * repeats}; keep it at ${MAX_READINGS} or fewer.`,
+      "Runs repeat exactly, so repeats need synthetic noise or a perturbed start to differ.",
+    );
+  const points = pointCount({ values, second });
+  if (points * repeats > MAX_READINGS)
+    throw new Error(
+      `Points × repeats is ${points * repeats}; keep it at ${MAX_READINGS} or fewer.`,
+    );
+  const runs = runCount({ values, second, perturbation, repeats });
+  if (runs > MAX_SWEEP_RUNS)
+    throw new Error(
+      `That is ${runs} runs, one per point and one per perturbed repeat; keep it at ${MAX_SWEEP_RUNS} or fewer.`,
     );
   const seed = raw.seed ?? 0;
   if (
@@ -552,13 +727,16 @@ export function parseSweepSpec(input: unknown, scene: LabScene): SweepSpec {
     !(timeStep > 0 && timeStep <= MAX_TIME_STEP)
   )
     throw new Error("The time step must be greater than 0 and at most 1/30 s.");
+  // Optional fields appear only when set, so one-variable sweeps keep their identity.
   return {
     variable: raw.variable,
     values,
+    ...(second ? { second } : {}),
     metric,
     repeats,
     seed,
     noise,
+    ...(perturbation ? { perturbation } : {}),
     protocol: parseProtocol(raw.protocol),
     timeStep,
   };

@@ -7,8 +7,10 @@
 import type { LabScene } from "../scene";
 import { canonicalJson, ENGINE_NAME, sha256 } from "./run";
 import {
+  pointCount,
   readingsFor,
   runSweepPoint,
+  sweepCoordinates,
   SWEEP_SCHEMA,
   type SweepPoint,
   type SweepSpec,
@@ -129,7 +131,7 @@ export async function runSweep(
 ): Promise<SweepRecord> {
   if (!runners.length) throw new Error("A sweep needs at least one runner.");
   const started = performance.now();
-  const total = spec.values.length;
+  const total = pointCount(spec);
   const points: SweepPoint[] = [];
   let next = 0;
   let version = "";
@@ -146,7 +148,7 @@ export async function runSweep(
         if (signal?.aborted) return;
         result = {
           index,
-          x: spec.values[index],
+          ...sweepCoordinates(spec, index),
           value: Number.NaN,
           runId: "",
           stop: { reason: "time", t: 0 },
@@ -160,7 +162,12 @@ export async function runSweep(
       version ||= engineVersion;
       const point = {
         ...clean,
-        readings: readingsFor(spec, index, result.value),
+        readings: readingsFor(
+          spec,
+          index,
+          result.value,
+          result.perturbed?.values,
+        ),
       };
       points.push(point);
       onPoint?.({ done: points.length, total, point });

@@ -24,8 +24,20 @@ export type ScatterFit = {
   label: string;
 };
 
+/** One slice of a grid sweep: the points at one value of the second variable. */
+export type ScatterGroup = {
+  label: string;
+  color: string;
+  points: ScatterPoint[];
+};
+
 export type SweepPlotProps = {
   points: ScatterPoint[];
+  /**
+   * Slices of a grid, each in its own colour and joined by a line; when given, they replace
+   * `points` and `color`, and no fit is drawn.
+   */
+  groups?: ScatterGroup[];
   xAxis: PlotAxis;
   yAxis: PlotAxis;
   /** The swept range, so the frame holds still while points stream in. */
@@ -56,14 +68,18 @@ export function xRange([from, to]: [number, number]): [number, number] {
  * and a fit a solid line over its ±2 SE band at 16 % of the series colour.
  */
 export function SweepPlot({
-  points,
+  points: single,
+  groups,
   xAxis,
   yAxis,
   domain,
   color,
-  fit,
+  fit: singleFit,
   height = 200,
 }: SweepPlotProps) {
+  const sets = groups ?? [{ label: "Simulated", color, points: single }];
+  const points = sets.flatMap((set) => set.points);
+  const fit = groups ? undefined : singleFit;
   const [node, setNode] = useState<HTMLElement | null>(null);
   const width = useWidth(node, 520);
   const [hover, setHover] = useState<number | null>(null);
@@ -103,13 +119,25 @@ export function SweepPlot({
   const yScale = niceTicks(low, high, 4);
 
   const sorted = [...points].sort((a, b) => a.x - b.x);
-  const theory = sorted
-    .filter((point) => Number.isFinite(point.theory))
-    .map(
-      (point, index) =>
-        `${index ? "L" : "M"}${x(point.x).toFixed(1)} ${y(point.theory!).toFixed(1)}`,
-    )
-    .join("");
+  const line = (
+    items: ScatterPoint[],
+    value: (point: ScatterPoint) => number,
+  ) =>
+    [...items]
+      .sort((a, b) => a.x - b.x)
+      .filter((point) => Number.isFinite(value(point)))
+      .map(
+        (point, index) =>
+          `${index ? "L" : "M"}${x(point.x).toFixed(1)} ${y(value(point)).toFixed(1)}`,
+      )
+      .join("");
+  const theories = sets.map((set) =>
+    line(set.points, (point) => point.theory ?? Number.NaN),
+  );
+  const theory = theories.some(Boolean);
+  const slices = groups
+    ? sets.map((set) => line(set.points, (point) => point.value))
+    : [];
   const finite = fitXs.flatMap((at, index) =>
     Number.isFinite(fitValues[index]) ? [index] : [],
   );
@@ -151,6 +179,16 @@ export function SweepPlot({
   }
 
   const readout = (point: ScatterPoint) => {
+    if (groups)
+      return [
+        `${xAxis.symbol} ${formatValue(point.x)} ${xAxis.unit}`,
+        ...sets.flatMap((set) => {
+          const match = set.points.find((item) => item.x === point.x);
+          return match
+            ? [`${set.label}: ${formatValue(match.value)} ${yAxis.unit}`]
+            : [];
+        }),
+      ].join(" · ");
     const parts = [
       `${xAxis.symbol} ${formatValue(point.x)} ${xAxis.unit}`,
       `${yAxis.symbol} ${formatValue(point.value)} ${yAxis.unit}`,
@@ -175,7 +213,7 @@ export function SweepPlot({
         height={height}
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${yAxis.label} against ${xAxis.label.toLowerCase()}, ${points.length} points${synthetic ? " with synthetic readings" : ""}${theory ? ", with the closed form" : ""}${fit ? `, with the ${fit.label} fit` : ""}`}
+        aria-label={`${yAxis.label} against ${xAxis.label.toLowerCase()}, ${points.length} points${groups ? ` in ${groups.length} slices` : ""}${synthetic ? " with synthetic readings" : ""}${theory ? ", with the closed form" : ""}${fit ? `, with the ${fit.label} fit` : ""}`}
         onPointerMove={onPointerMove}
         onPointerLeave={() => setHover(null)}
       >
@@ -196,7 +234,9 @@ export function SweepPlot({
             style={{ fill: color }}
           />
         ) : null}
-        {theory ? <path className="lab-plot-ref" d={theory} /> : null}
+        {theories.map((path, index) =>
+          path ? <path key={index} className="lab-plot-ref" d={path} /> : null,
+        )}
         {fitPath ? (
           <path
             className="lab-plot-line"
@@ -204,30 +244,52 @@ export function SweepPlot({
             style={{ stroke: color }}
           />
         ) : null}
-        <g className="lab-plot-readings" style={{ stroke: color }}>
-          {points.flatMap((point) =>
-            point.readings.map((reading, repeat) => (
-              <circle
-                key={`${point.x}:${repeat}`}
-                cx={x(point.x)}
-                cy={y(reading)}
-                r={MARKER}
-              />
-            )),
-          )}
-        </g>
-        <g className="lab-plot-points" style={{ fill: color }}>
-          {points.map((point) =>
-            Number.isFinite(point.value) ? (
-              <circle
-                key={point.x}
-                cx={x(point.x)}
-                cy={y(point.value)}
-                r={synthetic ? MARKER - 1.25 : MARKER}
-              />
-            ) : null,
-          )}
-        </g>
+        {slices.map((path, index) =>
+          path ? (
+            <path
+              key={index}
+              className="lab-plot-line lab-plot-line--overlay"
+              d={path}
+              style={{ stroke: sets[index].color }}
+            />
+          ) : null,
+        )}
+        {sets.map((set, index) => (
+          <g
+            key={index}
+            className="lab-plot-readings"
+            style={{ stroke: set.color }}
+          >
+            {set.points.flatMap((point) =>
+              point.readings.map((reading, repeat) => (
+                <circle
+                  key={`${point.x}:${repeat}`}
+                  cx={x(point.x)}
+                  cy={y(reading)}
+                  r={MARKER}
+                />
+              )),
+            )}
+          </g>
+        ))}
+        {sets.map((set, index) => (
+          <g
+            key={index}
+            className="lab-plot-points"
+            style={{ fill: set.color }}
+          >
+            {set.points.map((point) =>
+              Number.isFinite(point.value) ? (
+                <circle
+                  key={point.x}
+                  cx={x(point.x)}
+                  cy={y(point.value)}
+                  r={synthetic ? MARKER - 1.25 : MARKER}
+                />
+              ) : null,
+            )}
+          </g>
+        ))}
         {hovered ? (
           <g className="lab-plot-cursor">
             <line
@@ -244,19 +306,21 @@ export function SweepPlot({
           <span className="num">{readout(hovered)}</span>
         ) : (
           <>
-            <span>
-              <i
-                className="lab-plot-marker"
-                style={{ background: color }}
-                aria-hidden="true"
-              />
-              Simulated
-            </span>
+            {sets.map((set, index) => (
+              <span key={index}>
+                <i
+                  className="lab-plot-marker"
+                  style={{ background: set.color }}
+                  aria-hidden="true"
+                />
+                {set.label}
+              </span>
+            ))}
             {synthetic ? (
               <span>
                 <i
                   className="lab-plot-marker lab-plot-marker--hollow"
-                  style={{ borderColor: color }}
+                  style={{ borderColor: sets[0].color }}
                   aria-hidden="true"
                 />
                 Synthetic readings

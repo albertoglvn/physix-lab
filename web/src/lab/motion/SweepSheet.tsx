@@ -7,11 +7,16 @@ import type { Protocol } from "./probes";
 import {
   metricKey,
   metricOption,
+  perturbationVariables,
+  pointCount,
+  runCount,
   sweepMetrics,
   sweepVariables,
   type SweepSpec,
 } from "./sweep";
 import {
+  formForPerturbation,
+  formForSecond,
   formForVariable,
   formToSpec,
   reconcileForm,
@@ -28,7 +33,7 @@ export type SweepSheetProps = {
   onRun: (spec: SweepSpec) => void;
 };
 
-type TextField = Exclude<keyof SweepForm, "noise">;
+type TextField = Exclude<keyof SweepForm, "noise" | "grid" | "perturb">;
 
 function Field({
   label,
@@ -50,7 +55,10 @@ function Field({
   );
 }
 
-/** The sweep setup sheet: one variable over a range, one metric, optional synthetic noise. */
+/**
+ * The sweep setup sheet: one variable over a range or two on a grid, one metric, and
+ * optional synthetic noise or perturbed starts for repeats.
+ */
 export function SweepSheet({
   open,
   scene,
@@ -64,6 +72,9 @@ export function SweepSheet({
   const set = (patch: Partial<SweepForm>) => setStored({ ...form, ...patch });
   const variables = sweepVariables(scene);
   const variable = variables.find((item) => item.path === form.variable);
+  const second = variables.find((item) => item.path === form.variable2);
+  const initial = perturbationVariables(scene);
+  const perturbed = initial.find((item) => item.path === form.perturbVariable);
   const metrics = sweepMetrics(scene);
   const outcome = formToSpec(form, scene, protocol);
   const metricUnit = outcome.spec
@@ -80,15 +91,34 @@ export function SweepSheet({
       />
     </Field>
   );
-  const count = outcome.spec?.values.length ?? 0;
-  const workers = Math.min(poolSize(), count);
-  const readings = outcome.spec?.noise ? count * outcome.spec.repeats : 0;
+  const spec = outcome.spec;
+  const points = spec ? pointCount(spec) : 0;
+  const runs = spec ? runCount(spec) : 0;
+  const workers = Math.min(poolSize(), points);
+  const readings =
+    spec && (spec.noise || spec.perturbation) ? points * spec.repeats : 0;
+  const toggle = (
+    key: "grid" | "noise" | "perturb",
+    label: string,
+    disabled = false,
+  ) => (
+    <label className="lab-toggle">
+      <input
+        type="checkbox"
+        checked={form[key]}
+        disabled={disabled}
+        onChange={(event) => set({ [key]: event.currentTarget.checked })}
+      />
+      <span>{label}</span>
+    </label>
+  );
 
   return (
     <Sheet open={open} title="Sweep setup" onClose={onClose}>
       <p className="lab-sheet-lead">
-        Each value runs once with the current protocol; runs are deterministic,
-        so repeats only differ by synthetic noise.
+        Each point runs once with the current protocol. Runs are deterministic,
+        so repeats differ only by synthetic sensor noise or by a seeded
+        perturbation of one starting value.
       </p>
       <form
         className="lab-sweep-form"
@@ -118,6 +148,36 @@ export function SweepSheet({
           {text("to", "To", variable?.unit)}
           {text("step", "Step", variable?.unit)}
         </div>
+        {toggle("grid", "Second variable on a grid", variables.length < 2)}
+        {form.grid ? (
+          <>
+            <Field label="And vary">
+              <select
+                className="px-input"
+                value={form.variable2}
+                onChange={(event) =>
+                  setStored(
+                    formForSecond(scene, form, event.currentTarget.value),
+                  )
+                }
+              >
+                {variables
+                  .filter((item) => item.path !== form.variable)
+                  .map((item) => (
+                    <option key={item.path} value={item.path}>
+                      {item.label}
+                      {item.unit ? ` (${item.unit})` : ""}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <div className="lab-fields lab-fields--three">
+              {text("from2", "From", second?.unit)}
+              {text("to2", "To", second?.unit)}
+              {text("step2", "Step", second?.unit)}
+            </div>
+          </>
+        ) : null}
         <Field label="Read">
           <select
             className="px-input"
@@ -135,19 +195,40 @@ export function SweepSheet({
             ))}
           </select>
         </Field>
-        <label className="lab-toggle">
-          <input
-            type="checkbox"
-            checked={form.noise}
-            onChange={(event) => set({ noise: event.currentTarget.checked })}
-          />
-          <span>Synthetic sensor noise</span>
-        </label>
+        {toggle("noise", "Synthetic sensor noise")}
         {form.noise ? (
           <div className="lab-fields">
             {text("sigma", "σ", metricUnit)}
             {text("resolution", "Resolution", metricUnit)}
-            {text("repeats", "Readings per value")}
+          </div>
+        ) : null}
+        {toggle("perturb", "Perturb a starting value", !initial.length)}
+        {form.perturb ? (
+          <div className="lab-fields">
+            <Field label="Perturb">
+              <select
+                className="px-input"
+                value={form.perturbVariable}
+                onChange={(event) =>
+                  setStored(
+                    formForPerturbation(scene, form, event.currentTarget.value),
+                  )
+                }
+              >
+                {initial.map((item) => (
+                  <option key={item.path} value={item.path}>
+                    {item.label}
+                    {item.unit ? ` (${item.unit})` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {text("perturbSigma", "σ", perturbed?.unit)}
+          </div>
+        ) : null}
+        {form.noise || form.perturb ? (
+          <div className="lab-fields">
+            {text("repeats", "Readings per point")}
             <Field label="Seed">
               <span className="lab-seed">
                 <input
@@ -175,8 +256,11 @@ export function SweepSheet({
           </p>
         ) : (
           <p className="lab-note num">
-            {count} {count === 1 ? "run" : "runs"} on {workers}{" "}
+            {runs} {runs === 1 ? "run" : "runs"} on {workers}{" "}
             {workers === 1 ? "worker" : "workers"}
+            {spec?.second
+              ? ` · ${spec.values.length} × ${spec.second.values.length} grid`
+              : ""}
             {readings ? ` · ${readings} synthetic readings` : ""}
           </p>
         )}

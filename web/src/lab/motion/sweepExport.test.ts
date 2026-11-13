@@ -54,8 +54,9 @@ describe("sweep CSV", () => {
     expect(csv).toContain(
       "# synthetic_noise: gaussian sigma 0.05, resolution 0.001, 2 readings per point, seed 3",
     );
-    expect(body[0]).toMatch(/^0,20,deg,,[-\d.e]+,m\/s²,simulated$/);
-    expect(body[1]).toMatch(/^0,20,deg,0,[-\d.e]+,m\/s²,synthetic$/);
+    expect(csv).toContain("# perturbation: none");
+    expect(body[0]).toMatch(/^0,20,deg,,,,,[-\d.e]+,m\/s²,simulated$/);
+    expect(body[1]).toMatch(/^0,20,deg,,,0,,[-\d.e]+,m\/s²,synthetic$/);
     expect(body.filter((line) => line.endsWith(",theory"))).toHaveLength(4);
   });
 
@@ -65,7 +66,7 @@ describe("sweep CSV", () => {
       ...record,
       points: [{ ...record.points[0], value: Number.NaN, readings: [] }],
     };
-    expect(rows(sweepToCsv(missing))[1]).toBe("0,20,deg,,,m/s²,simulated");
+    expect(rows(sweepToCsv(missing))[1]).toBe("0,20,deg,,,,,,m/s²,simulated");
     expect(sweepToCsv(record, fit)).toMatch(
       /# fit: .*mu = [\d.]+ ± .*weighted/,
     );

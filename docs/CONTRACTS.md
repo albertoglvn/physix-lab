@@ -360,8 +360,12 @@ re-running them and repeats the fit from its `model` and `expression`.
 
 ## Motion sweep (`physix.sweep/1`)
 
-One variable of a Motion scene varied over a list of values, with one headless
-`physix.run/1` per value and one metric read from each run.
+One variable of a Motion scene varied over a list of values, or two variables over every
+pair on a grid, with one headless `physix.run/1` per point and one metric read from each
+run. Repeats can add synthetic sensor noise, rerun each point from a perturbed initial
+condition, or both. `spec.second`, `spec.perturbation`, `points[].x2` and
+`points[].perturbed` are optional and appear only when used, so a one-variable sweep
+written before grids existed parses and keeps its `id`.
 
 | Field | Meaning |
 | --- | --- |
@@ -369,20 +373,33 @@ One variable of a Motion scene varied over a list of values, with one headless
 | `scene` | The base scene (`physix.lab/2`) before any value is applied |
 | `spec.variable` | `gravity`, `floorFriction`, `airDensity`, `linearDrag`, `<object id>.<field>` or `<object id>.force.<x, y, start or end>`, in the scene's own unit (degrees for angles, SI otherwise). A body's `dragCoefficient` is offered when the scene has air. |
 | `spec.values` | At most 200 values inside the variable's limits |
+| `spec.second` | Absent, or `{variable, values}`: a second, different variable on the same terms. Points are every pair, at most 400. Each axis is checked on its own; a pair the scene rejects (such as a pendulum longer than its pivot is high) is kept as a point with a `NaN` value and the reason as its `note`. |
 | `spec.metric` | `{kind: "reference", id}` (the measured side of a closed-form reference), `{kind: "probe", key, stat}` with `stat` in `final`, `max`, `min` and `mean`, or `{kind: "stop_time"}` |
 | `spec.noise` | `null`, or `{sigma, resolution}` in the metric's SI unit |
-| `spec.repeats`, `spec.seed` | Synthetic readings per value (1 to 20, at most 400 in all; 1 without noise) and an unsigned 32-bit seed |
+| `spec.perturbation` | Absent, or `{variable, sigma}`: an initial condition (a body's `y`, `vx` or `vy`, a pendulum's `angle` or a spring's `offset`) and a positive σ in that variable's unit |
+| `spec.repeats`, `spec.seed` | Synthetic readings per point (1 to 20, at most 400 in all; 1 without noise or a perturbation) and an unsigned 32-bit seed |
 | `spec.protocol`, `spec.timeStep` | The stop protocol and step every run uses |
-| `points` | `{index, x, value, theory?, readings, runId, stop, wallMs, note?}` in index order. `value` is the clean simulated metric, `NaN` in memory and `null` in JSON when a run does not define it. `theory` is the closed-form value at `x`. `note` says why a value is missing or which assumption the scene breaks. |
+| `points` | `{index, x, x2?, value, theory?, readings, perturbed?, runId, stop, wallMs, note?}` in index order. On a grid `index` is row-major, `i·n₂ + j` for the `i`th first value and `j`th second value. `value` is the clean simulated metric, `NaN` in memory and `null` in JSON when a run does not define it. `theory` is the closed-form value at the point. `perturbed` is `{inputs, values}`, the perturbed starting value and clean metric of each repeat. `note` says why a value is missing or which assumption the scene breaks. |
 | `status` | `complete`, or `cancelled` with the points finished so far |
 | `engine` | `name` (`rapier3d-compat`) and the `version` that ran the points |
 | `timing` | `wallMs`, `runners`, `hardwareConcurrency` when the browser reports it, and the `boundary`: first dispatch to last point, including worker start-up and engine set-up in each worker |
 
-Runs are deterministic for the same engine build, so repeats differ only by synthetic noise.
-Reading `r` of point `i` is `round((value + σ·z) / resolution) · resolution`, where `z` is a
-Box–Muller normal draw from mulberry32 seeded by a hash of `(seed, i, r)`. Readings do not
-depend on worker count or completion order. Each reading's standard uncertainty is
-`sqrt(σ² + resolution²/12)`.
+Runs are deterministic for the same engine build, so repeats differ only by synthetic noise
+or a synthetic perturbation. One sweep runs at most 400 simulations: one per point, plus one
+per perturbed repeat.
+
+- *Perturbation.* Repeat `r` of point `i` starts from `clamp(u + σ_u·z′, min, max)`, where `u`
+  is the variable's value at the point, `min` and `max` are its limits, and `z′` is a
+  Box–Muller normal draw from mulberry32 seeded by a hash of `(seed, i, r, 1)`. A start the
+  scene rejects reads `NaN`.
+- *Noise.* Reading `r` of point `i` is `round((y + σ·z) / resolution) · resolution`, where `z`
+  is drawn as above from a hash of `(seed, i, r)` and `y` is the point's clean value, or the
+  repeat's perturbed value when there is a perturbation. Without noise, a perturbed reading
+  is the perturbed value itself.
+
+Readings do not depend on worker count or completion order. Each noisy reading's standard
+uncertainty is `sqrt(σ² + resolution²/12)`; a perturbation adds scatter that this does not
+include.
 
 ### Sweep fit
 
@@ -391,8 +408,9 @@ chi2?, reducedChi2?, converged, bandCoverage, excluded?}`. `model` is `linear`, 
 `power`, `exponential`, `incline`, `pendulum` (T = 2π √(x/g), fitting g), `spring`
 (T = 2π √(x/k)) or `custom`. `parameters` are `{name, value, se}` with
 `se` one standard error. With noise, the fit is weighted by the reading uncertainty over
-every reading, and `chi2` is reported. Without noise, it is unweighted over the clean values,
-and the standard errors are scaled by the residual variance. Expressions may use `x`, the
+every reading, and `chi2` is reported. With a perturbation and no noise, it is unweighted
+over every reading. Without either, it is unweighted over the clean values, and the
+standard errors are scaled by the residual variance. A grid is not fitted. Expressions may use `x`, the
 named parameters, `g` (the scene's gravity), `pi` and `deg`. Plotted bands are
 `bandCoverage` (2) standard errors of the fitted curve.
 The `incline` model fits sliding values only. Values whose clean acceleration is below
@@ -404,13 +422,16 @@ The `incline` model fits sliding values only. Values whose clean acceleration is
 One row per simulated value, synthetic reading and closed-form value:
 
 ```
-point,x,x_unit,repeat,value,unit,source
+point,x,x_unit,x2,x2_unit,repeat,input,value,unit,source
 ```
 
-`source` is `simulated`, `synthetic` or `theory`, and `repeat` is set only on synthetic rows.
-`#` lines at the top give the schema and id, scene, engine, `time_step_s`, variable, metric,
-status, noise model with seed, and the fit when there is one. A missing value is an empty
-cell.
+`source` is `simulated`, `perturbed`, `synthetic` or `theory`. `x2` and `x2_unit` are set
+on a grid. `repeat` is set on perturbed and synthetic rows, and `input` holds that repeat's
+perturbed starting value when there is a perturbation. With both noise and a perturbation,
+`perturbed` rows hold each perturbed run's clean metric and `synthetic` rows the noisy
+reading of it. `#` lines at the top give the schema and id, scene, engine, `time_step_s`,
+variable, the second variable and grid size, metric, status, noise model with seed, the
+perturbation, and the fit when there is one. A missing value is an empty cell.
 
 ### Samples CSV
 

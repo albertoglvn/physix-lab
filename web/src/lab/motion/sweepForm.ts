@@ -12,6 +12,7 @@ import {
   applySweepValue,
   metricKey,
   parseSweepSpec,
+  perturbationVariables,
   sweepMetrics,
   sweepValues,
   sweepVariables,
@@ -31,6 +32,16 @@ export type SweepForm = {
   resolution: string;
   repeats: string;
   seed: string;
+  /** A second variable, run on a grid with the first. */
+  grid: boolean;
+  variable2: string;
+  from2: string;
+  to2: string;
+  step2: string;
+  /** Repeats rerun each point from a seeded perturbation of one initial condition. */
+  perturb: boolean;
+  perturbVariable: string;
+  perturbSigma: string;
 };
 
 /** About ten round steps across the variable's limits. */
@@ -108,22 +119,72 @@ function sceneRange(scene: LabScene, path: string, min: number, max: number) {
   return { ...range, from: valid[0], to: valid[valid.length - 1] };
 }
 
+function rangeFields(scene: LabScene, variable: string) {
+  const known = sweepVariables(scene).find((item) => item.path === variable);
+  if (!known) return undefined;
+  const range = sceneRange(scene, variable, known.min, known.max);
+  return {
+    from: show(range.from),
+    to: show(range.to),
+    step: show(range.step),
+  };
+}
+
 /** The form for one variable: its default range, and the other fields as they were. */
 export function formForVariable(
   scene: LabScene,
   form: SweepForm,
   variable: string,
 ): SweepForm {
-  const known = sweepVariables(scene).find((item) => item.path === variable);
-  if (!known) return { ...form, variable };
-  const range = sceneRange(scene, variable, known.min, known.max);
-  return {
-    ...form,
-    variable,
-    from: show(range.from),
-    to: show(range.to),
-    step: show(range.step),
-  };
+  const range = rangeFields(scene, variable);
+  return range ? { ...form, variable, ...range } : { ...form, variable };
+}
+
+/** The form for a grid's second variable, with about ten steps across its range. */
+export function formForSecond(
+  scene: LabScene,
+  form: SweepForm,
+  variable2: string,
+): SweepForm {
+  const range = rangeFields(scene, variable2);
+  // About five values keep a grid with a ten-value first axis near 50 runs.
+  const step =
+    range &&
+    show(
+      (Number(range.to) - Number(range.from)) /
+        Math.max(
+          1,
+          Math.min(
+            4,
+            Math.round(
+              (Number(range.to) - Number(range.from)) / Number(range.step),
+            ),
+          ),
+        ),
+    );
+  return range
+    ? { ...form, variable2, from2: range.from, to2: range.to, step2: step! }
+    : { ...form, variable2 };
+}
+
+/** The form for a perturbed initial condition, with σ of one default step. */
+export function formForPerturbation(
+  scene: LabScene,
+  form: SweepForm,
+  perturbVariable: string,
+): SweepForm {
+  const known = perturbationVariables(scene).find(
+    (item) => item.path === perturbVariable,
+  );
+  return known
+    ? { ...form, perturbVariable, perturbSigma: show(known.step) }
+    : { ...form, perturbVariable };
+}
+
+/** A second variable other than the first: the next one in the scene's list. */
+function otherVariable(scene: LabScene, variable: string) {
+  const paths = sweepVariables(scene).map((item) => item.path);
+  return paths.find((path) => path !== variable) ?? "";
 }
 
 /** A fresh form for the scene: its main variable and first metric, noise off. */
@@ -132,7 +193,8 @@ export function defaultSweepForm(
   seed = freshSeed(),
 ): SweepForm {
   const [first] = sweepMetrics(scene);
-  return formForVariable(
+  const variable = defaultVariable(scene);
+  const form = formForVariable(
     scene,
     {
       variable: "",
@@ -145,8 +207,22 @@ export function defaultSweepForm(
       resolution: "0.001",
       repeats: "3",
       seed: String(seed),
+      grid: false,
+      variable2: "",
+      from2: "",
+      to2: "",
+      step2: "",
+      perturb: false,
+      perturbVariable: "",
+      perturbSigma: "",
     },
-    defaultVariable(scene),
+    variable,
+  );
+  const [initial] = perturbationVariables(scene);
+  return formForPerturbation(
+    scene,
+    formForSecond(scene, form, otherVariable(scene, variable)),
+    initial?.path ?? "",
   );
 }
 
@@ -158,9 +234,20 @@ export function reconcileForm(
   if (!form) return defaultSweepForm(scene);
   const variables = sweepVariables(scene).map((item) => item.path);
   const metrics = sweepMetrics(scene).map((item) => metricKey(item.metric));
+  const initial = perturbationVariables(scene).map((item) => item.path);
   let next = form;
   if (!variables.includes(form.variable))
     next = formForVariable(scene, next, defaultVariable(scene));
+  if (!variables.includes(next.variable2) || next.variable2 === next.variable)
+    next = formForSecond(scene, next, otherVariable(scene, next.variable));
+  const stale = initial.length
+    ? !initial.includes(next.perturbVariable)
+    : next.perturbVariable !== "" || next.perturb;
+  if (stale)
+    next = {
+      ...formForPerturbation(scene, next, initial[0] ?? ""),
+      perturb: next.perturb && initial.length > 0,
+    };
   if (!metrics.includes(next.metric))
     next = { ...next, metric: metrics[0] ?? "stop_time" };
   return next;
@@ -193,21 +280,39 @@ export function formToSpec(
       number(form.to, "To"),
       number(form.step, "Step"),
     );
+    const second = form.grid
+      ? {
+          variable: form.variable2,
+          values: sweepValues(
+            number(form.from2, "Second from"),
+            number(form.to2, "Second to"),
+            number(form.step2, "Second step"),
+          ),
+        }
+      : undefined;
     const noise = form.noise
       ? {
           sigma: number(form.sigma, "σ"),
           resolution: number(form.resolution || "0", "Resolution"),
         }
       : null;
+    const perturbation = form.perturb
+      ? {
+          variable: form.perturbVariable,
+          sigma: number(form.perturbSigma, "Perturbation σ"),
+        }
+      : undefined;
     return {
       spec: parseSweepSpec(
         {
           variable: form.variable,
           values,
+          second,
           metric: option.metric,
-          repeats: noise ? number(form.repeats, "Repeats") : 1,
+          repeats: noise || perturbation ? number(form.repeats, "Repeats") : 1,
           seed: number(form.seed, "Seed"),
           noise,
+          perturbation,
           protocol,
           timeStep,
         },

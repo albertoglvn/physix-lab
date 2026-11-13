@@ -1,10 +1,17 @@
 import { Download, SlidersHorizontal, Square } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FIT_PRESETS, type FitModelId } from "../data/fit";
-import { SweepPlot } from "../data/SweepPlot";
+import { formatValue } from "../data/Plot";
+import { SweepPlot, type ScatterGroup } from "../data/SweepPlot";
 import type { LabScene } from "../scene";
 import { canonicalJson } from "./run";
-import { metricOption, sweepVariables, type SweepSpec } from "./sweep";
+import {
+  metricOption,
+  pointCount,
+  sweepVariables,
+  type SweepPoint,
+  type SweepSpec,
+} from "./sweep";
 import {
   fitSweep,
   residualFit,
@@ -45,24 +52,70 @@ export function suggestedModel(spec: SweepSpec): FitModelId {
   return "linear";
 }
 
-/** Axis titles for the swept variable and the metric. */
+/** Axis titles for the swept variables and the metric. */
 export function sweepAxes(scene: LabScene, spec: SweepSpec) {
-  const variable = sweepVariables(scene).find(
-    (item) => item.path === spec.variable,
-  );
+  const variables = sweepVariables(scene);
+  const axis = (path: string, symbol: string) => {
+    const variable = variables.find((item) => item.path === path);
+    return {
+      label: variable?.label ?? path,
+      symbol: variable?.symbol ?? symbol,
+      unit: variable?.unit ?? "",
+    };
+  };
   const metric = metricOption(scene, spec.metric);
   return {
-    x: {
-      label: variable?.label ?? spec.variable,
-      symbol: variable?.symbol ?? "x",
-      unit: variable?.unit ?? "",
-    },
+    x: axis(spec.variable, "x"),
+    ...(spec.second ? { x2: axis(spec.second.variable, "x₂") } : {}),
+    perturbed: spec.perturbation
+      ? axis(spec.perturbation.variable, "u")
+      : undefined,
     y: {
       label: metric?.label ?? "Metric",
       symbol: metric?.symbol ?? "y",
       unit: metric?.unit ?? "",
     },
   };
+}
+
+/** Slices a grid plot draws at most: one per data-palette colour. */
+export const SLICE_LIMIT = 6;
+const SLICE_COLOURS = [
+  "var(--px-series-1)",
+  "var(--px-series-2)",
+  "var(--px-series-3)",
+  "var(--px-series-4)",
+  "var(--px-series-5)",
+  "var(--px-series-6)",
+];
+
+/** At most `limit` slice indices, evenly spread, always with the first and last. */
+export function sliceIndices(count: number, limit = SLICE_LIMIT): number[] {
+  if (count <= limit) return Array.from({ length: count }, (_, index) => index);
+  const chosen = Array.from({ length: limit }, (_, order) =>
+    Math.round((order * (count - 1)) / (limit - 1)),
+  );
+  return [...new Set(chosen)];
+}
+
+/** A grid's points as slices along its second variable, the first in the dock's colour. */
+export function gridSlices(
+  spec: SweepSpec,
+  points: SweepPoint[],
+  axis: { symbol: string; unit: string },
+  color: string,
+): ScatterGroup[] {
+  const { second } = spec;
+  if (!second) return [];
+  const colours = [color, ...SLICE_COLOURS.filter((item) => item !== color)];
+  return sliceIndices(second.values.length).map((column, order) => {
+    const value = second.values[column];
+    return {
+      label: `${axis.symbol} = ${formatValue(value)}${axis.unit ? ` ${axis.unit}` : ""}`,
+      color: colours[order % colours.length],
+      points: points.filter((point) => point.x2 === value),
+    };
+  });
 }
 
 function FitPanel({
@@ -79,6 +132,13 @@ function FitPanel({
   const [error, setError] = useState("");
   const { fit } = state;
   const ready = state.status !== "running" && state.points.length > 0;
+  if (state.spec.second)
+    return (
+      <p className="lab-note">
+        A fit takes one swept variable. Export the grid as CSV to fit it
+        elsewhere, or sweep one variable at a time.
+      </p>
+    );
 
   function run() {
     try {
@@ -148,9 +208,13 @@ function FitPanel({
       {fit ? <FitSummary fit={fit} /> : null}
       {!fit && !error ? (
         <p className="lab-note">
-          {state.spec.noise
-            ? "Fits every synthetic reading, weighted by its σ."
-            : "Fits the simulated values, unweighted."}
+          {state.spec.perturbation
+            ? state.spec.noise
+              ? "Fits every perturbed reading, weighted by the sensor σ; the perturbation adds scatter those weights leave out."
+              : "Fits every perturbed reading, unweighted."
+            : state.spec.noise
+              ? "Fits every synthetic reading, weighted by its σ."
+              : "Fits the simulated values, unweighted."}
         </p>
       ) : null}
     </>
@@ -245,8 +309,13 @@ export function SweepData({
 }: SweepDataProps) {
   const running = state?.status === "running";
   const axes = state ? sweepAxes(state.scene, state.spec) : undefined;
-  const total = state?.spec.values.length ?? 0;
+  const total = state ? pointCount(state.spec) : 0;
   const values = state?.spec.values ?? [];
+  const slices =
+    state && axes?.x2
+      ? gridSlices(state.spec, state.points, axes.x2, color)
+      : undefined;
+  const sliceCount = state?.spec.second?.values.length ?? 0;
   return (
     <div className="lab-data">
       <div className="lab-data-bar">
@@ -272,6 +341,16 @@ export function SweepData({
                 title={`Seeded virtual-sensor noise, seed ${state.spec.seed}; the simulated values are kept apart.`}
               >
                 Synthetic noise · σ {state.spec.noise.sigma} {axes.y.unit}
+              </span>
+            ) : null}
+            {state.spec.perturbation && axes.perturbed ? (
+              <span
+                className="lab-chip"
+                data-tone="warn"
+                title={`Each repeat reruns the point from ${axes.perturbed.label} plus a seeded Gaussian draw, seed ${state.spec.seed}; the clean run is kept apart.`}
+              >
+                Perturbed start · σ {state.spec.perturbation.sigma}{" "}
+                {axes.perturbed.unit}
               </span>
             ) : null}
             {state.scene !== scene &&
@@ -312,7 +391,8 @@ export function SweepData({
         <div className="lab-data-main">
           {!state || !axes ? (
             <p className="lab-note">
-              Vary one input across a range and read one result from each run.
+              Vary one input across a range, or two on a grid, and read one
+              result from each run.
             </p>
           ) : state.error ? (
             <p className="lab-error" role="alert">
@@ -322,12 +402,19 @@ export function SweepData({
             <>
               <SweepPlot
                 points={state.points}
+                groups={slices}
                 xAxis={axes.x}
                 yAxis={axes.y}
                 domain={[values[0], values[values.length - 1]]}
                 color={color}
                 fit={state.fit?.curve}
               />
+              {slices && sliceCount > slices.length ? (
+                <p className="lab-note">
+                  Showing {slices.length} of {sliceCount} values of{" "}
+                  {axes.x2?.label}; the export has every point.
+                </p>
+              ) : null}
               {state.fit ? (
                 <SweepPlot
                   points={residualPoints(state.points, state.fit)}

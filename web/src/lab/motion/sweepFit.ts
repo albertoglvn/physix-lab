@@ -141,9 +141,14 @@ export function fitSweep(
   model: FitModelId,
   expression: string,
 ): SweepFit {
+  if (spec.second)
+    throw new Error(
+      "A fit takes one swept variable; export the grid to fit it elsewhere.",
+    );
   const preset = model === "custom" ? undefined : presetById(model);
   const source = preset?.expression ?? expression;
-  const noisy = spec.noise !== null;
+  // Perturbed repeats are readings too, with or without sensor noise on them.
+  const noisy = spec.noise !== null || spec.perturbation !== undefined;
   const { kept, excluded } = fitPoints(model, points);
   const { xs, ys } = fitData(kept, noisy);
   const sigma = spec.noise ? readingUncertainty(spec.noise) : undefined;
