@@ -14,10 +14,15 @@ const viewEnv = { ...env, PHYSIX_CHART_VIEW: "on" };
 function rpc(
   method,
   params,
-  { signedIn = true, headers = {}, worker: workerEnv = env } = {},
+  {
+    signedIn = true,
+    headers = {},
+    worker: workerEnv = env,
+    path = "/mcp",
+  } = {},
 ) {
   return worker.fetch(
-    new Request(site + "/mcp", {
+    new Request(site + path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -64,6 +69,104 @@ test("requires a platform identity to call tools", async () => {
     (await authed.json()).result.structuredContent.families.length,
     2,
   );
+});
+
+/** A request to the open address from a client with no ChatGPT sign-in. */
+const openRpc = (method, params, options = {}) =>
+  rpc(method, params, { signedIn: false, path: "/mcp/open", ...options });
+
+test("the open address calls every tool without a sign-in", async () => {
+  const list = await (await openRpc("tools/list", {})).json();
+  assert.deepEqual(
+    list.result.tools.map(({ name }) => name),
+    ["describe_domain", "compare_stress", "build_scene", "simulate_scene"],
+  );
+  const call = async (name, args) =>
+    (await (await openRpc("tools/call", { name, arguments: args })).json())
+      .result;
+
+  const domain = await call("describe_domain", {});
+  assert.equal(domain.structuredContent.families.length, 2);
+
+  const stress = await call("compare_stress", {
+    family: "plate",
+    cases: [{ radius_m: 0.012 }],
+  });
+  assert.equal(stress.isError, undefined);
+  assert.equal(stress.structuredContent.results.length, 1);
+
+  const request = {
+    name: "Block on a 30 degree incline",
+    objects: [
+      { kind: "ramp", angle: 30, friction: 0.25 },
+      { kind: "block", mass: 5, on_ramp: { ramp: "ramp-1" } },
+    ],
+  };
+  const built = await call("build_scene", request);
+  assert.equal(built.isError, undefined);
+  assert.match(
+    built.structuredContent.share_url,
+    /^https:\/\/physix\.example\//,
+  );
+
+  const run = await call("simulate_scene", { request });
+  assert.equal(run.isError, undefined);
+  assert.equal(run.structuredContent.source, "rapier");
+  assert.ok(run.structuredContent.series.length > 0);
+});
+
+test("the open address keeps the plugin's own address signed in", async () => {
+  const plugin = await rpc(
+    "tools/call",
+    { name: "describe_domain" },
+    { signedIn: false },
+  );
+  assert.equal(plugin.status, 401);
+});
+
+test("the open address never names the chart view", async () => {
+  const on = { worker: viewEnv };
+  const init = await (await openRpc("initialize", {}, on)).json();
+  assert.deepEqual(init.result.capabilities, { tools: {} });
+  const list = await (await openRpc("tools/list", {}, on)).json();
+  for (const tool of list.result.tools)
+    assert.equal(tool._meta?.ui, undefined, tool.name);
+  const run = await (
+    await openRpc(
+      "tools/call",
+      {
+        name: "simulate_scene",
+        arguments: { request: { template: "pendulum" } },
+      },
+      on,
+    )
+  ).json();
+  assert.equal(run.result._meta, undefined);
+});
+
+test("the open address bounds input, rejects foreign origins and can be turned off", async () => {
+  assert.equal(
+    (await openRpc("ping", { value: "x".repeat(17_000) })).status,
+    413,
+  );
+  assert.equal(
+    (
+      await openRpc(
+        "ping",
+        {},
+        {
+          headers: { Origin: "https://other.example" },
+        },
+      )
+    ).status,
+    403,
+  );
+  const off = await openRpc(
+    "tools/list",
+    {},
+    { worker: { ...env, PHYSIX_OPEN_MCP: "off" } },
+  );
+  assert.equal(off.status, 404);
 });
 
 test("compares bounded cases and scales the reference under a positive load", async () => {

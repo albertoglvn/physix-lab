@@ -76,10 +76,12 @@ baseline and the best candidates are then re-solved with FEM. Claim an improveme
 Always give the baseline value, the selected value and the relative change from the `fem`
 blocks.
 
-## Hosted Physix in ChatGPT
+## Hosted Physix in ChatGPT or any MCP client
 
 The hosted plugin offers `describe_domain`, `compare_stress`, `build_scene` and
-`simulate_scene`. Call
+`simulate_scene`. ChatGPT reaches them through the Physix plugin. Any other MCP client
+reaches the same tools without a sign-in at
+`https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open`. Call
 `describe_domain` first: it lists the stress domain and, under `motion`, the scene
 conventions, templates, part kinds, fields, units, limits and defaults.
 

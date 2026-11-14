@@ -7,7 +7,11 @@ experiment from a problem statement, or build it yourself in the browser lab. Ev
 plotted and tabulated, and checked against theory where a closed form exists.
 
 - **Open the lab:** <https://physix-lab.hospitablepeacock.chatgpt.site/>
+- **Connect your agent:** add `https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open`
+  as a remote MCP server. No sign-in is needed. See
+  [Connect any MCP client](docs/CHATGPT.md#connect-any-mcp-client).
 - **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md)
+- **Judges:** [Test Physix with your agent or your ChatGPT](docs/CHATGPT.md#test-it-as-a-judge)
 
 [![Watch the Physix demo, 1:55](docs/assets/physix-demo-poster.png)](https://cdn.jsdelivr.net/gh/albertoglvn/physix-lab@1c4e50ff9ed8a247599d604d450a4fa3c6a75315/docs/assets/physix-demo.mp4)
 
@@ -44,7 +48,7 @@ claim needs.
   [DESIGN.md](docs/DESIGN.md) for visuals and layout, and [COPYWRITING.md](docs/COPYWRITING.md)
   for voice and product claims. Your agent updates the relevant file in the same change as
   the behaviour it describes.
-- **Checks on every change.** 131 Python tests, 465 web tests and 19 hosted plugin tests
+- **Checks on every change.** 131 Python tests, 465 web tests and 23 hosted plugin tests
   passed on 14 November 2026, with lint, a production build and a check in the browser.
 - **Evidence for every number.** The stress model's median von Mises error is 2.2% against
   scikit-fem on 292 held-out cases ([MODEL.md](docs/MODEL.md)). Motion results are checked
@@ -187,9 +191,18 @@ The Python targets accept `ARGS="..."`; pass `--help` for options.
 
 ### Connect an agent
 
-For the hosted ChatGPT plugin and its supported stress experiments, see
-[Connect Physix to ChatGPT](docs/CHATGPT.md). The following configuration starts the
-local MCP server for a client that supports stdio.
+To use the hosted tools (`describe_domain`, `compare_stress`, `build_scene` and
+`simulate_scene`) from your own agent, add the open address as a remote MCP server. In
+Codex, add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.physix]
+url = "https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open"
+```
+
+For the ChatGPT plugin, see [Connect Physix to ChatGPT](docs/CHATGPT.md). The following
+configuration starts the local MCP server, with `predict_stress`, `verify_with_solver` and
+`optimize`, for a client that supports stdio.
 
 ```json
 {

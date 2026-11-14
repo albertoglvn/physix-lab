@@ -43,6 +43,13 @@ const status = (invoking, invoked) => ({
  */
 const chartViewOn = (env) => env?.PHYSIX_CHART_VIEW === "on";
 
+/**
+ * Whether `/mcp/open` serves the same tools without a ChatGPT sign-in, for MCP clients such
+ * as Codex. It is on unless `PHYSIX_OPEN_MCP` is `"off"`. Every tool is stateless and its
+ * input is bounded, so the open address stores nothing and runs no unbounded work.
+ */
+const openMcpOn = (env) => env?.PHYSIX_OPEN_MCP !== "off";
+
 /** Tools whose results the chart view can show. */
 const CHART_TOOLS = new Set(["compare_stress", "simulate_scene"]);
 
@@ -418,7 +425,11 @@ async function readJson(request) {
   }
 }
 
-async function handleMcp(request, env) {
+/**
+ * Answers MCP requests. `/mcp` is the ChatGPT plugin and calls tools only for a signed-in
+ * user. `/mcp/open` (`open`) calls them for any client and never names the chart view.
+ */
+async function handleMcp(request, env, { open = false } = {}) {
   if (request.method !== "POST")
     return new Response(null, {
       status: 405,
@@ -460,7 +471,7 @@ async function handleMcp(request, env) {
   if (id === undefined)
     return new Response(null, { status: 202, headers: NO_STORE });
 
-  const viewOn = chartViewOn(env);
+  const viewOn = !open && chartViewOn(env);
   const capabilities = viewOn ? { tools: {}, resources: {} } : { tools: {} };
   if (method === "server/discover")
     return jsonRpc(id, {
@@ -511,7 +522,7 @@ async function handleMcp(request, env) {
     });
   }
   if (method !== "tools/call") return rpcError(id, -32601, "Method not found.");
-  if (!request.headers.get(identityHeader))
+  if (!open && !request.headers.get(identityHeader))
     return rpcError(id, -32001, "Sign in and connect Physix in ChatGPT.", 401);
   if (!object(params) || typeof params.name !== "string")
     return rpcError(id, -32602, "Supply a tool name and its arguments.");
@@ -561,6 +572,11 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/mcp") return handleMcp(request, env);
+    if (url.pathname === "/mcp/open") {
+      if (!openMcpOn(env))
+        return new Response(null, { status: 404, headers: NO_STORE });
+      return handleMcp(request, env, { open: true });
+    }
     if (url.pathname === "/connect/start") {
       if (request.method !== "GET")
         return new Response(null, {

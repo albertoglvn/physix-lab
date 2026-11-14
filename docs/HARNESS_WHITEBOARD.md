@@ -50,7 +50,7 @@ one simple drawing, and at most one file tag.
 | 1 | Write the rules once | "Your agent reads it before every task." | A sheet labelled `AGENTS.md` | None, the sheet names it |
 | 2 | Agree on the data | "Agree on fields and units before you build." | Two puzzle pieces, one marked "m, kg" and one "s, N" | `CONTRACTS.md` |
 | 3 | Give each agent a lane | "Assign separate files and branches." | Three lanes labelled "Physics", "Lab" and "ChatGPT plugin" | None |
-| 4 | Let checks decide | "615 tests pass. Check the page in a browser." | A frame with two ticks, "Tests" and "Browser check" | None |
+| 4 | Let checks decide | "619 tests pass. Check the page in a browser." | A frame with two ticks, "Tests" and "Browser check" | None |
 | 5 | Leave a note for the next agent | "Log what changed and what still needs work." | A notebook labelled `WORKLOG.md` | None, the notebook names it |
 | 6 | Prove it before you claim it | "Check results against theory or a solver." | Two overlapping curves labelled "Simulation" and "Theory" | `PHYSICS.md · MODEL.md` |
 
@@ -79,7 +79,7 @@ with a file name and what the file decides:
 ## Number
 
 Step 4 gives the total from the three test suites. The footer shows the date and the
-breakdown as “Ran on 14 Nov 2026 · 465 web · 19 Worker · 131 Python”.
+breakdown as “Ran on 14 Nov 2026 · 465 web · 23 Worker · 131 Python”.
 
 Before you publish, re-run these commands from the repository root and update the figures and
 the date if they changed:
