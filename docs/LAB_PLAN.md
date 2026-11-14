@@ -6,7 +6,8 @@ with theory, varies parameters, and exports evidence that holds up in a report o
 keeps the current pastoral visual style. [DESIGN.md](DESIGN.md) records the style rules, and
 this plan cites it wherever the UI changes.
 
-Status: in progress. Phases 0 to 3 are done; each phase lists its own status. Phase 4 has
+Status: in progress. Phases 0 to 3 are done, including the follow-ups for move arrows,
+the sprung Atwood machine and the spring bumper; each phase lists its own status. Phase 4 has
 not started. Ahead of it, the hosted ChatGPT plugin (`docs/CHATGPT.md`) runs
 `simulate_scene` on the lab's engine and returns the plotted values for ChatGPT to chart; the
 embedded chart view is off because ChatGPT does not open it for Sites-hosted plugins. The
@@ -893,6 +894,23 @@ Determinism behaves as documented in §4.1.
     - every sweep source path, abort, the summary, the CSV, the sheets' rendering, and a
       shared `convergence_v1.json` fixture checked by Python and rendered by the web
       sheet.
+
+*Status, move arrows, sprung Atwood and spring bumper (done):*
+
+- Selecting a part shows three axis arrows in the viewport (X red, Y green, Z blue, from
+  the palette). Dragging an arrow moves the part along that axis only, in whole
+  centimetres, as one undo step. Ramps, pulleys and bumpers stand on the floor and show no
+  Y arrow. An arrow that points at the camera is refused rather than jumping.
+- A pulley's optional `springStiffness` ties the right weight to the base. The taut rope
+  oscillates about g (m₂ − m₁)/k with ω² = k/(m₁ + m₂ + M/2), integrated exactly; tests hold
+  the period, the reach and the energy over 1,200 steps, and the free machine is unchanged at
+  k = 0. The theory panel swaps the free-fall checks for the period and the largest travel.
+- The `bumper` part is a wall with a massless pad on a spring and damper, facing left or
+  right. A 2 kg block at 4 m/s reaches v √(m/k) and rebounds at its approach speed, both
+  within 0.2%, and kinetic plus elastic energy drifts by less than 0.5% through the contact.
+  Probes record compression, spring force and elastic energy, and the "Ramp into a spring
+  bumper" template runs for 10 s so the block can come back up the ramp.
+- `build_scene` accepts both, so ChatGPT can build these scenes from a problem statement.
 
 ### Phase 4: Wider stress cases and the agent surface (about 3 weeks)
 

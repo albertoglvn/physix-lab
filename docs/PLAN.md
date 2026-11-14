@@ -1,5 +1,10 @@
 # Physix v1 milestone plan
 
+Status: complete. Milestones 0 to 5 merged into `main`; [WORKLOG.md](WORKLOG.md) records each
+branch. Hosting moved from GitHub Pages to the ChatGPT Site in [CHATGPT.md](CHATGPT.md).
+Current work follows [LAB_PLAN.md](LAB_PLAN.md). This page is kept as the record of how v1
+was sequenced.
+
 The critical path starts with solver-labeled data. Model fitting, calibration, ONNX export, and an evidence-backed demo all depend on it.
 
 | Milestone | Deliverable | Exit criteria |

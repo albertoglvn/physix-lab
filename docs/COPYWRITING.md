@@ -13,6 +13,7 @@ what changes when they vary one input.
 | --- | --- |
 | Stress in ChatGPT | Sign in to Physix with ChatGPT and install the hosted plugin if you have access. Compare supported hole radii and positive load multipliers using scikit-fem reference results. |
 | Stress with a local MCP client | Connect the local Physix MCP server to a compatible client. Ask your agent to estimate stress in a supported plate or bracket, compare the estimate with a finite element solve, or search within geometry bounds. |
+| Mechanics in ChatGPT | Ask ChatGPT to set up a motion experiment from the values in a problem. It runs the scene, reports the plotted values and theory checks, and links to the same scene in the browser lab. |
 | Mechanics with an agent | Ask your agent to write or edit a `physix.lab/2` scene. Paste it into Scene JSON to run it in the browser, or run the file with the local CLI. |
 | Browser lab | Build a scene from parts or open a template. Change a starting condition, run the experiment, and read the plot. The browser lab also has a separate 2D Stress study. |
 
