@@ -26,6 +26,9 @@ The repository carries a 1080p60 copy of the final cut at
 [1280 × 720 poster](assets/physix-demo-poster.png). Keep the raw captures, working files
 and 1440p master outside the repository, in a folder such as `../physix-demo/`.
 
+The [README poster](../README.md) opens the [jsDelivr copy pinned to commit `1c4e50f`](https://cdn.jsdelivr.net/gh/albertoglvn/physix-lab@1c4e50ff9ed8a247599d604d450a4fa3c6a75315/docs/assets/physix-demo.mp4).
+Update the pinned link in the README and here if the video file changes.
+
 | File | What it is |
 | --- | --- |
 | 1440p master | 2560 × 1440, 60 fps, −14 LUFS integrated and −1.5 dBTP |

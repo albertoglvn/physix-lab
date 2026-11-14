@@ -1,5 +1,7 @@
 # Physix
 
+[![CI](https://github.com/albertoglvn/physix-lab/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/albertoglvn/physix-lab/actions/workflows/ci.yml)
+
 **A physics lab for your agent.** Ask an AI agent such as ChatGPT to set up a mechanics
 experiment from a problem statement, or build it yourself in the browser lab. Every run is
 plotted and tabulated, and checked against theory where a closed form exists.
@@ -7,7 +9,9 @@ plotted and tabulated, and checked against theory where a closed form exists.
 - **Open the lab:** <https://physix-lab.hospitablepeacock.chatgpt.site/>
 - **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md)
 
-[![Watch the Physix demo, 1:55](docs/assets/physix-demo-poster.png)](docs/assets/physix-demo.mp4)
+[![Watch the Physix demo, 1:55](docs/assets/physix-demo-poster.png)](https://cdn.jsdelivr.net/gh/albertoglvn/physix-lab@1c4e50ff9ed8a247599d604d450a4fa3c6a75315/docs/assets/physix-demo.mp4)
+
+Can't play it? [Download the 1080p60 file](docs/assets/physix-demo.mp4).
 
 ## What you can do
 
@@ -51,23 +55,24 @@ claim needs.
 Run the lab locally with `pnpm --filter @physix/web run dev`, then open
 <http://localhost:5173/#/lab>.
 
-Start with an inclined plane, a friction track, an Atwood machine, a rolling ball, a
-pendulum, a spring oscillator, a 45° launcher, a bouncing ball, a collision track, a
-pushed block, a ball falling through air, a compound pendulum, a bob released above its
-pivot on a slack rope, an Atwood machine with a spring under one weight, a block sliding
-off a ramp into a spring bumper, or a blank scene. Select a part to show its move arrows
-and drag one to move the part along that axis in whole centimetres; drag the part itself
-to place it on the floor plane. Edit starting conditions in the inspector,
-including each body's material (wood, steel, rubber, ice or felt), restitution, launch
-velocity, applied force and drag coefficient, a pendulum's link (rod or rope) and rod
-mass, and the scene's air density and linear drag, then run, pause, step, or reset the
-simulation. Runs that reach their stop are kept in the data dock's run history, where
-any run can be pinned as a baseline, overlaid on the live plot or re-run and checked
-against its stored samples. A fitted sweep shows its residuals under the sweep plot.
-Sweeps vary one input over a range or two on a grid of up to 400 runs, and repeats can
-rerun each point from a seeded perturbation of a starting value, labelled as synthetic. The
-**Scene JSON** editor imports and exports `physix.lab/2` scenes that agents can generate and
-run headlessly:
+- **Templates.** Start with an inclined plane, a friction track, a projectile, an Atwood
+  machine, a rolling ball, a pendulum, a spring oscillator, a 45° launcher, a bouncing
+  ball, a collision track, a pushed block, a ball falling through air, a compound
+  pendulum, a bob released above its pivot on a slack rope, an Atwood machine with a
+  spring under one weight, a block sliding off a ramp into a spring bumper, or a blank scene.
+- **Moving parts.** Select a part to show its move arrows. Drag an arrow to move along
+  that axis in whole centimetres, or drag the part itself to place it on the floor plane.
+- **Inspector.** Edit each body's material (wood, steel, rubber, ice or felt),
+  restitution, launch velocity, applied force and drag coefficient. You can also edit a
+  pendulum's link (rod or rope) and rod mass, and the scene's air density and linear drag.
+- **Runs and sweeps.** Run, pause, step, or reset the simulation. The data dock keeps runs
+  that reach their stop. Pin a saved run as a baseline, overlay it on the live plot, or
+  rerun it and check it against its stored samples. Sweep one input over a range or two
+  on a grid of up to 400 runs. Repeats can use a seeded perturbation of a starting value
+  at each point and are labelled as synthetic. A fitted sweep shows its residuals below
+  the sweep plot.
+- **Scene JSON.** Import and export `physix.lab/2` scenes that agents can generate and
+  run headlessly.
 
 ```sh
 pnpm --filter @physix/web run lab --preset pulley 60

@@ -36,6 +36,7 @@ of the running lab.
 | Phase 3 follow-ups | Move arrows on the selected part, sprung Atwood machine, spring bumper and its ramp template, page review fixes, README opening with the live lab and the Codex workflow | `a17585f`, `e357725`, `58caec2` |
 | Reviewer docs | Workflow board with the file shelf, Ship and Demo stops, README links and document ownership, published demo specs, and removal of three redundant `.gitkeep` files | `docs/reviewer-polish` |
 | README demo | Published the 1080p60 video, linked poster and Codex workspace screenshot. Checked the media, README links and lint. | This change |
+| CI and README | Pinned setup-uv, disabled pnpm caching during Node setup and checked hosted stress against a fresh solve with a relative tolerance of `1e-5`. Linked the demo through jsDelivr, added Projectile and the CI badge. Lint and all three local test suites passed. | `ddd6c8c`, `56eb471`, `d7577dc`, [passing CI run](https://github.com/albertoglvn/physix-lab/actions/runs/43645996691) |
 
 Checks at each slice: `vitest run`, `tsc --noEmit`, `eslint`, `prettier --check` and
 `vite build` in `web/`, `node --test mcp/sites/worker.test.mjs` for the hosted Worker, and
