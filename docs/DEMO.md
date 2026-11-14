@@ -21,11 +21,14 @@ can set it up from a problem statement.
 
 ## Deliverables
 
-Work in a folder outside the repository, such as `../physix-demo/`. Commit nothing from it.
+The repository carries a 1080p60 copy of the final cut at
+[`docs/assets/physix-demo.mp4`](assets/physix-demo.mp4) and its
+[1280 × 720 poster](assets/physix-demo-poster.png). Keep the raw captures, working files
+and 1440p master outside the repository, in a folder such as `../physix-demo/`.
 
 | File | What it is |
 | --- | --- |
-| `physix-demo-16x9.mp4` | The video: 1920 × 1080, 60 fps, H.264 High, AAC 48 kHz, −14 LUFS integrated, −1 dBTP |
+| 1440p master | 2560 × 1440, 60 fps, −14 LUFS integrated and −1.5 dBTP |
 | `thumbnail.png` | 1280 × 720 YouTube thumbnail, built from the hook frame (see "YouTube page") |
 | `youtube.md` | Title, description and chapters for the upload (see "YouTube page") |
 | `captions.srt` | The narration, timed, to upload as YouTube subtitles |
@@ -33,7 +36,7 @@ Work in a folder outside the repository, such as `../physix-demo/`. Commit nothi
 | `script.md` | The final narration and on-screen text, with timings |
 | `raw/` | Unedited captures and CSV exports, named by segment |
 
-The published cut is 2560 × 1440 at 60 fps, −14 LUFS integrated and −1.5 dBTP, with short dissolves between shots and hard cuts in the template montage.
+The final cut uses short dissolves between shots and hard cuts in the template montage.
 
 ## Retention rules
 

@@ -7,6 +7,8 @@ plotted and tabulated, and checked against theory where a closed form exists.
 - **Open the lab:** <https://physix-lab.hospitablepeacock.chatgpt.site/>
 - **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md)
 
+[![Watch the Physix demo, 1:55](docs/assets/physix-demo-poster.png)](docs/assets/physix-demo.mp4)
+
 ## What you can do
 
 - Build a 3D scene from blocks, balls, cylinders, ramps, pulleys, pendulums, springs and
@@ -22,6 +24,8 @@ plotted and tabulated, and checked against theory where a closed form exists.
 ## How Codex built Physix
 
 ![How Codex builds Physix in six steps](docs/assets/codex-workflow.png)
+
+![Codex checking the ChatGPT plugin alongside the Physix lab](docs/assets/physix-codex-workspace.png)
 
 Physix is built with Codex agents working from one instruction file, [AGENTS.md](AGENTS.md).
 It sets the scope, which folder each agent owns, the contracts they share and the evidence a
