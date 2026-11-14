@@ -31,9 +31,9 @@ owner shares it. Public plugin directory distribution requires OpenAI review.
   The case travels in the URL fragment (`physix.share/1` in `docs/CONTRACTS.md`), so the
   Worker stores nothing and the host never receives it.
 - `build_scene` builds a Motion experiment from parts: blocks, balls and cylinders on
-  ramps or the floor, Atwood pulleys, pendulums, springs, launches, applied forces and air
-  drag. ChatGPT gives only the values the problem states; the result lists the defaults it
-  used. The Worker validates the scene with the lab's own code
+  ramps or the floor, Atwood pulleys (with an optional spring under one weight),
+  pendulums, springs, spring bumpers, launches, applied forces and air drag. ChatGPT gives
+  only the values the problem states; the result lists the defaults it used. The Worker validates the scene with the lab's own code
   (`physix.scene-request/1` in `docs/CONTRACTS.md`) and returns a `share_url`. It does not
   simulate it: the lab runs the simulation and plots its graphs in the browser when the
   link opens.

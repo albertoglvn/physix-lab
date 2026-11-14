@@ -1,6 +1,8 @@
 import { ellipticK, meanPeriod } from "../data/period.ts";
 import {
   bodyHalf,
+  BUMPER_DEPTH,
+  BUMPER_WALL,
   contactFriction,
   dragCoefficients,
   hasDrag,
@@ -18,7 +20,12 @@ import {
   type Ramp,
   type Spring,
 } from "../scene.ts";
-import { atwood, PULLEY_TRAVEL } from "../simulation.ts";
+import {
+  atwood,
+  PULLEY_CLEARANCE,
+  PULLEY_TRAVEL,
+  springAtwood,
+} from "../simulation.ts";
 import {
   bodyLowest,
   canLand,
@@ -177,6 +184,8 @@ function footprint(part: LabObject): [number, number] | undefined {
   if (part.kind === "pendulum")
     return [part.length + part.bobRadius, part.bobRadius];
   if (part.kind === "spring") return [part.size / 2, part.size / 2];
+  if (part.kind === "bumper")
+    return [BUMPER_WALL / 2 + part.restLength, BUMPER_DEPTH / 2];
 }
 
 const sharesPath = (
@@ -1267,7 +1276,81 @@ function collisionReferences(a: Ball, b: Ball): Reference[] {
   ];
 }
 
+/**
+ * Why a sprung Atwood machine does not oscillate cleanly, or undefined when it does: a
+ * weight meets a stop, or the spring pulls harder than the rope can hold.
+ */
+function springAtwoodBreak(pulley: Pulley, g: number): string | undefined {
+  const { reach } = springAtwood(pulley, g);
+  if (Math.abs(reach) >= PULLEY_CLEARANCE)
+    return `The travel would reach ${Math.abs(reach).toFixed(2)} m, past the ${PULLEY_CLEARANCE.toFixed(2)} m before a weight meets a stop.`;
+  const { leftMass: m1, rightMass: m2 } = pulley;
+  const { mass } = springAtwood(pulley, g);
+  // Tension on the right weight at the far end of the swing, where the spring pulls most.
+  const k = pulley.springStiffness;
+  const a = (g * (m2 - m1) - k * reach) / mass;
+  if (m2 * (g - a) - k * reach < 0 || m1 * (g + a) < 0)
+    return "The spring would pull the rope slack at the end of the swing.";
+  return undefined;
+}
+
+function springAtwoodReferences(pulley: Pulley, scene: LabScene): Reference[] {
+  const g = scene.gravity;
+  const { leftMass: m1, rightMass: m2, springStiffness: k, id } = pulley;
+  if (m1 === m2 || g === 0) return [];
+  const { reach, period, mass } = springAtwood(pulley, g);
+  const broken = springAtwoodBreak(pulley, g);
+  const assumptions = [
+    "Massless, inextensible rope that does not slip on the wheel.",
+    pulley.wheelMass === 0
+      ? "Massless wheel on a frictionless axle."
+      : "The wheel is a uniform disc (I = M R² / 2) on a frictionless axle.",
+    `A massless linear spring, k = ${k} N/m, ties the right weight to the base; it is at rest length at release.`,
+    `M = m₁ + m₂${pulley.wheelMass === 0 ? "" : " + M_w/2"} = ${mass.toPrecision(4)} kg moves with the rope.`,
+  ];
+  const lasts = (run: MotionRun, span: number) => run.stop.t >= span;
+  return [
+    {
+      id: `${id}.atwood.spring.T`,
+      target: id,
+      label: "Period",
+      symbol: "T",
+      unit: "s",
+      formula: "T = 2π √(M / k)",
+      value: period,
+      assumptions,
+      broken,
+      tolerance: 0.005,
+      floor: 0,
+      measure: (run) =>
+        lasts(run, 2 * period) ? recordedPeriod(run, `${id}.speed`) : undefined,
+    },
+    {
+      id: `${id}.atwood.spring.s`,
+      target: id,
+      label: "Largest travel",
+      symbol: "s_max",
+      unit: "m",
+      formula: "s_max = 2 g (m₂ − m₁) / k",
+      value: reach,
+      assumptions: [
+        ...assumptions,
+        "Released from rest, the travel swings from 0 to twice its balance point.",
+      ],
+      broken,
+      tolerance: 0.005,
+      floor: 1e-4,
+      measure: (run) => {
+        const column = run.series.columns[`${id}.displacement`];
+        if (!column || !lasts(run, period / 2)) return undefined;
+        return reach > 0 ? Math.max(...column) : Math.min(...column);
+      },
+    },
+  ];
+}
+
 function atwoodReferences(pulley: Pulley, scene: LabScene): Reference[] {
+  if (pulley.springStiffness > 0) return springAtwoodReferences(pulley, scene);
   const g = scene.gravity;
   const { wheelMass } = pulley;
   const ideal = atwood(pulley, g);
@@ -1409,7 +1492,23 @@ export function curvesFor(scene: LabScene): TheoryCurve[] {
   const find = (id: string) =>
     references.find((reference) => reference.id === id && !reference.broken);
   for (const part of scene.objects) {
-    if (part.kind === "pulley") {
+    if (part.kind === "pulley" && part.springStiffness > 0) {
+      if (springAtwoodBreak(part, g) || part.leftMass === part.rightMass)
+        continue;
+      const { equilibrium, omega } = springAtwood(part, g);
+      curves.push(
+        {
+          key: `${part.id}.speed`,
+          at: (t) => equilibrium * omega * Math.sin(omega * t),
+          until: 60,
+        },
+        {
+          key: `${part.id}.displacement`,
+          at: (t) => equilibrium * (1 - Math.cos(omega * t)),
+          until: 60,
+        },
+      );
+    } else if (part.kind === "pulley") {
       const a = atwood(part, g).acceleration;
       const until = a === 0 ? 60 : Math.sqrt((2 * PULLEY_TRAVEL) / Math.abs(a));
       curves.push(

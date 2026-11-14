@@ -80,6 +80,28 @@ export function measure(
       { label: "Height", short: "h", value: position.y, unit: "m" },
       { label: "X position", short: "x", value: position.x, unit: "m" },
     );
+  } else if (object?.kind === "bumper") {
+    const state = simulation?.bumper(object.id);
+    items.push(
+      {
+        label: "Compression",
+        short: "d",
+        value: state?.compression ?? 0,
+        unit: "m",
+      },
+      {
+        label: "Spring force",
+        short: "F",
+        value: state?.force ?? 0,
+        unit: "N",
+      },
+      {
+        label: "Elastic energy",
+        short: "Uₛ",
+        value: state?.elastic ?? 0,
+        unit: "J",
+      },
+    );
   } else if (object?.kind === "pulley") {
     const state =
       simulation?.pulley(object.id) ??

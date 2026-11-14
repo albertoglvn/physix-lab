@@ -9,6 +9,7 @@ import {
 import {
   availableStops,
   bodyLowest,
+  continuedProtocol,
   defaultProtocol,
   headOnPairs,
   lowestOffset,
@@ -235,5 +236,18 @@ describe("motion probes", () => {
     expect(leaves.find(({ target }) => target === "block-2")!.t).toBeLessThan(
       leaves.find(({ target }) => target === "block-1")!.t,
     );
+  });
+});
+
+describe("continuedProtocol", () => {
+  it("moves an event stop to the time limit", () => {
+    expect(
+      continuedProtocol({ stop: "floor_contact", maxTime: 10 }, 1.2),
+    ).toEqual({ stop: "time", maxTime: 10 });
+  });
+
+  it("has nothing to continue on a time stop or at the limit", () => {
+    expect(continuedProtocol({ stop: "time", maxTime: 10 }, 4)).toBeUndefined();
+    expect(continuedProtocol({ stop: "rest", maxTime: 5 }, 5)).toBeUndefined();
   });
 });

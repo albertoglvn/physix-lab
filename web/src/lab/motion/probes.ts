@@ -13,6 +13,7 @@ import {
   type Spring,
 } from "../scene.ts";
 import {
+  pulleySpringForce,
   springForce,
   type BlockState,
   type Simulation,
@@ -223,12 +224,18 @@ export function availableStops(scene: LabScene): EventType[] {
 
 /**
  * The stop that suits the scene: the pulley stop, leaving a ramp, the first bounce,
- * landing, then rest. A head-on collision runs to twice its impact time plus half a second,
+ * landing, then rest. A scene with a bumper runs for 10 s. A head-on collision runs to twice its impact time plus half a second,
  * rounded up to a whole second, so both speeds settle after the impact.
  */
 export function defaultProtocol(scene: LabScene): Protocol {
   const stops = availableStops(scene);
   const pairs = headOnPairs(scene);
+  // A body bounces off a bumper and comes back, so no single event ends the run.
+  if (
+    scene.objects.some((part) => part.kind === "bumper") &&
+    !stops.includes("pulley_stop")
+  )
+    return { stop: "time", maxTime: 10 };
   if (pairs.length && !stops.includes("pulley_stop")) {
     const last = Math.max(...pairs.map(impactTime));
     return {
@@ -255,6 +262,20 @@ export function protocolFor(
   if (chosen.stop !== "time" && !availableStops(scene).includes(chosen.stop))
     return { ...defaultProtocol(scene), maxTime: chosen.maxTime };
   return chosen;
+}
+
+/**
+ * The protocol that lets a run stopped by an event keep going to its time limit, so a
+ * block that reaches the floor can slide on and hit what is in its way. Undefined when
+ * the run already stops on time or stopped at the limit.
+ */
+export function continuedProtocol(
+  protocol: Protocol,
+  stoppedAt: number,
+): Protocol | undefined {
+  if (protocol.stop === "time" || stoppedAt >= protocol.maxTime - 1e-9)
+    return undefined;
+  return { stop: "time", maxTime: protocol.maxTime };
 }
 
 export function parseProtocol(input: unknown): Protocol {
@@ -315,6 +336,17 @@ const PULLEY_QUANTITIES = [
   ["rightY", "Right weight height", "y₂", "m"],
   ["wheelSpeed", "Wheel rim speed", "vᵣ", "m/s"],
 ] as const;
+/** Extra pulley columns when a spring ties the right weight to the base. */
+const PULLEY_SPRING_QUANTITIES = [
+  ["springForce", "Spring force", "Fₛ", "N"],
+  ["elastic", "Elastic energy", "Uₛ", "J"],
+] as const;
+/** Bumper columns, worked out from the bodies' positions and speeds. */
+const BUMPER_QUANTITIES = [
+  ["compression", "Compression", "d", "m"],
+  ["force", "Spring force", "F", "N"],
+  ["elastic", "Elastic energy", "Uₛ", "J"],
+] as const;
 /** Pulley columns read from the engine: weight heights and the rope speed. */
 const PULLEY_ENGINE = new Set(["displacement", "speed", "leftY", "rightY"]);
 const PENDULUM_QUANTITIES = [
@@ -370,7 +402,9 @@ export function sceneQuantities(scene: LabScene): Quantity[] {
         ? PENDULUM_QUANTITIES
         : part.kind === "spring"
           ? SPRING_QUANTITIES
-          : undefined;
+          : part.kind === "bumper"
+            ? BUMPER_QUANTITIES
+            : undefined;
     if (set)
       for (const [name, label, symbol, unit] of set)
         list.push({
@@ -382,7 +416,10 @@ export function sceneQuantities(scene: LabScene): Quantity[] {
           source: ENGINE_COLUMNS.has(name) ? "rapier" : "derived",
         });
     else if (part.kind === "pulley")
-      for (const [name, label, symbol, unit] of PULLEY_QUANTITIES)
+      for (const [name, label, symbol, unit] of [
+        ...PULLEY_QUANTITIES,
+        ...(part.springStiffness > 0 ? PULLEY_SPRING_QUANTITIES : []),
+      ])
         list.push({
           key: `${part.id}.${name}`,
           target: part.id,
@@ -433,6 +470,7 @@ export function createRecorder(
   const springs = scene.objects.filter(
     (part): part is Spring => part.kind === "spring",
   );
+  const bumpers = scene.objects.filter((part) => part.kind === "bumper");
   const g = scene.gravity;
   const previous = new Map<
     string,
@@ -586,7 +624,22 @@ export function createRecorder(
         0.25 * pulley.wheelMass * state.wheelSpeed ** 2;
       potential +=
         scene.gravity * (pulley.leftMass * left.y + pulley.rightMass * right.y);
+      if (pulley.springStiffness > 0) {
+        const force = pulleySpringForce(pulley, right.y);
+        const elastic = (force * force) / (2 * pulley.springStiffness);
+        push(`${id}.springForce`, force);
+        push(`${id}.elastic`, elastic);
+        potential += elastic;
+      }
       momentum[1] += pulley.leftMass * left.vy + pulley.rightMass * right.vy;
+    }
+    for (const bumper of bumpers) {
+      const state = simulation.bumper(bumper.id);
+      if (!state) continue;
+      push(`${bumper.id}.compression`, state.compression);
+      push(`${bumper.id}.force`, state.force);
+      push(`${bumper.id}.elastic`, state.elastic);
+      potential += state.elastic;
     }
     push(`${SYSTEM}.kinetic`, kinetic);
     push(`${SYSTEM}.potential`, potential);

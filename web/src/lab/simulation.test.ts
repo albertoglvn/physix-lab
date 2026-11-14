@@ -14,6 +14,8 @@ import {
   PULLEY_RADIUS,
   PULLEY_TRAVEL,
   PULLEY_WEIGHT_HEIGHT,
+  pulleySpringForce,
+  springAtwood,
   stepAtwood,
   TIME_STEP,
   WEIGHT_HIGH,
@@ -331,5 +333,106 @@ describe("simulated pulley", () => {
     } finally {
       simulation.dispose();
     }
+  });
+});
+
+describe("pulley with a spring", () => {
+  const h = TIME_STEP;
+  const g = 9.81;
+  const sprung = (changes: Partial<Pulley> = {}): Pulley => ({
+    ...makeObject("pulley", "pulley-1"),
+    springStiffness: 40,
+    ...changes,
+  });
+  const energy = (part: Pulley, state: ReturnType<typeof initialPulleyState>) =>
+    0.5 * part.leftMass * state.left.vy ** 2 +
+    0.5 * part.rightMass * state.right.vy ** 2 +
+    0.25 * part.wheelMass * state.wheelSpeed ** 2 +
+    g * (part.leftMass * state.left.y + part.rightMass * state.right.y) +
+    pulleySpringForce(part, state.right.y) ** 2 / (2 * part.springStiffness);
+
+  it("oscillates about the balance point with the analytic period and reach", () => {
+    const part = sprung({ wheelMass: 1 });
+    const { period, reach } = springAtwood(part, g);
+    expect(period).toBeCloseTo(2 * Math.PI * Math.sqrt(5.5 / 40), 12);
+    expect(reach).toBeCloseTo((2 * g) / 40, 12);
+    let state = initialPulleyState(part, g);
+    let deepest = 0;
+    const turns: number[] = [];
+    for (let i = 1; i * h <= 2.2 * period; i++) {
+      const previous = state.speed;
+      state = stepAtwood(part, g, state, h);
+      deepest = Math.max(deepest, state.displacement);
+      if (previous < 0 && state.speed >= 0) turns.push(i * h);
+      expect(state.taut).toBe(true);
+    }
+    expect(deepest).toBeCloseTo(reach, 4);
+    // The rope comes back to rest at release once per period.
+    expect(turns[0]).toBeCloseTo(period, 1);
+    expect(state.stopped).toBe(false);
+  });
+
+  it("keeps mechanical energy, spring included, over many swings", () => {
+    const part = sprung({ leftMass: 1, rightMass: 4, springStiffness: 120 });
+    let state = initialPulleyState(part, g);
+    const start = energy(part, state);
+    for (let i = 0; i < 1200; i++) state = stepAtwood(part, g, state, h);
+    expect(Math.abs(energy(part, state) - start)).toBeLessThan(1e-9 * 100);
+  });
+
+  it("reports rope forces that balance each weight", () => {
+    const part = sprung();
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < 30; i++) state = stepAtwood(part, g, state, h);
+    const next = stepAtwood(part, g, state, h);
+    const mean = (next.speed - state.speed) / h;
+    expect(next.tension).toBeCloseTo(part.leftMass * (g + mean), 9);
+    const spring =
+      (pulleySpringForce(part, state.right.y) +
+        pulleySpringForce(part, next.right.y)) /
+      2;
+    expect(next.rightTension).toBeCloseTo(
+      part.rightMass * (g - mean) - spring,
+      9,
+    );
+  });
+
+  it("matches the free Atwood machine when the spring is off", () => {
+    const free = sprung({ springStiffness: 0 });
+    let state = initialPulleyState(free, g);
+    for (let i = 0; i < 30; i++) state = stepAtwood(free, g, state, h);
+    const { acceleration } = atwood(free, g);
+    expect(state.displacement).toBeCloseTo(
+      (acceleration * (30 * h) ** 2) / 2,
+      12,
+    );
+  });
+
+  it("lets the spring pull the right weight on a slack rope after a landing", () => {
+    // The heavy left weight swings past the base: it lands, the right weight flies on
+    // up with the rope slack, and the spring brings it back down.
+    const part = sprung({ leftMass: 5, rightMass: 1, springStiffness: 20 });
+    expect(Math.abs(springAtwood(part, g).reach)).toBeGreaterThan(
+      PULLEY_TRAVEL,
+    );
+    let state = initialPulleyState(part, g);
+    let slack = false;
+    let landed = false;
+    for (let i = 0; i < 600; i++) {
+      state = stepAtwood(part, g, state, h);
+      if (!state.taut) slack = true;
+      if (state.left.y <= WEIGHT_LOW + 1e-9) landed = true;
+      expect(state.right.y).toBeLessThanOrEqual(WEIGHT_HIGH + 1e-9);
+      expect(Number.isFinite(state.right.y)).toBe(true);
+    }
+    expect(landed).toBe(true);
+    expect(slack).toBe(true);
+  });
+
+  it("starts at rest length with the spring part of the parsed scene", () => {
+    const scene = makeScene("pulley");
+    const part = scene.objects[0] as Pulley;
+    expect(part.springStiffness).toBe(0);
+    expect(pulleySpringForce(sprung(), PULLEY_WEIGHT_HEIGHT)).toBe(0);
   });
 });

@@ -4,6 +4,13 @@ import type {
   RigidBody,
 } from "@dimforge/rapier3d-compat";
 import {
+  bodyDepth,
+  bodyHalf,
+  BUMPER_DEPTH,
+  BUMPER_HEIGHT,
+  BUMPER_WALL,
+  bumperDirection,
+  bumperFace,
   dragCoefficients,
   forceOver,
   hasDrag,
@@ -13,6 +20,7 @@ import {
   rampHeight,
   springEquilibrium,
   type Body,
+  type Bumper,
   type LabObject,
   type Pendulum,
   type Pulley,
@@ -99,6 +107,33 @@ export function atwood(pulley: Pulley, gravity: number) {
   };
 }
 
+/** Rope travel the right weight can make, down or up, before a weight meets a stop. */
+export const PULLEY_CLEARANCE = Math.min(
+  PULLEY_TRAVEL,
+  PULLEY_CEILING - PULLEY_WEIGHT_TALL / 2 - PULLEY_WEIGHT_HEIGHT,
+);
+
+/**
+ * An Atwood machine whose right weight is tied to the base by a spring of stiffness k.
+ * Released from rest, the rope travel s oscillates about s_eq = (m₂ − m₁) g / k with
+ * ω = √(k / M), where M = m₁ + m₂ + I/R², so it reaches 2 s_eq.
+ */
+export function springAtwood(pulley: Pulley, gravity: number) {
+  const { wheel } = atwood(pulley, gravity);
+  const mass = pulley.leftMass + pulley.rightMass + wheel;
+  const k = pulley.springStiffness;
+  const equilibrium = ((pulley.rightMass - pulley.leftMass) * gravity) / k;
+  const omega = Math.sqrt(k / mass);
+  return {
+    equilibrium,
+    omega,
+    period: (2 * Math.PI) / omega,
+    /** Largest travel from release, signed like the travel. */
+    reach: 2 * equilibrium,
+    mass,
+  };
+}
+
 /** Lowest centre height of a weight: resting on the base plate. */
 export const WEIGHT_LOW = PULLEY_BASE_HEIGHT + PULLEY_WEIGHT_TALL / 2;
 /** Highest centre height of a weight: its inner top edge against the wheel. */
@@ -132,9 +167,30 @@ export function initialPulleyState(
   };
 }
 
+/** Upward spring force on the right weight, zero at the release height. */
+export const pulleySpringForce = (pulley: Pulley, rightY: number) =>
+  pulley.springStiffness * (PULLEY_WEIGHT_HEIGHT - rightY);
+
+/**
+ * Exact step of y'' = −ω² (y − centre) over `h`: harmonic motion about `centre`.
+ */
+function harmonic(
+  y: number,
+  v: number,
+  centre: number,
+  omega: number,
+  h: number,
+): [number, number] {
+  const c = Math.cos(omega * h);
+  const s = Math.sin(omega * h);
+  const offset = y - centre;
+  return [centre + offset * c + (v / omega) * s, -offset * omega * s + v * c];
+}
+
 /**
  * Advances an Atwood machine by one step of `h` seconds. While the rope is taut both
- * weights move with the Atwood acceleration, integrated exactly. A slack rope lets each
+ * weights move with the Atwood acceleration, integrated exactly; with a spring on the
+ * right weight that motion is harmonic, also integrated exactly. A slack rope lets each
  * weight fall freely while the wheel spins on. Landing on the base and meeting the wheel
  * are inelastic stops. A rope pulled tight again takes an inelastic jerk that leaves both
  * weights and the wheel rim at one speed, conserving momentum along the rope. The
@@ -154,9 +210,18 @@ export function stepAtwood(
   let wheel = state.wheelSpeed;
   let t1 = 0;
   let t2 = 0;
-  const taut = y1 + y2 - ROPE_SUM <= ROPE_SLACK && v1 + v2 <= ROPE_SLACK;
+  const k = pulley.springStiffness;
+  const mass = m1 + m2 + ideal.wheel;
+  // Rope travel lowering the right weight, which the spring resists.
+  const sprung = PULLEY_WEIGHT_HEIGHT - y2;
+  const a = (g * (m2 - m1) - k * sprung) / mass;
+  // A spring can pull the right weight down faster than the rope allows; the rope then
+  // goes slack instead of pushing.
+  const pulls =
+    m1 * (g + a) >= -ROPE_SLACK && m2 * (g - a) - k * sprung >= -ROPE_SLACK;
+  const taut =
+    y1 + y2 - ROPE_SUM <= ROPE_SLACK && v1 + v2 <= ROPE_SLACK && pulls;
   if (taut) {
-    const a = ideal.acceleration;
     const u = (v1 - v2) / 2;
     const resting = Math.abs(u) <= ROPE_SLACK;
     if (resting && ((a > 0 && atLow(y2)) || (a < 0 && atHigh(y2)))) {
@@ -166,6 +231,19 @@ export function stepAtwood(
     } else if (resting && ((a > 0 && atHigh(y1)) || (a < 0 && atLow(y1)))) {
       v1 = v2 = wheel = 0;
       t1 = t2 = m2 * g;
+    } else if (k > 0) {
+      const { equilibrium, omega } = springAtwood(pulley, g);
+      const [reached, next] = harmonic(sprung, u, equilibrium, omega, h);
+      const travel = reached - sprung;
+      y1 += travel;
+      y2 -= travel;
+      v1 = next;
+      v2 = -next;
+      wheel = next;
+      // Mean rope forces over the step, from the mean acceleration and spring force.
+      const mean = (next - u) / h;
+      t1 = m1 * (g + mean);
+      t2 = m2 * (g - mean) - (k * (sprung + reached)) / 2;
     } else {
       const travel = u * h + (a * h * h) / 2;
       y1 += travel;
@@ -178,9 +256,20 @@ export function stepAtwood(
     }
   } else {
     y1 += v1 * h - (g * h * h) / 2;
-    y2 += v2 * h - (g * h * h) / 2;
     v1 -= g * h;
-    v2 -= g * h;
+    if (k > 0) {
+      // The spring holds the right weight about the height where it balances gravity.
+      [y2, v2] = harmonic(
+        y2,
+        v2,
+        PULLEY_WEIGHT_HEIGHT - (m2 * g) / k,
+        Math.sqrt(k / m2),
+        h,
+      );
+    } else {
+      y2 += v2 * h - (g * h * h) / 2;
+      v2 -= g * h;
+    }
   }
 
   // Inelastic stops. On a taut rope, a partner slower than one step of gravity comes to
@@ -269,7 +358,44 @@ export function rampVertices(ramp: Ramp): number[] {
   ];
 }
 
-export type BodyPart = Exclude<LabObject, Ramp | Pulley>;
+export type BodyPart = Exclude<LabObject, Ramp | Pulley | Bumper>;
+
+/**
+ * How far a free body centred at `p` has pushed its leading face past a bumper's pad
+ * plane, in metres, or 0. The body must be on the pad's side of the wall, below the top
+ * of the bumper and overlapping it along z. A block is taken upright.
+ */
+export function bumperCompression(bumper: Bumper, body: Body, p: Vec3) {
+  const direction = bumperDirection(bumper);
+  const half = bodyHalf(body);
+  if (direction * (p.x - bumper.x) <= 0) return 0;
+  if (p.y - half >= BUMPER_HEIGHT) return 0;
+  if (Math.abs(p.z - bumper.z) >= (BUMPER_DEPTH + bodyDepth(body)) / 2)
+    return 0;
+  return Math.max(0, direction * (bumperFace(bumper) - p.x) + half);
+}
+
+/**
+ * The bumper's push on a body along the pad's facing, k d + c ḋ, from the compression d
+ * and the body's x velocity. A pad only pushes, so the result is never negative.
+ */
+export function bumperPush(bumper: Bumper, compression: number, vx: number) {
+  if (compression <= 0) return 0;
+  const outward = bumperDirection(bumper) * vx;
+  return Math.max(0, bumper.stiffness * compression - bumper.damping * outward);
+}
+
+/**
+ * A bumper's state: its largest compression, its total push and its elastic energy. The
+ * energy is ½k·d₀·d₁, with the compression before and after the last step: the form the
+ * impulse-then-move step conserves exactly, so kinetic plus elastic energy stays flat
+ * through a contact instead of wobbling by about h·v/d.
+ */
+export type BumperState = {
+  compression: number;
+  force: number;
+  elastic: number;
+};
 
 const still = { x: 0, y: 0, z: 0 };
 const upright = { x: 0, y: 0, z: 0, w: 1 };
@@ -437,6 +563,8 @@ export type Simulation = {
    */
   linkForce: (id: string) => Vec3 | undefined;
   pulley: (id: string) => PulleyState | undefined;
+  /** What a bumper's spring holds at the current positions; undefined for other ids. */
+  bumper: (id: string) => BumperState | undefined;
   dispose: () => void;
 };
 
@@ -464,6 +592,9 @@ export async function createSimulation(
   const blocks = new Map<string, RigidBody>();
   const pulleys = new Map<string, Rope>();
   const springs: { spring: Spring; body: RigidBody }[] = [];
+  const bumpers = new Map<string, Bumper>();
+  /** Every free body, which a bumper may push. */
+  const freeBodies: { part: Body; body: RigidBody }[] = [];
   /**
    * Free bodies with their collider, the force this code added in the step (applied and
    * drag) and, after the step, the contact force read from the change in momentum.
@@ -662,6 +793,19 @@ export async function createSimulation(
         );
       } else if (object.kind === "pulley") {
         pulleys.set(object.id, atwoodMachine(object));
+      } else if (object.kind === "bumper") {
+        // Only the wall collides; the pad acts through the spring force in step().
+        world.createCollider(
+          surface(
+            rapier.ColliderDesc.cuboid(
+              BUMPER_WALL / 2,
+              BUMPER_HEIGHT / 2,
+              BUMPER_DEPTH / 2,
+            ),
+            NEUTRAL_FRICTION,
+          ).setTranslation(object.x, BUMPER_HEIGHT / 2, object.z),
+        );
+        bumpers.set(object.id, object);
       } else {
         const { position, rotation, velocity } = initialBlockState(
           object,
@@ -689,6 +833,7 @@ export async function createSimulation(
           ).setMass(object.mass),
           body,
         );
+        if (isBody(object)) freeBodies.push({ part: object, body });
         if (free)
           touching.set(object.id, {
             collider,
@@ -766,6 +911,24 @@ export async function createSimulation(
           body.addForce(added, true);
         }
         for (const rope of pulleys.values()) moveRope(rope);
+        // Each bumper gives the bodies in its pad one impulse before the step. The step
+        // then moves them by h·Δv, a symplectic Euler update, so the spring is read where
+        // the body is (no SPRING_LEAD, which corrects a force held over the substeps) and
+        // the damper at the step's mean velocity.
+        for (const bumper of bumpers.values())
+          for (const { part, body } of freeBodies) {
+            const p = body.translation();
+            const v = body.linvel();
+            const d = bumperCompression(bumper, part, p);
+            if (d <= 0) continue;
+            const push =
+              bumperPush(bumper, d, v.x) /
+              (1 + (bumper.damping * timeStep) / (2 * part.mass));
+            body.applyImpulse(
+              { x: bumperDirection(bumper) * push * timeStep, y: 0, z: 0 },
+              true,
+            );
+          }
         for (const part of swinging.values()) part.before = part.body.linvel();
         for (const part of touching.values()) part.before = part.body.linvel();
         world.step();
@@ -851,12 +1014,34 @@ export async function createSimulation(
     pulley(id) {
       return pulleys.get(id)?.state;
     },
+    bumper(id) {
+      const bumper = bumpers.get(id);
+      if (!bumper) return;
+      const state = { compression: 0, force: 0, elastic: 0 };
+      for (const { part, body } of freeBodies) {
+        const p = body.translation();
+        const vx = body.linvel().x;
+        const d = bumperCompression(bumper, part, p);
+        if (d <= 0) continue;
+        // The step moved the body by h·vx, so this was its compression before the step.
+        const before = bumperCompression(bumper, part, {
+          ...p,
+          x: p.x - timeStep * vx,
+        });
+        state.compression = Math.max(state.compression, d);
+        state.force += bumperPush(bumper, d, vx);
+        state.elastic += 0.5 * bumper.stiffness * before * d;
+      }
+      return state;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       blocks.clear();
       pulleys.clear();
       springs.length = 0;
+      bumpers.clear();
+      freeBodies.length = 0;
       touching.clear();
       swinging.clear();
       world.free();

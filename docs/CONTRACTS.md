@@ -286,9 +286,10 @@ degrees and everything else is SI.
 | `ball` | `y`, `radius`, `mass`, `vx`, `vy`, surface | A solid sphere (I = 2/5 m r²). |
 | `cylinder` | `y`, `radius`, `length` (0.2 to 3 m), `mass`, `vx`, `vy`, surface | A solid cylinder lying with its axis along z, so it rolls along x (I = m r²/2 about the axis). |
 | `ramp` | `length`, `width`, `angle`, `friction` | A fixed wedge rising towards −x. |
-| `pulley` | `leftMass`, `rightMass`, `wheelMass` | An Atwood machine: two weights on an inextensible rope over a wheel. `wheelMass` (kg, 0 to 20) makes the wheel a uniform disc, I = M R²/2. It is optional and defaults to 0, a massless wheel. |
+| `pulley` | `leftMass`, `rightMass`, `wheelMass`, `springStiffness` | An Atwood machine: two weights on an inextensible rope over a wheel. `wheelMass` (kg, 0 to 20) makes the wheel a uniform disc, I = M R²/2. It is optional and defaults to 0, a massless wheel. `springStiffness` (N/m, optional, default 0 for none) ties the right weight to the base with a linear spring at its rest length at release. |
 | `pendulum` | `pivotHeight`, `length`, `mass`, `bobRadius`, `angle`, `link`, `rodMass` | A solid bob hung from a pivot. The bob is released from rest at `angle` from straight down, positive anticlockwise seen from +z. `link` is `rod` (default), a rigid rod hinged about z that turns the bob with the swing, or `rope`, which only stops the bob going beyond `length`: it goes slack when the bob moves inwards, and the bob does not turn. `rodMass` (kg, 0 to 20, default 0) makes the rod uniform; a rope must have none. |
 | `spring` | `anchorHeight`, `stiffness`, `damping`, `restLength`, `mass`, `size`, `offset` | A cube on a linear spring and viscous damper (N/m, N·s/m), moving along y only. It is released from rest `offset` metres above the hanging equilibrium. |
+| `bumper` | `facing`, `stiffness`, `damping`, `restLength` | A fixed wall (0.2 m thick, 1.2 m high, 1.6 m deep) with a massless pad on a linear spring and damper. `facing` is `left` (default, the pad on the −x side) or `right`. The pad sits `restLength` metres from the wall face. A ramp rises towards −x, so a body sliding off it meets a bumper facing left. |
 
 `vx` and `vy` are the initial velocity in m/s. `vy` is optional and defaults to 0, so a
 launcher is any free body with both set. A body on a ramp starts at rest. A free body may
@@ -350,6 +351,15 @@ y + h·v·(N−1)/(2N), with N = 8 solver substeps, and the damper at the mean o
 start and end velocities. Under these rules the undamped engine period matches 2π √(m/k),
 and the pendulum period matches the exact elliptic-integral period within 10⁻⁶.
 
+A bumper pushes each free body whose leading face passes its pad, while the body is below
+the wall's top and overlaps its depth. The push is F = k d − c v along the facing, never a
+pull, with d the compression and v the body's approach speed. It is applied as one impulse
+before each step with the spring read at the body's position, which with the engine's
+position update is a symplectic Euler step, and the damper at the step's mean velocity.
+A body that compresses the pad fully meets the wall as an ordinary contact. With the
+undamped default (k = 400 N/m), a 2 kg block at 4 m/s reaches its compression v √(m/k)
+within 0.2% and leaves at its approach speed within 0.2%.
+
 The pulley's frame (base plate 0.16 m high, upright and wheel of radius 0.58 m at 4 m) is
 fixed colliders. Both weights (0.5 × 0.54 × 0.5 m) start with their centres at 1.8 m and
 hang at x ± 0.58 m. The engine steps the rope as one system: while it is taut the weights
@@ -357,7 +367,9 @@ move with a = g (m₂ − m₁)/(m₁ + m₂ + M/2), integrated exactly. A slack
 weight fall freely while the wheel spins on. Landing on the base plate and meeting the
 wheel are inelastic stops. A rope pulled tight again takes an inelastic jerk that
 conserves momentum along the rope. The weights are kinematic Rapier bodies that follow
-this model, so they push other parts but are not pushed back.
+this model, so they push other parts but are not pushed back. With `springStiffness` k the
+taut rope oscillates about the balance point g (m₂ − m₁)/k with ω² = k/(m₁ + m₂ + M/2),
+integrated exactly, and the spring keeps pulling the right weight while the rope is slack.
 
 ## Motion run (`physix.run/1`)
 
@@ -400,8 +412,13 @@ the momentum of the bob and rod over the step before the sample, positive when t
 near 0 while a rope is slack; its first sample repeats the second. A massive rod adds
 M L²ω²/6 of kinetic energy, its weight at its middle to the potential energy, and M v/2 to
 the momentum, with v the bob's velocity. A spring records `y`, `vy`, `displacement` from the hanging equilibrium,
-`extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). The system
-potential energy includes the elastic energy.
+`extension`, spring `force`, and gravitational and `elastic` energy (½ k e²). A pulley
+with a spring adds `springForce` and `elastic`. A bumper records `compression` (the
+largest over the bodies in its pad), spring `force` (the sum of its pushes) and `elastic`
+energy. The bumper's energy is ½ k d₀ d₁, with the compression before and after the last
+step: the form its step conserves, so kinetic plus elastic energy stays flat through a
+contact. The system potential energy includes every elastic energy. A scene with a bumper
+runs for 10 s by default, since the body comes back.
 
 ## Share link (`physix.share/1`)
 
@@ -446,6 +463,7 @@ the lab's defaults. `buildScene` (`web/src/lab/buildScene.ts`) turns it into a v
     (default 0.23). The part must fit within the ramp's length and width, and must not
     also give `x`, `y`, `z`, `vx`, `vy`, `rotation` or `launch`.
 - A pendulum may give `link`; a rope defaults to no rod mass.
+- A bumper may give `facing`.
 
 Unknown fields are rejected. Each part is validated alone, so an error names it as
 `objects[i]`, and then the whole scene is validated with `parseScene`. Errors are

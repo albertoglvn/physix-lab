@@ -150,6 +150,7 @@ const FIELDS: Record<
     ["leftMass", "left mass", "m₁", "kg", limits.mass],
     ["rightMass", "right mass", "m₂", "kg", limits.mass],
     ["wheelMass", "wheel mass", "M", "kg", limits.wheelMass],
+    ["springStiffness", "spring stiffness", "k", "N/m", limits.pulleySpring],
   ],
   ball: [
     ["mass", "mass", "m", "kg", limits.mass],
@@ -169,6 +170,11 @@ const FIELDS: Record<
     ["vy", "vertical launch speed", "v_y", "m/s", limits.velocity],
     ["restitution", "restitution", "e", "", limits.restitution],
     ["friction", "friction", "μ", "", limits.friction],
+  ],
+  bumper: [
+    ["stiffness", "stiffness", "k", "N/m", limits.stiffness],
+    ["damping", "damping", "c", "N·s/m", limits.damping],
+    ["restLength", "spring length", "L", "m", limits.restLength],
   ],
   pendulum: [
     ["length", "length", "L", "m", limits.pendulumLength],

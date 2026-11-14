@@ -27,6 +27,7 @@ import {
   type Body,
   type LabObject,
   type LabScene,
+  BUMPER_FACINGS,
   type MaterialName,
   type Preset,
   type Ramp,
@@ -46,6 +47,7 @@ const KINDS: readonly Kind[] = [
   "pulley",
   "pendulum",
   "spring",
+  "bumper",
 ];
 
 const placement: Record<string, Field> = {
@@ -127,6 +129,12 @@ export const PART_FIELDS: Record<Kind, Record<string, Field>> = {
       unit: "kg",
       about: "uniform-disc wheel mass; 0 for a massless wheel",
     },
+    springStiffness: {
+      limit: "pulleySpring",
+      unit: "N/m",
+      about:
+        "spring from the base to the right weight, at rest length at release; 0 for none",
+    },
   },
   pendulum: {
     ...placement,
@@ -165,6 +173,17 @@ export const PART_FIELDS: Record<Kind, Record<string, Field>> = {
         "release position above the hanging equilibrium; released from rest",
     },
   },
+  bumper: {
+    ...placement,
+    stiffness: { limit: "stiffness", unit: "N/m", about: "spring constant" },
+    damping: { limit: "damping", unit: "N·s/m", about: "viscous damping" },
+    restLength: {
+      limit: "restLength",
+      unit: "m",
+      about:
+        "unstretched length; for a bumper, the pad's distance from the wall",
+    },
+  },
 };
 
 const SCENE_FIELDS: Record<string, Field> = {
@@ -184,6 +203,7 @@ const SCENE_FIELDS: Record<string, Field> = {
 
 const BODY_EXTRAS = ["material", "force", "launch", "on_ramp"] as const;
 const PENDULUM_EXTRAS = ["link"] as const;
+const BUMPER_EXTRAS = ["facing"] as const;
 const REQUEST_KEYS = [
   "name",
   "template",
@@ -248,9 +268,11 @@ function buildPart(input: unknown, index: number, used: Set<string>) {
   const extras =
     kind === "pendulum"
       ? PENDULUM_EXTRAS
-      : kind === "block" || kind === "ball" || kind === "cylinder"
-        ? BODY_EXTRAS
-        : [];
+      : kind === "bumper"
+        ? BUMPER_EXTRAS
+        : kind === "block" || kind === "ball" || kind === "cylinder"
+          ? BODY_EXTRAS
+          : [];
   onlyKeys(raw, ["kind", "id", ...Object.keys(numbers), ...extras], field);
 
   let id = raw.id;
@@ -287,6 +309,10 @@ function buildPart(input: unknown, index: number, used: Set<string>) {
     given.push("link");
     if (raw.link === "rope" && raw.rodMass === undefined)
       (part as Json).rodMass = 0;
+  }
+  if (raw.facing !== undefined) {
+    (part as Json).facing = raw.facing;
+    given.push("facing");
   }
   if (raw.force !== undefined) {
     (part as Json).force = raw.force;
@@ -474,6 +500,7 @@ export function motionDomain() {
         "{ramp (a ramp id in objects), fraction (0 top to 1 foot, default 0.23)}: places a block, ball or cylinder at rest on that ramp's surface.",
     },
     pendulum_link: `${PENDULUM_LINKS.join(" or ")}; a rope only pulls, so it goes slack when the bob moves inwards.`,
+    bumper_facing: `${BUMPER_FACINGS.join(" or ")} (default left): the side the pad faces. A ramp rises towards −x, so a body sliding off it meets a bumper facing left.`,
   };
 }
 
@@ -525,6 +552,7 @@ export function sceneRequestSchema() {
             ...numberProps(allPartFields),
             material: { type: "string", enum: materialNames },
             link: { type: "string", enum: PENDULUM_LINKS },
+            facing: { type: "string", enum: BUMPER_FACINGS },
             launch: {
               type: "object",
               additionalProperties: false,

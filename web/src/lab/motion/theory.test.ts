@@ -514,3 +514,49 @@ describe("closed-form references", () => {
     );
   });
 });
+
+describe("Atwood machine with a spring", () => {
+  const sprung = (changes: Partial<Pulley>): LabScene => {
+    const scene = makeScene("pulley");
+    const pulley = scene.objects[0] as Pulley;
+    return { ...scene, objects: [{ ...pulley, ...changes }] };
+  };
+
+  it("swaps the free-fall references for the period and the largest travel", () => {
+    const ids = referencesFor(sprung({ springStiffness: 40 })).map(
+      ({ id }) => id,
+    );
+    expect(ids).toEqual([
+      "pulley-1.atwood.spring.T",
+      "pulley-1.atwood.spring.s",
+    ]);
+  });
+
+  it("matches the engine over three swings", async () => {
+    const scene = sprung({ springStiffness: 40, wheelMass: 1 });
+    const run = await runProtocol(scene, { stop: "time", maxTime: 6 });
+    for (const reference of referencesFor(scene)) {
+      const comparison = compare(reference, run);
+      expect(comparison.measured, reference.id).toBeDefined();
+      expect(comparison.within, reference.id).toBe(true);
+    }
+    expect(run.series.columns["pulley-1.elastic"]).toBeDefined();
+  });
+
+  it("flags a swing that would reach a stop", () => {
+    const period = byId(
+      sprung({ leftMass: 5, rightMass: 1, springStiffness: 20 }),
+      "spring.T",
+    );
+    expect(period.broken).toMatch(/stop/);
+    expect(
+      curvesFor(sprung({ leftMass: 5, rightMass: 1, springStiffness: 20 })),
+    ).toEqual([]);
+  });
+
+  it("has nothing to check when the weights balance", () => {
+    expect(
+      referencesFor(sprung({ leftMass: 2, rightMass: 2, springStiffness: 40 })),
+    ).toEqual([]);
+  });
+});

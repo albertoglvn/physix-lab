@@ -26,6 +26,7 @@ const KINDS: LabObject["kind"][] = [
   "pulley",
   "pendulum",
   "spring",
+  "bumper",
 ];
 
 describe("buildScene", () => {
@@ -71,7 +72,7 @@ describe("buildScene", () => {
     expect(scene.objects[0]).toMatchObject({ id: "drop", y: 20, mass: 0.2 });
     expect(scene.objects[1].id).toBe("pulley-1");
     expect(defaults.drop).toEqual(["x", "z", "vx", "vy", "restitution"]);
-    expect(defaults["pulley-1"]).toEqual(["x", "z"]);
+    expect(defaults["pulley-1"]).toEqual(["x", "z", "springStiffness"]);
   });
 
   it("reads launches, materials, forces and rope pendulums", () => {

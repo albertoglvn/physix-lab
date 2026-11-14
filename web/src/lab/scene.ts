@@ -27,6 +27,7 @@ export const limits = {
   restLength: [0.2, 10, 0.05],
   offset: [-5, 5, 0.01],
   wheelMass: [0, 20, 0.1],
+  pulleySpring: [0, 2000, 1],
   restitution: [0, 1, 0.01],
   cylinderLength: [0.2, 3, 0.05],
   airDensity: [0, 5, 0.01],
@@ -89,12 +90,15 @@ export type Ramp = Placement & {
 /**
  * An Atwood machine: two weights on an inextensible rope over a wheel. The wheel is a
  * uniform disc of `wheelMass` kilograms (0 for a massless wheel) on a frictionless axle.
+ * `springStiffness` (N/m, 0 for none) ties the right weight to the base with a massless
+ * linear spring that is at its rest length at release.
  */
 export type Pulley = Placement & {
   kind: "pulley";
   leftMass: number;
   rightMass: number;
   wheelMass: number;
+  springStiffness: number;
 };
 export type Ball = Placement &
   Surface &
@@ -151,8 +155,34 @@ export type Spring = Placement & {
   size: number;
   offset: number;
 };
+/** The side a bumper's pad faces: bodies arriving from that side compress its spring. */
+export type BumperFacing = "left" | "right";
+export const BUMPER_FACINGS: readonly BumperFacing[] = ["left", "right"];
+/**
+ * A spring bumper fixed to the floor: a wall with a massless pad on a horizontal linear
+ * spring and dashpot. `restLength` is the pad's distance from the wall face. A free body
+ * that crosses the pad plane is pushed back along x with k d + c ḋ, where d is how far
+ * its leading face has passed the plane; the wall stops a body that compresses it fully.
+ */
+export type Bumper = Placement & {
+  kind: "bumper";
+  facing: BumperFacing;
+  stiffness: number;
+  damping: number;
+  restLength: number;
+};
+/** Wall thickness along x, wall and pad height, and depth along z, in metres. */
+export const BUMPER_WALL = 0.2;
+export const BUMPER_HEIGHT = 1.2;
+export const BUMPER_DEPTH = 1.6;
+/** +1 when the pad faces +x, −1 when it faces −x. */
+export const bumperDirection = (bumper: Bumper) =>
+  bumper.facing === "left" ? -1 : 1;
+/** x of the pad's face with the spring at rest. */
+export const bumperFace = (bumper: Bumper) =>
+  bumper.x + bumperDirection(bumper) * (BUMPER_WALL / 2 + bumper.restLength);
 export type LabObject =
-  Block | Ramp | Pulley | Ball | Cylinder | Pendulum | Spring;
+  Block | Ramp | Pulley | Ball | Cylinder | Pendulum | Spring | Bumper;
 /** Free rigid bodies: they rest on ramps, slide or roll, fall and collide. */
 export type Body = Block | Ball | Cylinder;
 /**
@@ -173,6 +203,7 @@ export type Preset =
   | "friction"
   | "projectile"
   | "pulley"
+  | "springPulley"
   | "rolling"
   | "pendulum"
   | "spring"
@@ -183,6 +214,7 @@ export type Preset =
   | "drag"
   | "compound"
   | "rope"
+  | "bumper"
   | "blank";
 
 export const objectNames: Record<LabObject["kind"], string> = {
@@ -193,12 +225,14 @@ export const objectNames: Record<LabObject["kind"], string> = {
   pulley: "Pulley",
   pendulum: "Pendulum",
   spring: "Spring",
+  bumper: "Bumper",
 };
 export const presetNames: Record<Preset, string> = {
   incline: "Inclined plane",
   friction: "Friction track",
   projectile: "Projectile",
   pulley: "Atwood machine",
+  springPulley: "Sprung Atwood machine",
   rolling: "Rolling ball",
   pendulum: "Pendulum",
   spring: "Spring oscillator",
@@ -209,6 +243,7 @@ export const presetNames: Record<Preset, string> = {
   drag: "Falling through air",
   compound: "Compound pendulum",
   rope: "Slack rope",
+  bumper: "Ramp into a spring bumper",
   blank: "Untitled experiment",
 };
 
@@ -348,6 +383,12 @@ export function makeObject(
   z?: number,
 ): Spring;
 export function makeObject(
+  kind: "bumper",
+  id: string,
+  x?: number,
+  z?: number,
+): Bumper;
+export function makeObject(
   kind: LabObject["kind"],
   id: string,
   x?: number,
@@ -383,7 +424,14 @@ export function makeObject(
         friction: 0.2,
       };
     case "pulley":
-      return { ...placement, kind, leftMass: 2, rightMass: 3, wheelMass: 0 };
+      return {
+        ...placement,
+        kind,
+        leftMass: 2,
+        rightMass: 3,
+        wheelMass: 0,
+        springStiffness: 0,
+      };
     case "ball":
       return {
         ...placement,
@@ -430,6 +478,15 @@ export function makeObject(
         mass: 2,
         size: 0.6,
         offset: 0.5,
+      };
+    case "bumper":
+      return {
+        ...placement,
+        kind,
+        facing: "left",
+        stiffness: 400,
+        damping: 0,
+        restLength: 1.2,
       };
   }
 }
@@ -659,6 +716,12 @@ export function makeScene(preset: Preset): LabScene {
     scene.objects = [{ ...makeObject("block", "block-1", -6), y: 6, vx: 4 }];
   } else if (preset === "pulley") {
     scene.objects = [makeObject("pulley", "pulley-1")];
+  } else if (preset === "springPulley") {
+    // A 40 N/m spring under the heavier weight: the rope swings 0.49 m and back every
+    // 2.2 s instead of running into the base.
+    scene.objects = [
+      { ...makeObject("pulley", "pulley-1"), springStiffness: 40 },
+    ];
   } else if (preset === "rolling") {
     const ramp = makeObject("ramp", "ramp-1");
     scene.objects = [ramp, blockOnRamp(makeObject("ball", "ball-1"), ramp)];
@@ -677,6 +740,21 @@ export function makeScene(preset: Preset): LabScene {
     ];
   } else if (preset === "spring") {
     scene.objects = [makeObject("spring", "spring-1")];
+  } else if (preset === "bumper") {
+    // A block slides off a ramp, crosses a frictionless floor and compresses the bumper,
+    // which sends it back up the ramp: kinetic energy turns into elastic energy and back.
+    scene.floorFriction = 0;
+    const ramp = {
+      ...makeObject("ramp", "ramp-1", -2.5),
+      length: 5,
+      angle: 30,
+      friction: 0.1,
+    };
+    scene.objects = [
+      ramp,
+      blockOnRamp(makeObject("block", "block-1"), ramp),
+      makeObject("bumper", "bumper-1", 3.5),
+    ];
   } else if (preset === "launcher") {
     // A steel ball launched from the floor at 10 m/s, 45° above +x.
     const ball = { ...makeObject("ball", "ball-1", -6), radius: 0.2, y: 0.2 };
@@ -772,6 +850,12 @@ function parseSurface(input: Record<string, unknown>): Surface {
 }
 
 /** A pendulum's link; scenes saved before links hang their bob on a massless rod. */
+function parseFacing(input: Record<string, unknown>): BumperFacing {
+  if (!BUMPER_FACINGS.includes(input.facing as BumperFacing))
+    throw new Error(`A bumper faces ${BUMPER_FACINGS.join(" or ")}.`);
+  return input.facing as BumperFacing;
+}
+
 function parseLink(input: Record<string, unknown>) {
   const link = input.link ?? "rod";
   if (!PENDULUM_LINKS.includes(link as PendulumLink))
@@ -842,6 +926,13 @@ function parseObject(input: unknown): LabObject {
         rightMass: numeric(object, "rightMass", limits.mass),
         // Optional, so physix.lab/1 pulleys and earlier lab/2 scenes keep a massless wheel.
         wheelMass: optional(object, "wheelMass", limits.wheelMass, 0),
+        // Optional, so scenes saved before the spring existed keep a free right weight.
+        springStiffness: optional(
+          object,
+          "springStiffness",
+          limits.pulleySpring,
+          0,
+        ),
       };
     case "ball":
       return {
@@ -887,9 +978,18 @@ function parseObject(input: unknown): LabObject {
         size: numeric(object, "size", limits.size),
         offset: numeric(object, "offset", limits.offset),
       };
+    case "bumper":
+      return {
+        ...placement,
+        kind,
+        facing: parseFacing(object),
+        stiffness: numeric(object, "stiffness", limits.stiffness),
+        damping: numeric(object, "damping", limits.damping),
+        restLength: numeric(object, "restLength", limits.restLength),
+      };
     default:
       throw new Error(
-        "Supported objects are blocks, balls, cylinders, ramps, pulleys, pendulums and springs.",
+        "Supported objects are blocks, balls, cylinders, ramps, pulleys, pendulums, springs and bumpers.",
       );
   }
 }
@@ -923,7 +1023,7 @@ export function parseScene(input: unknown): LabScene {
     throw new Error("Every object needs a unique ID.");
   if (legacy && objects.some((part) => !LEGACY_KINDS.includes(part.kind)))
     throw new Error(
-      `Balls, cylinders, pendulums and springs need scene version ${SCENE_VERSION}.`,
+      `Balls, cylinders, pendulums, springs and bumpers need scene version ${SCENE_VERSION}.`,
     );
   const gravity = numeric(scene, "gravity", limits.gravity);
   for (const part of objects) {
