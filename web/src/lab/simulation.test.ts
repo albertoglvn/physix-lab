@@ -1,0 +1,438 @@
+import { describe, expect, it } from "vitest";
+import {
+  makeObject,
+  makeScene,
+  type LabScene,
+  type Pendulum,
+  type Pulley,
+} from "./scene";
+import {
+  atwood,
+  createSimulation,
+  dragStepForce,
+  initialPulleyState,
+  PULLEY_RADIUS,
+  PULLEY_TRAVEL,
+  PULLEY_WEIGHT_HEIGHT,
+  pulleySpringForce,
+  springAtwood,
+  stepAtwood,
+  TIME_STEP,
+  WEIGHT_HIGH,
+  WEIGHT_LOW,
+} from "./simulation";
+
+async function run(scene: LabScene, ticks: number) {
+  const simulation = await createSimulation(scene);
+  try {
+    simulation.step(ticks);
+    const state = simulation.block("block-1");
+    if (!state) throw new Error("The fixture needs a block-1.");
+    return { ...state, time: simulation.time };
+  } finally {
+    simulation.dispose();
+  }
+}
+
+describe("mechanics simulation", () => {
+  it("repeats identical runs and advances by a fixed step", async () => {
+    const scene = makeScene("incline");
+    const first = await run(scene, 120);
+    const second = await run(scene, 120);
+    expect(first).toEqual(second);
+    expect(first.time).toBe(1);
+    expect(first.position.x).toBeGreaterThan(-0.9);
+    expect(first.position.y).toBeLessThan(3);
+  });
+
+  it("slows a block when floor friction increases", async () => {
+    const scene = makeScene("friction");
+    const smooth = await run({ ...scene, floorFriction: 0 }, 120);
+    const rough = await run({ ...scene, floorFriction: 0.8 }, 120);
+    expect(smooth.velocity.x).toBeCloseTo(5, 3);
+    expect(rough.velocity.x).toBeCloseTo(0, 1);
+    expect(rough.position.x).toBeLessThan(smooth.position.x);
+  });
+
+  it("uses the ramp friction in inclined contact", async () => {
+    const scene = makeScene("incline");
+    const rough = {
+      ...scene,
+      objects: scene.objects.map((part) =>
+        part.kind === "ramp" ? { ...part, friction: 0.95 } : part,
+      ),
+    };
+    const sliding = await run(scene, 90);
+    const holding = await run(rough, 90);
+    expect(sliding.position.x - holding.position.x).toBeGreaterThan(0.45);
+    expect(
+      Math.hypot(holding.velocity.x, holding.velocity.y, holding.velocity.z),
+    ).toBeLessThan(0.1);
+  });
+
+  it("rejects invalid input and step counts before changing simulation time", async () => {
+    await expect(
+      createSimulation({ ...makeScene("blank"), gravity: -1 }),
+    ).rejects.toThrow("gravity");
+    const simulation = await createSimulation(makeScene("blank"));
+    try {
+      expect(() => simulation.step(0.5)).toThrow("Step count");
+      expect(simulation.time).toBe(0);
+      simulation.step();
+      expect(simulation.time).toBe(TIME_STEP);
+    } finally {
+      simulation.dispose();
+    }
+    expect(() => simulation.step()).toThrow("disposed");
+    expect(() => simulation.dispose()).not.toThrow();
+  });
+});
+
+describe("contact and link forces", () => {
+  it("measures the contact forces on a sliding and a resting block", async () => {
+    const scene = makeScene("friction");
+    const simulation = await createSimulation(scene);
+    try {
+      expect(simulation.contact("block-1")).toBeUndefined();
+      expect(simulation.linkForce("block-1")).toBeUndefined();
+      simulation.step(30);
+      const sliding = simulation.contact("block-1")!;
+      // m = 2 kg, μ = 0.35: N = m g and kinetic friction μ m g.
+      expect(sliding.normal).toBeCloseTo(2 * 9.81, 2);
+      expect(sliding.friction).toBeCloseTo(0.35 * 2 * 9.81, 2);
+      simulation.step(5 * 120);
+      const resting = simulation.contact("block-1")!;
+      expect(resting.normal).toBeCloseTo(2 * 9.81, 3);
+      expect(resting.friction).toBeLessThan(1e-3);
+      expect(simulation.contact("nothing")).toBeUndefined();
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("splits the contact force on an incline along the ramp's normal", async () => {
+    const scene = makeScene("incline");
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(60);
+      const { normal, friction } = simulation.contact("block-1")!;
+      const tilt = (26 * Math.PI) / 180;
+      expect(normal).toBeCloseTo(2 * 9.81 * Math.cos(tilt), 2);
+      expect(friction).toBeCloseTo(0.2 * 2 * 9.81 * Math.cos(tilt), 2);
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("pulls a rod pendulum's bob and rod at the bottom of the swing", async () => {
+    const scene = makeScene("compound");
+    const pendulum = scene.objects[0] as Pendulum;
+    const simulation = await createSimulation(scene);
+    try {
+      expect(simulation.linkForce(pendulum.id)).toBeUndefined();
+      let best = 0;
+      for (let i = 0; i < 240; i++) {
+        simulation.step();
+        const { position: p } = simulation.block(pendulum.id)!;
+        const f = simulation.linkForce(pendulum.id)!;
+        const dx = pendulum.x - p.x;
+        const dy = pendulum.pivotHeight - p.y;
+        best = Math.max(best, (f.x * dx + f.y * dy) / Math.hypot(dx, dy));
+        // The bob stays on its circle.
+        expect(Math.hypot(dx, dy)).toBeCloseTo(pendulum.length, 4);
+      }
+      const { mass: m, rodMass: M, length: L, bobRadius: r } = pendulum;
+      const inertia = m * L * L + 0.4 * m * r * r + (M * L * L) / 3;
+      const lever = m * L + (M * L) / 2;
+      const w2 =
+        (2 * lever * 9.81 * (1 - Math.cos((pendulum.angle * Math.PI) / 180))) /
+        inertia;
+      expect(best / ((m + M) * 9.81 + lever * w2)).toBeCloseTo(1, 4);
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("lets a rope go slack and keeps the bob from turning", async () => {
+    const scene = makeScene("rope");
+    const pendulum = scene.objects[0] as Pendulum;
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(30);
+      // Released above the pivot, the bob is falling freely a quarter second in.
+      const slack = simulation.linkForce(pendulum.id)!;
+      expect(Math.hypot(slack.x, slack.y, slack.z)).toBeLessThan(0.01);
+      expect(simulation.block(pendulum.id)!.velocity.y).toBeCloseTo(
+        -9.81 * 0.25,
+        2,
+      );
+      simulation.step(120);
+      const state = simulation.block(pendulum.id)!;
+      const r = Math.hypot(
+        state.position.x - pendulum.x,
+        state.position.y - pendulum.pivotHeight,
+      );
+      expect(r).toBeCloseTo(pendulum.length, 3);
+      expect(Math.abs(state.angularVelocity!.z)).toBeLessThan(1e-6);
+    } finally {
+      simulation.dispose();
+    }
+  });
+});
+
+describe("applied forces and air drag", () => {
+  it("makes one engine step follow the exact drag solution", () => {
+    const h = 0.05;
+    const v = { x: 3, y: -2, z: 0 };
+    const a = { x: 0, y: -9.81, z: 0 };
+    expect(dragStepForce(v, a, 2, 0, 0, h)).toEqual({ x: 0, y: 0, z: 0 });
+    // Linear drag only: v(h) = v e^(−kh) + a (1 − e^(−kh))/k.
+    const k = 0.8 / 2;
+    const f = dragStepForce(v, a, 2, 0.8, 0, h);
+    const next = (vi: number, ai: number, fi: number) => vi + h * (ai + fi / 2);
+    const exact = (vi: number, ai: number) =>
+      vi * Math.exp(-k * h) + (ai * -Math.expm1(-k * h)) / k;
+    expect(next(v.x, a.x, f.x)).toBeCloseTo(exact(v.x, a.x), 12);
+    expect(next(v.y, a.y, f.y)).toBeCloseTo(exact(v.y, a.y), 12);
+    // At terminal speed quadratic drag cancels gravity.
+    const c = 0.05;
+    const terminal = Math.sqrt((2 * 9.81) / c);
+    const hold = dragStepForce({ x: 0, y: -terminal, z: 0 }, a, 2, 0, c, h);
+    expect(hold.y).toBeCloseTo(2 * 9.81, 9);
+    expect(Math.abs(hold.x)).toBe(0);
+  });
+
+  it("reaches the closed-form speeds under a push and under quadratic drag", async () => {
+    const push = await createSimulation(makeScene("push"));
+    push.step(120);
+    // (10 − 0.35 · 2 · 9.81) / 2 m/s² for 1 s, to within the engine's first step.
+    expect(push.block("block-1")!.velocity.x).toBeCloseTo(1.5665, 2);
+    push.dispose();
+    const scene = makeScene("drag");
+    const drop = await createSimulation(scene);
+    drop.step(120);
+    const c = 0.5 * 1.2 * 0.47 * Math.PI * 0.09;
+    const terminal = Math.sqrt((0.5 * 9.81) / c);
+    expect(-drop.block("ball-1")!.velocity.y).toBeCloseTo(
+      terminal * Math.tanh(9.81 / terminal),
+      4,
+    );
+    drop.dispose();
+  });
+});
+
+describe("simulated pulley", () => {
+  const h = TIME_STEP;
+  const g = 9.81;
+  const pulley = (changes: Partial<Pulley> = {}): Pulley => ({
+    ...makeObject("pulley", "pulley-1"),
+    ...changes,
+  });
+  function settle(part: Pulley, steps: number) {
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < steps; i++) state = stepAtwood(part, g, state, h);
+    return state;
+  }
+
+  it("agrees with the ideal Atwood machine when the wheel is massless", async () => {
+    const scene = makeScene("pulley");
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(60);
+      const result = simulation.pulley("pulley-1");
+      const a = (g * (3 - 2)) / 5;
+      expect(result?.acceleration).toBeCloseTo(a, 12);
+      expect(result?.tension).toBeCloseTo((2 * 2 * 3 * g) / 5, 12);
+      expect(result?.rightTension).toBeCloseTo((2 * 2 * 3 * g) / 5, 12);
+      expect(result?.speed).toBeCloseTo(a * 0.5, 12);
+      expect(result?.displacement).toBeCloseTo((a * 0.25) / 2, 12);
+      expect(result!.left.y + result!.right.y).toBeCloseTo(
+        2 * PULLEY_WEIGHT_HEIGHT,
+        12,
+      );
+      expect(result?.taut).toBe(true);
+    } finally {
+      simulation.dispose();
+    }
+  });
+
+  it("slows the rope by the wheel's inertia and splits the tension", () => {
+    const part = pulley({ wheelMass: 2 });
+    const ideal = atwood(part, g);
+    expect(ideal.acceleration).toBeCloseTo(g / 6, 12);
+    const state = settle(part, 60);
+    expect(state.acceleration).toBeCloseTo(g / 6, 12);
+    expect(state.tension).toBeCloseTo(2 * (g + g / 6), 12);
+    expect(state.rightTension).toBeCloseTo(3 * (g - g / 6), 12);
+    expect(state.wheelSpeed).toBeCloseTo(state.speed, 12);
+    expect(state.wheelAngle).toBeCloseTo(state.displacement / PULLEY_RADIUS, 9);
+    // Energy holds while the rope is taut: K of both weights and the disc against U.
+    const kinetic =
+      0.5 * 5 * state.speed ** 2 + 0.25 * part.wheelMass * state.speed ** 2;
+    expect(kinetic).toBeCloseTo(g * (3 - 2) * state.displacement, 9);
+  });
+
+  it("holds equal masses still", () => {
+    const state = settle(pulley({ rightMass: 2 }), 600);
+    expect(state.displacement).toBe(0);
+    expect(state.speed).toBe(0);
+    expect(state.tension).toBeCloseTo(2 * g, 12);
+    expect(state.stopped).toBe(false);
+  });
+
+  it("lands the heavier weight, lets the rope go slack, then settles", () => {
+    for (const [leftMass, rightMass] of [
+      [2, 3],
+      [3, 2],
+    ]) {
+      const part = pulley({ leftMass, rightMass });
+      const a = atwood(part, g).acceleration;
+      let state = initialPulleyState(part, g);
+      let landing = 0;
+      let slack = false;
+      for (let i = 1; i <= 1200; i++) {
+        state = stepAtwood(part, g, state, h);
+        if (!landing && state.stopped) landing = i * h;
+        if (landing && !state.taut) slack = true;
+      }
+      const ideal = Math.sqrt((2 * PULLEY_TRAVEL) / Math.abs(a));
+      expect(landing).toBeGreaterThanOrEqual(ideal);
+      expect(landing - ideal).toBeLessThanOrEqual(h);
+      expect(slack).toBe(true);
+      const heavy = rightMass > leftMass ? state.right : state.left;
+      const light = rightMass > leftMass ? state.left : state.right;
+      expect(heavy.y).toBeCloseTo(WEIGHT_LOW, 12);
+      expect(light.y).toBeCloseTo(2 * PULLEY_WEIGHT_HEIGHT - WEIGHT_LOW, 12);
+      expect(state.speed).toBe(0);
+      expect(state.tension).toBeCloseTo(Math.min(leftMass, rightMass) * g, 9);
+      expect(state.taut).toBe(true);
+    }
+  });
+
+  it("stops a fast rising weight at the wheel and keeps it there", () => {
+    const part = pulley({ leftMass: 0.1, rightMass: 100 });
+    let highest = 0;
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < 600; i++) {
+      state = stepAtwood(part, g, state, h);
+      highest = Math.max(highest, state.left.y);
+    }
+    expect(highest).toBeCloseTo(WEIGHT_HIGH, 12);
+    expect(state.right.y).toBeCloseTo(WEIGHT_LOW, 12);
+  });
+
+  it("moves the engine's weights with the rope model", async () => {
+    const scene = makeScene("pulley");
+    const simulation = await createSimulation(scene);
+    try {
+      simulation.step(30);
+      let state = initialPulleyState(scene.objects[0] as Pulley, g);
+      for (let i = 0; i < 30; i++)
+        state = stepAtwood(scene.objects[0] as Pulley, g, state, h);
+      expect(simulation.pulley("pulley-1")).toEqual(state);
+    } finally {
+      simulation.dispose();
+    }
+  });
+});
+
+describe("pulley with a spring", () => {
+  const h = TIME_STEP;
+  const g = 9.81;
+  const sprung = (changes: Partial<Pulley> = {}): Pulley => ({
+    ...makeObject("pulley", "pulley-1"),
+    springStiffness: 40,
+    ...changes,
+  });
+  const energy = (part: Pulley, state: ReturnType<typeof initialPulleyState>) =>
+    0.5 * part.leftMass * state.left.vy ** 2 +
+    0.5 * part.rightMass * state.right.vy ** 2 +
+    0.25 * part.wheelMass * state.wheelSpeed ** 2 +
+    g * (part.leftMass * state.left.y + part.rightMass * state.right.y) +
+    pulleySpringForce(part, state.right.y) ** 2 / (2 * part.springStiffness);
+
+  it("oscillates about the balance point with the analytic period and reach", () => {
+    const part = sprung({ wheelMass: 1 });
+    const { period, reach } = springAtwood(part, g);
+    expect(period).toBeCloseTo(2 * Math.PI * Math.sqrt(5.5 / 40), 12);
+    expect(reach).toBeCloseTo((2 * g) / 40, 12);
+    let state = initialPulleyState(part, g);
+    let deepest = 0;
+    const turns: number[] = [];
+    for (let i = 1; i * h <= 2.2 * period; i++) {
+      const previous = state.speed;
+      state = stepAtwood(part, g, state, h);
+      deepest = Math.max(deepest, state.displacement);
+      if (previous < 0 && state.speed >= 0) turns.push(i * h);
+      expect(state.taut).toBe(true);
+    }
+    expect(deepest).toBeCloseTo(reach, 4);
+    // The rope comes back to rest at release once per period.
+    expect(turns[0]).toBeCloseTo(period, 1);
+    expect(state.stopped).toBe(false);
+  });
+
+  it("keeps mechanical energy, spring included, over many swings", () => {
+    const part = sprung({ leftMass: 1, rightMass: 4, springStiffness: 120 });
+    let state = initialPulleyState(part, g);
+    const start = energy(part, state);
+    for (let i = 0; i < 1200; i++) state = stepAtwood(part, g, state, h);
+    expect(Math.abs(energy(part, state) - start)).toBeLessThan(1e-9 * 100);
+  });
+
+  it("reports rope forces that balance each weight", () => {
+    const part = sprung();
+    let state = initialPulleyState(part, g);
+    for (let i = 0; i < 30; i++) state = stepAtwood(part, g, state, h);
+    const next = stepAtwood(part, g, state, h);
+    const mean = (next.speed - state.speed) / h;
+    expect(next.tension).toBeCloseTo(part.leftMass * (g + mean), 9);
+    const spring =
+      (pulleySpringForce(part, state.right.y) +
+        pulleySpringForce(part, next.right.y)) /
+      2;
+    expect(next.rightTension).toBeCloseTo(
+      part.rightMass * (g - mean) - spring,
+      9,
+    );
+  });
+
+  it("matches the free Atwood machine when the spring is off", () => {
+    const free = sprung({ springStiffness: 0 });
+    let state = initialPulleyState(free, g);
+    for (let i = 0; i < 30; i++) state = stepAtwood(free, g, state, h);
+    const { acceleration } = atwood(free, g);
+    expect(state.displacement).toBeCloseTo(
+      (acceleration * (30 * h) ** 2) / 2,
+      12,
+    );
+  });
+
+  it("lets the spring pull the right weight on a slack rope after a landing", () => {
+    // The heavy left weight swings past the base: it lands, the right weight flies on
+    // up with the rope slack, and the spring brings it back down.
+    const part = sprung({ leftMass: 5, rightMass: 1, springStiffness: 20 });
+    expect(Math.abs(springAtwood(part, g).reach)).toBeGreaterThan(
+      PULLEY_TRAVEL,
+    );
+    let state = initialPulleyState(part, g);
+    let slack = false;
+    let landed = false;
+    for (let i = 0; i < 600; i++) {
+      state = stepAtwood(part, g, state, h);
+      if (!state.taut) slack = true;
+      if (state.left.y <= WEIGHT_LOW + 1e-9) landed = true;
+      expect(state.right.y).toBeLessThanOrEqual(WEIGHT_HIGH + 1e-9);
+      expect(Number.isFinite(state.right.y)).toBe(true);
+    }
+    expect(landed).toBe(true);
+    expect(slack).toBe(true);
+  });
+
+  it("starts at rest length with the spring part of the parsed scene", () => {
+    const scene = makeScene("pulley");
+    const part = scene.objects[0] as Pulley;
+    expect(part.springStiffness).toBe(0);
+    expect(pulleySpringForce(sprung(), PULLEY_WEIGHT_HEIGHT)).toBe(0);
+  });
+});

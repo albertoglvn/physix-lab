@@ -18,11 +18,10 @@ export function AgentPanel({ c }: { c: Case }) {
     <div className="panel-body">
       <div className="panel-intro">
         <p>
-          Agents use the same contract through MCP (<code>predict_stress</code>,{" "}
-          <code>verify_with_solver</code>, <code>optimize</code>,{" "}
-          <code>describe_domain</code>) or the local HTTP API. Every response
-          states its source (surrogate, FEM or FEM fallback), model and case
-          versions, uncertainty and timing.
+          Copy this case into <code>predict_stress</code> in your connected MCP
+          client. Call <code>verify_with_solver</code> with the same case to
+          compare the estimate with a finite element result. Use the HTTP tab if
+          you run the local Physix API.
         </p>
       </div>
       <div className="code-head">

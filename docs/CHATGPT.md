@@ -1,0 +1,96 @@
+# Connect Physix to ChatGPT
+
+1. Open [Physix](https://physix-lab.hospitablepeacock.chatgpt.site/) and select
+   **Connect your agent**. If prompted, sign in with the ChatGPT account that has access
+   to the Physix plugin.
+2. After signing in, select **Open ChatGPT plugins**. In **Personal**, open **Physix** under
+   **Created by you** or **Shared with me**. Select **Install**, then **Connect** if prompted.
+3. Start a new ChatGPT Work chat, select **@Physix**, and ask:
+
+   > Compare 12 mm and 18 mm hole radii on the Physix example plate. Keep the load
+   > the same. Report the von Mises hotspot and the source for each case.
+
+The Site handles sign-in. ChatGPT handles installation and connection consent. The
+public browser lab stays available to visitors. The Site provisions a private plugin
+for the owner. People with a supported shared invitation can install it after the
+owner shares it. Public plugin directory distribution requires OpenAI review.
+[MCP setup in ChatGPT](https://learn.chatgpt.com/docs/extend/mcp) ·
+[Public submission](https://developers.openai.com/plugins/deploy/submission)
+
+## Hosted stress experiments
+
+- `describe_domain` returns the reference plate and L-bracket dimensions, materials,
+  load direction, and available hole radii.
+- `compare_stress` compares up to six cases from that set. Pass radii in metres.
+  A positive multiplier
+  scales the reference load, stress and displacement. Geometry, material and
+  boundary conditions stay fixed for each radius. Values are reference-mesh
+  summaries, with the reference case ID, solver version, and mesh size.
+- Each `compare_stress` result has a `share_url`. The link opens that exact case in the
+  Physix lab, where the student can see the stress field, probe it, and check it with FEM.
+  The case travels in the URL fragment (`physix.share/1` in `docs/CONTRACTS.md`), so the
+  Worker stores nothing and the host never receives it.
+- `build_scene` builds a Motion experiment from parts: blocks, balls and cylinders on
+  ramps or the floor, Atwood pulleys (with an optional spring under one weight),
+  pendulums, springs, spring bumpers, launches, applied forces and air drag. ChatGPT gives
+  only the values the problem states; the result lists the defaults it used. The Worker validates the scene with the lab's own code
+  (`physix.scene-request/1` in `docs/CONTRACTS.md`) and returns a `share_url`. It does not
+  simulate it: the lab runs the simulation and plots its graphs in the browser when the
+  link opens.
+- `simulate_scene` takes the same request, or a scene from `build_scene`, and runs it on the
+  server with the lab's engine (Rapier). ChatGPT receives the events, the closed-form theory
+  values beside the simulated ones, the start, end, min and max of each plotted quantity, and
+  a `share_url`. It also receives the plotted values, 40 samples per graph by default, and
+  plots them itself (`physix.hosted-run/1` in `docs/CONTRACTS.md`). The lab recomputes the
+  run and shows interactive graphs when the link opens.
+- ChatGPT does not open MCP Apps views from a Sites-hosted plugin: the Physix chart view
+  failed with "could not open" in regular and Work chats while its resource was served
+  correctly. The view stays in `mcp/sites/chartView.mjs`, off unless the Worker's
+  `PHYSIX_CHART_VIEW` variable is `on`.
+- Hosted stress tools expose cached scikit-fem results and their linear scaling. Arbitrary
+  geometry, new FEM meshes and optimization are available through the local tools or the
+  browser lab within each workflow's scope.
+
+Try:
+
+> Using Physix, set up a 5 kg block on a 30° ramp with friction 0.25 and give me the link.
+
+> Using Physix, simulate a 5 kg block sliding down a 30° ramp with friction 0.25. Show me
+> its velocity and energy graphs and check the acceleration against theory.
+
+## Build and verification
+
+Run `pnpm run build` from the root to build the browser assets and Sites Worker.
+`scripts/build_sites_worker.mjs` bundles the Worker with Vite into one module, with the
+lab's scene builder, motion run, chart view and stress reference inlined. Workers refuse to
+compile WebAssembly from bytes, so the build swaps Rapier's inlined module for an import of
+`rapier3d.wasm`, copies that file beside `index.js`, and adds a `CompiledWasm` rule to
+`wrangler.json`. The build fails if any other import remains or the inlined module is
+still present. The deployed Worker therefore needs the `.wasm` module rule honoured. If
+the engine cannot start, `simulate_scene` returns `engine_unavailable` with the
+`share_url`, and the stress and scene tools keep working.
+
+Measured timings for `simulate_scene`, end to end through the MCP endpoint, on the built
+bundle in local workerd (miniflare 4.20260730, AMD Ryzen 9 7940HS, Windows 11): the incline
+template took 118 ms cold and 29 ms warm; 60 s runs took 133 ms for the pulley, 325 ms for
+the collision template and 865 ms for 32 balls, the largest scene. The model-visible result,
+with the plotted values at the default 40 samples per graph, was 8 to 12 KB for the
+templates and 34 KB for 32 balls. The bundle is 455 KB (95 KB gzipped) and
+`rapier3d.wasm` 3.1 MB. A deployed Worker may report a lower `wall_ms`, since its clock can
+advance only at I/O. A run that exceeds the platform's CPU limit ends the request without
+a tool result.
+The Worker uses the platform's request identity, never collects a separate password,
+and returns only a signed-in flag and optional plugin link to the browser. It does
+not log identities or experiment inputs.
+
+The hosted reference file is generated by `uv run --no-sync python -m scripts.build_hosted_stress`
+from canonical cases using the documented reference mesh. Run
+`node --test mcp/sites/worker.test.mjs` for the hosted MCP transport, tool and access
+tests. Node 22.18 loads the scene builder's and motion run's TypeScript directly for
+these tests, with the engine's package as published.
+Run `uv run --no-sync pytest tests/mcp/test_hosted_reference.py` to compare scaled
+hosted cases with independent matched scikit-fem solves.
+
+`PHYSIX_CHATGPT_PLUGIN_URL` is an optional nonsecret Sites runtime variable for a
+verified ChatGPT plugin details link. Until a direct link is available, the button
+opens the Personal plugins directory.

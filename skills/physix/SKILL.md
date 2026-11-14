@@ -76,6 +76,40 @@ baseline and the best candidates are then re-solved with FEM. Claim an improveme
 Always give the baseline value, the selected value and the relative change from the `fem`
 blocks.
 
+## Hosted Physix in ChatGPT
+
+The hosted plugin offers `describe_domain`, `compare_stress`, `build_scene` and
+`simulate_scene`. Call
+`describe_domain` first: it lists the stress domain and, under `motion`, the scene
+conventions, templates, part kinds, fields, units, limits and defaults.
+
+- `compare_stress` returns cached scikit-fem reference results for the example plate and
+  L-bracket at the listed hole radii, scaled linearly by `load_multiplier`. The source is
+  `fem_reference` or `fem_reference_scaled`.
+- `build_scene` turns a mechanics problem into a lab scene. Pick the closest template or
+  list the parts, and give only the values the problem states, in SI units and degrees.
+  Use `on_ramp` to rest a body on a ramp and `launch` for a speed and an elevation. If it
+  returns `invalid_scene`, fix the named `field` and call again. Tell the student which
+  defaults the result lists when they matter, such as a block's size on a ramp. The scene
+  is not simulated: do not quote results from it. The lab simulates it and draws its graphs
+  when the link opens.
+- `simulate_scene` runs the same request, or a scene from `build_scene`, with the lab's
+  engine (source `rapier`) and returns its graphs' values. Use it when the student wants
+  numbers, graphs or a check against theory. Quote numbers only from its `references`,
+  `summary` and `events`, with their units. A theory value holds only under its
+  `assumptions` and the result's `contact_model`. Report `within: false` or a `broken`
+  reason as found rather than explaining it away, and say when `references_omitted` or
+  `events_omitted` is not zero. To show a graph, plot its `series` entry in the same
+  reply: `t` on the x axis in seconds, each column's `values` in the graph's `unit`, and
+  `theory` dashed where given. Load the values from the result as they are rather than
+  retyping them, and check a few plotted points against the result. Plot only values the
+  result contains; never draw a curve from theory or endpoints alone and present it as
+  the simulation. If it returns `invalid_run`, fix the named `field`. If it returns
+  `engine_unavailable`, give the `share_url` so the lab runs the scene in the browser.
+
+Every result carries a `share_url`. Give the student that link for each case or scene you
+report, so they can open it in the Physix lab. Never edit a link or build one by hand.
+
 ## 5. Report
 
 State the source, the model or solver version, and the timing boundary of every number.

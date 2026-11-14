@@ -4,8 +4,9 @@ Endpoints (see ``docs/CONTRACTS.md``)::
 
     GET  /api/health    GET /api/model    GET /api/domain    GET /api/examples
     POST /api/predict   {case, include_field?, force_fem?, include_mesh?}
-    POST /api/verify    {case, prediction?, include_field?, include_mesh?}
+    POST /api/verify    {case, prediction?, include_field?, include_mesh?, mesh_preset?}
     POST /api/optimize  {case, variables, objective?, constraints?, budget?, seed?}
+    POST /api/convergence {case, presets?, probes?}
 
 With ``--static DIR`` the built web app is served from the same origin. The server binds to
 loopback only; it is a local development service, not a hardened deployment.
@@ -119,6 +120,11 @@ def make_handler(service: PhysixService, static: Path | None) -> type[BaseHTTPRe
                     prediction=body.get("prediction"),
                     include_field=bool(body.get("include_field")),
                     include_mesh=bool(body.get("include_mesh")),
+                    mesh_preset=body.get("mesh_preset"),
+                )
+            elif path == "/api/convergence":
+                out = service.convergence(
+                    body.get("case"), presets=body.get("presets"), probes=body.get("probes")
                 )
             elif path == "/api/optimize":
                 out = service.optimize(body)

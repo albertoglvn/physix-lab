@@ -1,0 +1,211 @@
+/*
+ * Physix design tokens. The only file, besides the colour-map stops in ui/colormap.ts,
+ * that may contain literal colours. See docs/DESIGN.md for names, roles and rules.
+ */
+:root {
+  /* Surfaces, lightest to darkest */
+  --px-white: #ffffff;
+  --px-black: #000000;
+  --px-daylight: #fefffc;
+  --px-paper: #f9fbf7;
+  --px-wash: #f5f8f3;
+  --px-canvas: #f0f5ed;
+  --px-wash-strong: #edf3eb;
+  --px-selected: #e5eee3;
+  --px-rule: #e7ede6;
+  --px-edge: #dce4da;
+  --px-edge-control: #d7e0d5;
+  --px-halo: #dcebe1;
+  --px-sage-200: #c9d9c9;
+  --px-edge-strong: #bacaba;
+  --px-glass: #fbfdf9eb;
+  --px-overlay: #f8fbf4d6;
+  --px-scrim: #1d2a237d;
+
+  /* Ink */
+  --px-ink: #263229;
+  --px-ink-2: #45594c;
+  --px-ink-muted: #59695d;
+  --px-ink-icon: #5b7465;
+  --px-sage-500: #71867a;
+  --px-ink-faint: #819185;
+  --px-idle: #9eae9d;
+
+  /* Editorial (home page) */
+  --px-editorial-ink: #2c2c2c;
+  --px-warm-ink: #444141;
+  --px-prose: #646464;
+  --px-editorial-rule: #dee2de;
+  --px-editorial-rule-soft: #edf0eb;
+
+  /* Actions and focus */
+  --px-primary: #1f1f29;
+  --px-primary-edge: #282834;
+  --px-primary-hover: #393b45;
+  --px-on-primary: var(--px-white);
+  --px-primary-sheen: color-mix(in srgb, var(--px-white) 12%, transparent);
+  --px-accent: #32664e;
+  --px-accent-ink: #284f3c;
+  --px-accent-2: #a25624;
+  --px-focus: #167961;
+  --px-sky: #0081c0;
+  --px-sky-edge: #71bde2;
+
+  /* State: foreground, tint and edge */
+  --px-ok: #357448;
+  --px-ok-tint: #eaf2e8;
+  --px-warn: #875c15;
+  --px-warn-tint: #fbf6e5;
+  --px-bad: #a13e36;
+  --px-bad-tint: #faeeea;
+  --px-bad-edge: #f3d9d4;
+  --px-ref: #6c408a;
+  --px-ref-tint: #f1ebf5;
+  --px-ref-light: #e9c9ff;
+
+  /* Data series, in assignment order */
+  --px-series-1: #32664e;
+  --px-series-2: #0081c0;
+  --px-series-3: #b07a1a;
+  --px-series-4: #6c408a;
+  --px-series-5: #a13e36;
+  --px-series-6: #4d5b70;
+
+  /* 2D field stage */
+  --px-stage: #eef4eb;
+  --px-stage-grid: #d7e2d580;
+  --px-specimen-shadow: #c7d7c9;
+  --px-mesh-line: #0a0e1673;
+
+  /* 3D viewport (read by lab/viewportPalette.ts) */
+  --px-viewport-bg: #eaf0e7;
+  --px-viewport-floor: #e2eade;
+  --px-viewport-sky-light: #ffffff;
+  --px-viewport-ground-light: #84917f;
+  --px-viewport-sun: #fff6e1;
+  --px-grid-major: #9bad9e;
+  --px-grid-minor: #c6d3c4;
+  --px-part-block: #edb765;
+  --px-part-block-edge: #5a412a;
+  --px-part-ramp: #83a398;
+  --px-part-edge: #476d61;
+  --px-part-frame: #57766d;
+  --px-part-wheel: #d7a054;
+  --px-part-rim: #645544;
+  --px-part-hub: #515950;
+  --px-part-spoke: #8c6536;
+  --px-part-rope: #655543;
+  --px-part-weight-left: #7898b5;
+  --px-part-weight-right: #c78161;
+  --px-part-ball: #d58a62;
+  --px-part-ball-band: #6b4129;
+  --px-part-bob: #7898b5;
+  --px-part-coil: #4f6a7d;
+  /* Move arrows on the selected part: x, y and z */
+  --px-axis-x: #c4513d;
+  --px-axis-y: #3f8a4f;
+  --px-axis-z: #2f74b5;
+  /* A hovered or dragged arrow lightens towards this colour */
+  --px-axis-hover: #ffffff;
+
+  /* Home illustrations and photography overlays */
+  --px-home-hero: #f5eedc;
+  --px-home-sky-deep: #003a61;
+  --px-home-sky-mid: #00476b;
+  --px-home-sky-ink: #16374f;
+  --px-home-slate: #243f54;
+  --px-home-slate-2: #31556b;
+  --px-home-night: #0c2d41;
+  --px-home-forest: #162719;
+  --px-home-umber: #171c14;
+  --px-home-umber-2: #262b22;
+  --px-home-meadow: #719c65;
+  --px-home-horizon: #304d49;
+  --px-home-dusk-1: #334444;
+  --px-home-dusk-2: #576a6a;
+  --px-home-dusk-3: #728383;
+  --px-home-dusk-4: #a5afaf;
+  --px-home-dusk-5: #cfd3cf;
+  --px-home-mint-1: #e7f5f3;
+  --px-home-mint-2: #d0ebe8;
+  --px-home-mint-3: #a0d7d1;
+  --px-home-sage-ink: #68736b;
+  --px-home-sage-rule: #c5cdc2;
+  --px-home-tab-rule: #d9dfd7;
+  --px-home-schematic-grid: #e9ede8;
+  --px-home-schematic-ink: #8a9a8d;
+  --px-logo-low: #1f6fd1;
+  --px-logo-mid: #3cc0a0;
+  --px-logo-high: #f2c14e;
+
+  /* Shape and depth */
+  --px-radius-panel: 16px;
+  --px-radius-control: 8px;
+  --px-radius-chip: 6px;
+  --px-shadow-flat: 0 2px 6px #344b3412;
+  --px-shadow-float: 0 8px 24px #344b341f, 0 1px 2px #344b3414;
+  --px-shadow-sheet: 0 24px 64px #26322933;
+  --px-shadow-photo: 0 2px 6px
+    color-mix(in srgb, var(--px-black) 15%, transparent);
+  --px-shadow-paper:
+    0 1px 1px color-mix(in srgb, var(--px-black) 8%, transparent),
+    0 4px 5px color-mix(in srgb, var(--px-black) 8%, transparent);
+
+  /* Layers */
+  --px-z-hud: 10;
+  --px-z-panel: 20;
+  --px-z-flyout: 30;
+  --px-z-topbar: 40;
+  --px-z-toast: 50;
+  --px-z-sheet: 60;
+  --px-z-palette: 70;
+
+  /* Type */
+  --px-font-wordmark: "Bricolage Grotesque", Inter, Arial, sans-serif;
+  --px-font-copy: Inter, Arial, sans-serif;
+  --px-font-mono:
+    ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Legacy aliases used by styles.css and the pastoral pages */
+  --bg: var(--px-canvas);
+  --bg-2: var(--px-paper);
+  --panel: var(--px-daylight);
+  --panel-2: var(--px-wash-strong);
+  --line: var(--px-edge);
+  --line-2: var(--px-edge-strong);
+  --text: var(--px-ink);
+  --text-2: var(--px-ink-2);
+  --muted: var(--px-ink-muted);
+  --accent: var(--px-accent);
+  --accent-2: var(--px-accent-2);
+  --ok: var(--px-ok);
+  --warn: var(--px-warn);
+  --bad: var(--px-bad);
+  --ref: var(--px-ref);
+  --radius: var(--px-radius-panel);
+  --radius-sm: var(--px-radius-control);
+  --shadow: var(--px-shadow-flat);
+  --font: var(--px-font-copy);
+  --mono: var(--px-font-mono);
+  --daylight: var(--px-daylight);
+  --editorial-ink: var(--px-editorial-ink);
+  --warm-ink: var(--px-warm-ink);
+  --prose: var(--px-prose);
+  --rule: var(--px-editorial-rule);
+  --sky: var(--px-sky);
+  --wordmark: var(--px-font-wordmark);
+  --copy: var(--px-font-copy);
+  color-scheme: light;
+}
+
+/* Tabular figures wherever numbers are compared (DESIGN.md §3). */
+.num,
+.lab-readout dd,
+.stat-row,
+.table td,
+.fv-readout,
+.fv-tag,
+.colorbar,
+.pill {
+  font-variant-numeric: tabular-nums;
+}

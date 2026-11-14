@@ -111,3 +111,13 @@ def test_static_serving_is_isolated_and_falls_back(service, tmp_path) -> None:
             assert b"<title>x</title>" in resp.read()
     finally:
         httpd.shutdown()
+
+
+def test_convergence_route_validates_before_solving(base_url) -> None:
+    status, body, _ = call(
+        f"{base_url}/api/convergence",
+        {"case": plate_dict(), "presets": ["fast", "fast", "fine"]},
+    )
+    assert status == 422 and body["error"] == "invalid_request" and body["field"] == "presets"
+    status, body, _ = call(f"{base_url}/api/verify", {"case": plate_dict(), "mesh_preset": "x"})
+    assert status == 422 and body["field"] == "mesh_preset"

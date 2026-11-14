@@ -1,6 +1,6 @@
-# Work log: first working version
+# Work log
 
-This log records how v1 was built: one workstream per branch, each merged into `main` with
+This log records how Physix was built. v1 was built one workstream per branch, each merged into `main` with
 `--no-ff` after its focused checks passed. Contracts were agreed first (see
 [CONTRACTS.md](CONTRACTS.md)), so dependent work could proceed against fixtures.
 
@@ -19,6 +19,29 @@ This log records how v1 was built: one workstream per branch, each merged into `
 Shared fixtures (`tests/fixtures/encoding_v1.json`, `postprocess_v1.json`) are the handoff
 between Python and TypeScript. Vitest checks the browser encoder and the ensemble statistics
 against them.
+
+## Lab v2 (`feat/lab-v2-foundations`)
+
+Lab v2 follows [LAB_PLAN.md](LAB_PLAN.md) on one branch, one commit per slice. Each slice
+landed with its tests, its contract rows in [CONTRACTS.md](CONTRACTS.md) and a browser check
+of the running lab.
+
+| Slice | Scope | Key commits |
+| --- | --- | --- |
+| Phase 0 · Foundations | Mechanics lab, browser FEM worker, design tokens, panel primitives | `1971165`, `b5fa43e` |
+| Phase 1 · One lab shell | Both studies in one shell at `#/lab` | `4089b19` |
+| Phase 2 · Measurement and theory | Probes, plots, theory references, exports, stress line probes and Kt | `ea6ee29`, `7907254` |
+| Phase 3 · New parts and variables | Sweeps and fits, ball, pendulum, spring, simulated pulley, materials, launcher, forces, drag, rods and ropes, run history, grids, stress sweeps and convergence | `e4078ff` to `dd1ca23` |
+| Hosted ChatGPT plugin | Connect page, share links, `build_scene`, `simulate_scene` and plotted values | `39cf96b` to `cb42cf5` |
+| Phase 3 follow-ups | Move arrows on the selected part, sprung Atwood machine, spring bumper and its ramp template, page review fixes, README opening with the live lab and the Codex workflow | `a17585f`, `e357725`, `58caec2` |
+
+Checks at each slice: `vitest run`, `tsc --noEmit`, `eslint`, `prettier --check` and
+`vite build` in `web/`, `node --test mcp/sites/worker.test.mjs` for the hosted Worker, and
+the Python suite when `physics/` or `mcp/physix_mcp/` changed.
+
+Release checks on 14 November 2026 passed with 465 web tests, 19 Worker tests and 131
+Python tests. Web lint and the production build passed. Vite reported a large-chunk
+warning, and the Python suite reported four ONNX exporter deprecation warnings.
 
 ## Checks at each merge
 
@@ -47,5 +70,9 @@ against them.
 - Optimisation screens candidates with the surrogate when a bundle is loaded, and with the
   fast FEM preset otherwise. Only the baseline and the selected design are reported as
   verified.
-- Static hosting (GitHub Pages) is planned. The local demo serves the production build from
-  the API so that FEM verification works from the same origin.
+- The public site runs on ChatGPT Sites, where browser FEM runs in a Pyodide worker. The
+  local demo still serves the production build from the API so that FEM verification works
+  from the same origin.
+- Motion contacts use Rapier's solver. Impacts at the foot of a ramp lose the vertical
+  component of the velocity, so a run's mechanical energy steps down there. The energy plot
+  shows it rather than hiding it.

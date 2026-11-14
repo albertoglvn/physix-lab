@@ -1,0 +1,264 @@
+{
+  "schema": "physix.hosted-reference/1",
+  "solver": {
+    "name": "scikit-fem",
+    "version": "12.0.2",
+    "mesh_preset": "reference",
+    "mesh_settings": {
+      "h_max_rel": 0.025,
+      "h_min_rel": 0.005,
+      "grading": 0.3,
+      "feature_points": 64,
+      "element_order": 2,
+      "relax_iterations": 40,
+      "seed": 0
+    }
+  },
+  "families": {
+    "plate": {
+      "example": {
+        "schema": "physix.case/1",
+        "family": "plate",
+        "geometry": {
+          "width": 0.2,
+          "height": 0.08,
+          "holes": [
+            {
+              "x": 0.1,
+              "y": 0.04,
+              "radius": 0.012
+            }
+          ]
+        },
+        "thickness": 0.005,
+        "material": {
+          "name": "steel",
+          "young": 210000000000.0,
+          "poisson": 0.3
+        },
+        "support": "clamped",
+        "load": {
+          "kind": "traction",
+          "x": 10000000.0,
+          "y": 0.0
+        }
+      },
+      "results": [
+        {
+          "radius_m": 0.008,
+          "reference_case_id": "case_cf6e3a0576fb0ba0",
+          "mesh": {
+            "nodes": 1069,
+            "elements": 1879
+          },
+          "summary": {
+            "max_von_mises": 31812885.00966733,
+            "hotspot": {
+              "von_mises": 31812885.00966733,
+              "x": 0.09975363953155064,
+              "y": 0.03200379424229308,
+              "stress_concentration": 3.181288500966733,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 9.867754858598952e-06,
+            "equilibrium_residual": 6.093519209882082e-14
+          }
+        },
+        {
+          "radius_m": 0.01,
+          "reference_case_id": "case_2ff3b1149995adc4",
+          "mesh": {
+            "nodes": 1107,
+            "elements": 1943
+          },
+          "summary": {
+            "max_von_mises": 32694609.570820395,
+            "hotspot": {
+              "von_mises": 32694609.570820395,
+              "x": 0.09975069308261927,
+              "y": 0.030003108179991838,
+              "stress_concentration": 3.2694609570820394,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 1.0094191271447576e-05,
+            "equilibrium_residual": 2.1067942719940417e-13
+          }
+        },
+        {
+          "radius_m": 0.012,
+          "reference_case_id": "case_15951409ae212b29",
+          "mesh": {
+            "nodes": 1065,
+            "elements": 1857
+          },
+          "summary": {
+            "max_von_mises": 33921677.37532571,
+            "hotspot": {
+              "von_mises": 33921677.37532571,
+              "x": 0.10028996494283368,
+              "y": 0.05199649616896231,
+              "stress_concentration": 3.392167737532571,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 1.0388233289163243e-05,
+            "equilibrium_residual": 1.9239587835604808e-13
+          }
+        },
+        {
+          "radius_m": 0.014,
+          "reference_case_id": "case_3fcc049f3fdd3a58",
+          "mesh": {
+            "nodes": 1057,
+            "elements": 1842
+          },
+          "summary": {
+            "max_von_mises": 35639978.60456319,
+            "hotspot": {
+              "von_mises": 35639978.60456319,
+              "x": 0.10000000000000013,
+              "y": 0.026000000000000002,
+              "stress_concentration": 3.563997860456319,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 1.0768560855380836e-05,
+            "equilibrium_residual": 4.599233018619009e-14
+          }
+        },
+        {
+          "radius_m": 0.016,
+          "reference_case_id": "case_b9c1212d11431cc1",
+          "mesh": {
+            "nodes": 1022,
+            "elements": 1771
+          },
+          "summary": {
+            "max_von_mises": 37612365.80292128,
+            "hotspot": {
+              "von_mises": 37612365.80292128,
+              "x": 0.10038661992377819,
+              "y": 0.05599532822528309,
+              "stress_concentration": 3.761236580292128,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 1.1246114118820368e-05,
+            "equilibrium_residual": 6.819094690261576e-14
+          }
+        },
+        {
+          "radius_m": 0.018,
+          "reference_case_id": "case_539a2e2e087dff6f",
+          "mesh": {
+            "nodes": 1009,
+            "elements": 1746
+          },
+          "summary": {
+            "max_von_mises": 40378152.735028856,
+            "hotspot": {
+              "von_mises": 40378152.735028856,
+              "x": 0.1000000000000002,
+              "y": 0.022000000000000002,
+              "stress_concentration": 4.037815273502885,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 1.184198719474246e-05,
+            "equilibrium_residual": 6.36636231465267e-14
+          }
+        }
+      ]
+    },
+    "bracket": {
+      "example": {
+        "schema": "physix.case/1",
+        "family": "bracket",
+        "geometry": {
+          "width": 0.2,
+          "height": 0.1,
+          "web_width": 0.04,
+          "flange_height": 0.03,
+          "fillet_radius": 0.008,
+          "holes": [
+            {
+              "x": 0.02,
+              "y": 0.07,
+              "radius": 0.008
+            }
+          ]
+        },
+        "thickness": 0.005,
+        "material": {
+          "name": "aluminium_6061",
+          "young": 68900000000.0,
+          "poisson": 0.33
+        },
+        "support": "clamped",
+        "load": {
+          "kind": "force",
+          "x": 0.0,
+          "y": -500.0
+        }
+      },
+      "results": [
+        {
+          "radius_m": 0.006,
+          "reference_case_id": "case_cd5008d96d7057fd",
+          "mesh": {
+            "nodes": 873,
+            "elements": 1377
+          },
+          "summary": {
+            "max_von_mises": 176459302.1631797,
+            "hotspot": {
+              "von_mises": 176459302.1631797,
+              "x": 0.044282214623649854,
+              "y": 0.030916351794774317,
+              "stress_concentration": 52.93779064895391,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 0.0017989857794622828,
+            "equilibrium_residual": 9.039934028233583e-12
+          }
+        },
+        {
+          "radius_m": 0.008,
+          "reference_case_id": "case_538850c08e85c64f",
+          "mesh": {
+            "nodes": 900,
+            "elements": 1418
+          },
+          "summary": {
+            "max_von_mises": 176506938.78290093,
+            "hotspot": {
+              "von_mises": 176506938.78290093,
+              "x": 0.044282214623649854,
+              "y": 0.030916351794774317,
+              "stress_concentration": 52.952081634870275,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 0.0018075265635504032,
+            "equilibrium_residual": 1.6887035149668755e-11
+          }
+        },
+        {
+          "radius_m": 0.01,
+          "reference_case_id": "case_d8d933bc316cf0a5",
+          "mesh": {
+            "nodes": 940,
+            "elements": 1486
+          },
+          "summary": {
+            "max_von_mises": 176615854.3073484,
+            "hotspot": {
+              "von_mises": 176615854.3073484,
+              "x": 0.044282214623649854,
+              "y": 0.030916351794774317,
+              "stress_concentration": 52.984756292204516,
+              "exclusion_band": 0.010000000000000002
+            },
+            "max_displacement": 0.0018264403043839056,
+            "equilibrium_residual": 1.1841324155142373e-11
+          }
+        }
+      ]
+    }
+  }
+}

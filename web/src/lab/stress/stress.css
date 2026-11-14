@@ -1,0 +1,224 @@
+/* The stress study inside the lab shell. Studio widgets keep their global classes. */
+
+.lab-stress {
+  color: var(--text);
+}
+
+/* The field fills the stage between the HUD, the inspector and the collapsed dock. */
+.lab-field {
+  position: absolute;
+  inset: 0;
+  padding: 72px 24px 64px;
+  display: grid;
+  background:
+    linear-gradient(var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px 20px,
+    linear-gradient(90deg, var(--px-stage-grid) 1px, transparent 1px) 0 0 / 20px
+      20px,
+    var(--px-stage);
+}
+.lab-frame[data-study="stress"] .lab-field {
+  padding-right: calc(24px + var(--lab-inspector-room, 0px));
+}
+.lab-field-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.lab-field .fieldview {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+}
+/* The SVG letterboxes inside the stage; match its drawn area so labels sit on the part. */
+.lab-field .fv-overlay {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: min(100cqw, 100cqh * var(--fv-aspect));
+  height: min(100cqh, 100cqw / var(--fv-aspect));
+  transform: translate(-50%, -50%);
+}
+.lab-field .fieldview svg {
+  width: 100%;
+  height: 100%;
+}
+.lab-field .stage-overlay {
+  border-radius: var(--px-radius-panel);
+}
+
+.lab-hud.lab-stress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.lab-hud-legend {
+  top: auto;
+  bottom: 56px;
+  left: 16px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--px-radius-control);
+  box-shadow: var(--px-shadow-float);
+}
+
+/* Editor in the inspector. */
+.lab-stress .editor-section h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+.lab-stress .hole-row input[type="number"] {
+  appearance: textfield;
+}
+/* Four columns share a narrow dock; keep the digits clear of the unit. */
+.lab-stress .hole-row .numfield input {
+  padding: 0.4rem 0.25rem;
+}
+.lab-stress .hole-row input::-webkit-inner-spin-button {
+  appearance: none;
+}
+
+/* Results in the dock and sheets. */
+.lab-stress .tone-accent {
+  background: var(--px-ok-tint);
+  border-color: var(--px-sage-200);
+}
+.lab-stress .panel-intro p {
+  color: var(--text-2);
+}
+.lab-stress .callout {
+  margin-block: 8px;
+}
+.lab-stress table {
+  font-size: 13px;
+}
+.lab-stress .panel-body > .muted.small {
+  margin-block: 7px;
+}
+.stress-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.lab-stress .stat-row {
+  margin-bottom: 12px;
+}
+
+/* The model card reads as a document inside its sheet. */
+.lab-model-card .page.narrow {
+  max-width: none;
+}
+.lab-model-card .page-head {
+  padding-top: 0;
+}
+/* The sheet header already names the card. */
+.lab-model-card .page-head h1 {
+  display: none;
+}
+.lab-model-card .model-identity {
+  margin: 0 0 13px;
+  overflow-wrap: anywhere;
+}
+.lab-model-card .card-section h2 {
+  font: 600 22px/1.15 var(--px-font-wordmark);
+}
+.lab-model-card .card-section > p {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 1199px) {
+  .lab-frame[data-study="stress"] .lab-field {
+    padding-right: 24px;
+  }
+}
+@media (max-width: 759px) {
+  .lab-field {
+    padding: 112px 12px 64px;
+  }
+  .lab-hud-legend {
+    left: 12px;
+    right: 12px;
+  }
+  .lab-stress .colorbar {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 3px;
+  }
+  .lab-stress .colorbar-label {
+    grid-row: auto;
+  }
+  .lab-hud .segmented {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+/* Results dock: one view at a time under a segmented header. */
+.lab-stress-dock {
+  display: grid;
+  gap: 12px;
+}
+.lab-stress-dock > .segmented {
+  justify-self: start;
+}
+.lab-stress-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.lab-stress-inputs .numfield {
+  width: 160px;
+}
+.lab-stress-inputs .lab-check {
+  flex: 1 1 280px;
+}
+
+/* Probe side panel: label and value pairs. */
+.lab-probe-ends {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.lab-probe-ends dt {
+  color: var(--px-ink-muted);
+}
+.lab-probe-ends dd {
+  margin: 0;
+  font-family: var(--px-font-mono);
+  text-align: right;
+}
+.lab-probe-ends small {
+  color: var(--px-ink-muted);
+}
+.lab-chip-button {
+  cursor: pointer;
+  border-color: var(--px-ink);
+  color: var(--px-ink);
+}
+
+/* Stress sweep and convergence study sheets. */
+.lab-stress-study {
+  display: grid;
+  gap: 12px;
+}
+.lab-stress-results {
+  display: grid;
+  gap: 10px;
+}
+.lab-stress-results .lab-table td:nth-child(n + 6) {
+  white-space: normal;
+  text-align: left;
+}
+.lab-stress-check {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.lab-plot-whiskers line {
+  stroke-width: 1.25;
+  opacity: 0.7;
+}
