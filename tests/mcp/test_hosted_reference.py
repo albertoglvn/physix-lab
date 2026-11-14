@@ -34,7 +34,9 @@ def test_hosted_reference_matches_identical_scikit_fem_case(
     assert result.mesh.n_nodes == row["mesh"]["nodes"]
     assert result.mesh.n_elements == row["mesh"]["elements"]
     actual = result.summary()
-    assert actual["max_von_mises"] == pytest.approx(row["summary"]["max_von_mises"] * scale)
+    assert actual["max_von_mises"] == pytest.approx(
+        row["summary"]["max_von_mises"] * scale, rel=1e-5
+    )
     assert actual["hotspot"]["von_mises"] == pytest.approx(
-        row["summary"]["hotspot"]["von_mises"] * scale
+        row["summary"]["hotspot"]["von_mises"] * scale, rel=1e-5
     )

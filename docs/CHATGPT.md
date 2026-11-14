@@ -89,7 +89,9 @@ from canonical cases using the documented reference mesh. Run
 tests. Node 22.18 loads the scene builder's and motion run's TypeScript directly for
 these tests, with the engine's package as published.
 Run `uv run --no-sync pytest tests/mcp/test_hosted_reference.py` to compare scaled
-hosted cases with independent matched scikit-fem solves.
+hosted cases with independent matched scikit-fem solves. The test checks that the hosted
+reference matches a fresh solve within a relative tolerance of `1e-5` across platforms
+for peak and hotspot von Mises stress.
 
 `PHYSIX_CHATGPT_PLUGIN_URL` is an optional nonsecret Sites runtime variable for a
 verified ChatGPT plugin details link. Until a direct link is available, the button
