@@ -27,6 +27,10 @@ export const VIEWPORT_TOKENS = {
   ballBand: "--px-part-ball-band",
   bob: "--px-part-bob",
   coil: "--px-part-coil",
+  axisX: "--px-axis-x",
+  axisY: "--px-axis-y",
+  axisZ: "--px-axis-z",
+  axisHover: "--px-axis-hover",
 } as const;
 
 export type ViewportPalette = Record<keyof typeof VIEWPORT_TOKENS, string>;

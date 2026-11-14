@@ -101,6 +101,12 @@
   --px-part-ball-band: #6b4129;
   --px-part-bob: #7898b5;
   --px-part-coil: #4f6a7d;
+  /* Move arrows on the selected part: x, y and z */
+  --px-axis-x: #c4513d;
+  --px-axis-y: #3f8a4f;
+  --px-axis-z: #2f74b5;
+  /* A hovered or dragged arrow lightens towards this colour */
+  --px-axis-hover: #ffffff;
 
   /* Home illustrations and photography overlays */
   --px-home-hero: #f5eedc;

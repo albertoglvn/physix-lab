@@ -2,10 +2,26 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { isBody, movePart } from "./scene";
+import {
+  BUMPER_DEPTH,
+  BUMPER_HEIGHT,
+  BUMPER_WALL,
+  bumperDirection,
+  isBody,
+  movePart,
+} from "./scene";
+import {
+  axisOffset,
+  createMoveGizmo,
+  gizmoOrigin,
+  movableAxes,
+  snapOffset,
+  type MoveAxis,
+} from "./moveGizmo";
 import type {
   Ball,
   Body,
+  Bumper,
   Cylinder,
   LabObject,
   LabScene,
@@ -20,6 +36,7 @@ import {
 } from "./viewportPalette";
 import {
   initialBlockState,
+  PULLEY_BASE_HEIGHT,
   PULLEY_HEIGHT,
   PULLEY_RADIUS,
   PULLEY_WEIGHT_HEIGHT,
@@ -168,6 +185,18 @@ function pulleyMesh(
     root.add(weight, rope);
     return { weight, rope };
   });
+  // A spring from the base to the right weight, when the pulley has one.
+  const coil =
+    object.springStiffness > 0
+      ? solid(
+          new THREE.TubeGeometry(new Helix(0.16, 10), 300, 0.016, 6),
+          palette.coil,
+        )
+      : undefined;
+  if (coil) {
+    coil.position.set(PULLEY_RADIUS, PULLEY_BASE_HEIGHT, 0);
+    root.add(coil);
+  }
   root.userData.update = () => {
     const state = simulation()?.pulley(object.id);
     wheel.rotation.z = -(state?.wheelAngle ?? 0);
@@ -177,6 +206,11 @@ function pulleyMesh(
       const ropeBottom = weight.position.y + weightHeight / 2;
       rope.scale.y = PULLEY_HEIGHT - ropeBottom;
       rope.position.y = (PULLEY_HEIGHT + ropeBottom) / 2;
+      if (coil && i === 1)
+        coil.scale.y = Math.max(
+          weight.position.y - weightHeight / 2 - PULLEY_BASE_HEIGHT,
+          0.01,
+        );
     });
   };
   return root;
@@ -394,6 +428,68 @@ function springMesh(
   };
 }
 
+const BUMPER_PAD = 0.08;
+const BUMPER_PAD_HEIGHT = 1;
+const BUMPER_COIL_Y = 0.6;
+
+/**
+ * A wall, a coil and the pad on its end. The pad sits at the spring's free length and moves
+ * towards the wall as the simulation reports compression.
+ */
+function bumperMesh(
+  object: Bumper,
+  palette: ViewportPalette,
+  simulation: () => Simulation | undefined,
+): Drawable {
+  const direction = bumperDirection(object);
+  const root = new THREE.Group();
+  root.position.set(object.x, 0, object.z);
+  const wall = solid(
+    new THREE.BoxGeometry(BUMPER_WALL, BUMPER_HEIGHT, BUMPER_DEPTH),
+    palette.frame,
+  );
+  wall.position.y = BUMPER_HEIGHT / 2;
+  const coil = solid(
+    new THREE.TubeGeometry(new Helix(0.24, 9), 270, 0.022, 6),
+    palette.coil,
+  );
+  coil.rotation.z = direction > 0 ? -Math.PI / 2 : Math.PI / 2;
+  coil.position.set((direction * BUMPER_WALL) / 2, BUMPER_COIL_Y, 0);
+  const pad = solid(
+    new THREE.BoxGeometry(BUMPER_PAD, BUMPER_PAD_HEIGHT, BUMPER_DEPTH * 0.8),
+    palette.weightLeft,
+  );
+  pad.position.y = BUMPER_COIL_Y;
+  root.add(wall, coil, pad);
+
+  const reach = BUMPER_WALL / 2 + object.restLength;
+  const bounds = new THREE.BoxGeometry(
+    reach + BUMPER_WALL / 2,
+    BUMPER_HEIGHT,
+    BUMPER_DEPTH,
+  );
+  const outline = edges(bounds, palette.partEdge);
+  bounds.dispose();
+  outline.position.set(
+    (direction * (reach - BUMPER_WALL / 2)) / 2,
+    BUMPER_HEIGHT / 2,
+    0,
+  );
+  root.add(outline);
+
+  const update = () => {
+    const compression = Math.min(
+      simulation()?.bumper(object.id)?.compression ?? 0,
+      object.restLength,
+    );
+    const face = reach - compression;
+    pad.position.x = direction * (face - BUMPER_PAD / 2);
+    coil.scale.y = Math.max(face - BUMPER_PAD - BUMPER_WALL / 2, 0.01);
+  };
+  update();
+  return { root, outline, update };
+}
+
 function disposeTree(object: THREE.Object3D) {
   object.traverse((part) => {
     if (!(part instanceof THREE.Mesh || part instanceof THREE.Line)) return;
@@ -453,6 +549,14 @@ function createView(
   stage.add(grid);
   const parts = new THREE.Group();
   stage.add(parts);
+  const gizmo = createMoveGizmo(palette);
+  stage.add(gizmo.root);
+  // Shows the dragged part's new coordinates beside the pointer.
+  const readout = document.createElement("div");
+  readout.className = "lab-drag-readout";
+  readout.hidden = true;
+  readout.setAttribute("aria-hidden", "true");
+  host.append(readout);
 
   const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 240);
   camera.position.set(8, 7.5, 13);
@@ -510,10 +614,24 @@ function createView(
         screen: THREE.Vector2;
         plane: THREE.Plane;
         pixelsPerMetre: number;
-        axis: ViewOptions["axis"];
+        axis: ViewOptions["axis"] | MoveAxis;
+        /** On-screen image of one metre along a move arrow, in CSS pixels. */
+        axisPixels?: THREE.Vector2;
         offset?: PartMove;
       }
     | undefined;
+  let hovered: MoveAxis | undefined;
+  const toScreen = (point: THREE.Vector3) => {
+    const projected = point.clone().project(camera);
+    return new THREE.Vector2(
+      ((projected.x + 1) / 2) * canvas.clientWidth,
+      ((1 - projected.y) / 2) * canvas.clientHeight,
+    );
+  };
+  const metresPerPixel = () =>
+    (camera.top - camera.bottom) /
+    camera.zoom /
+    Math.max(1, canvas.clientHeight);
   const setRay = (event: PointerEvent) => {
     const bounds = canvas.getBoundingClientRect();
     ray.setFromCamera(
@@ -536,6 +654,14 @@ function createView(
       if (part) return { id: part.userData.id as string, point: hit.point };
     }
   };
+  /** The move arrow under the pointer, when the arrows are shown. */
+  const pickArrow = (event: PointerEvent): MoveAxis | undefined => {
+    if (!gizmo.root.visible) return undefined;
+    setRay(event);
+    const shown = gizmo.targets.filter((target) => target.parent?.visible);
+    const hit = ray.intersectObjects(shown, false)[0];
+    return hit?.object.userData.axis as MoveAxis | undefined;
+  };
   const down = (event: PointerEvent) => {
     if (
       gesture ||
@@ -547,13 +673,36 @@ function createView(
     )
       return;
     click = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    const arrow = options.editable && selected ? pickArrow(event) : undefined;
+    const held = arrow && scene?.objects.find(({ id }) => id === selected);
+    if (arrow && held) {
+      const origin = new THREE.Vector3().copy(gizmoOrigin(held));
+      const unit = origin.clone();
+      unit[arrow] += 1;
+      gesture = {
+        id: held.id,
+        pointerId: event.pointerId,
+        start: origin,
+        screen: new THREE.Vector2(event.clientX, event.clientY),
+        plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -origin.y),
+        pixelsPerMetre: 1,
+        axis: arrow,
+        axisPixels: toScreen(unit).sub(toScreen(origin)),
+      };
+      click = undefined;
+      canvas.setPointerCapture(event.pointerId);
+      controls.enabled = false;
+      canvas.focus({ preventScroll: true });
+      invalidate();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     const hit = pick(event);
     if (!options.editable || !hit || !scene) return;
     const part = scene.objects.find(({ id }) => id === hit.id);
     const axis =
-      options.axis === "height" &&
-      part?.kind !== "ramp" &&
-      part?.kind !== "pulley"
+      options.axis === "height" && part && movableAxes(part).includes("y")
         ? "height"
         : "plane";
     const pointY = hit.point.clone().project(camera).y;
@@ -581,16 +730,35 @@ function createView(
     event.preventDefault();
     event.stopImmediatePropagation();
   };
+  const hover = (event: PointerEvent) => {
+    if (gesture || event.buttons) return;
+    const next = options.editable && selected ? pickArrow(event) : undefined;
+    if (next === hovered) return;
+    hovered = next;
+    canvas.style.cursor = next ? "pointer" : "";
+    invalidate();
+  };
   const updateDrag = (event: PointerEvent) => {
-    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    if (!gesture || event.pointerId !== gesture.pointerId) {
+      hover(event);
+      return;
+    }
     if (
       !gesture.offset &&
       gesture.screen.distanceTo(
         new THREE.Vector2(event.clientX, event.clientY),
-      ) < 5
+      ) < 3
     )
       return;
-    if (gesture.axis === "height") {
+    if (gesture.axisPixels) {
+      const along = axisOffset(gesture.axisPixels, {
+        x: event.clientX - gesture.screen.x,
+        y: event.clientY - gesture.screen.y,
+      });
+      if (along === undefined) return;
+      const axis = gesture.axis as MoveAxis;
+      gesture.offset = { x: 0, y: 0, z: 0, [axis]: snapOffset(along) };
+    } else if (gesture.axis === "height") {
       gesture.offset = {
         x: 0,
         y: (gesture.screen.y - event.clientY) / gesture.pixelsPerMetre,
@@ -607,6 +775,10 @@ function createView(
       };
     }
     canvas.dataset.dragging = "true";
+    canvas.style.cursor = "grabbing";
+    const bounds = canvas.getBoundingClientRect();
+    readout.style.left = `${event.clientX - bounds.left + 16}px`;
+    readout.style.top = `${event.clientY - bounds.top + 16}px`;
     invalidate();
   };
   function finishDrag(commit: boolean) {
@@ -617,6 +789,8 @@ function createView(
       canvas.releasePointerCapture(pointerId);
     controls.enabled = true;
     delete canvas.dataset.dragging;
+    canvas.style.cursor = hovered ? "pointer" : "";
+    readout.hidden = true;
     invalidate();
     if (commit && offset && options.editable) onMove(id, offset);
   }
@@ -724,6 +898,32 @@ function createView(
           }
         });
       }
+      const part =
+        selected && options.editable && !options.running
+          ? (draft ?? scene)?.objects.find(({ id }) => id === selected)
+          : undefined;
+      gizmo.root.visible = !!part;
+      if (part) {
+        const dragged =
+          gesture?.axisPixels !== undefined
+            ? (gesture.axis as MoveAxis)
+            : undefined;
+        gizmo.show(movableAxes(part), dragged ?? hovered);
+        gizmo.place(gizmoOrigin(part), metresPerPixel());
+      }
+      if (gesture?.offset && part) {
+        const origin = gizmoOrigin(part);
+        const axes: readonly MoveAxis[] =
+          gesture.axis === "plane"
+            ? ["x", "z"]
+            : gesture.axis === "height"
+              ? ["y"]
+              : [gesture.axis];
+        readout.textContent = axes
+          .map((axis) => `${axis} ${origin[axis].toFixed(2)} m`)
+          .join(" · ");
+        readout.hidden = false;
+      }
       renderer.render(stage, camera);
       dirty = false;
       time = nextTime;
@@ -792,6 +992,8 @@ function createView(
           drawable = pendulumMesh(object, palette, next.gravity, getSimulation);
         } else if (object.kind === "spring") {
           drawable = springMesh(object, palette, next.gravity, getSimulation);
+        } else if (object.kind === "bumper") {
+          drawable = bumperMesh(object, palette, getSimulation);
         } else if (object.kind === "ramp") {
           const geometry = new THREE.BufferGeometry();
           geometry.setAttribute(
@@ -872,6 +1074,8 @@ function createView(
       canvas.removeEventListener("keydown", keydown);
       controls.removeEventListener("change", invalidate);
       controls.dispose();
+      gizmo.dispose();
+      readout.remove();
       disposeTree(stage);
       sun.shadow.dispose();
       renderer.dispose();

@@ -134,7 +134,15 @@ The three.js scene reads these tokens at start-up, so a change in `tokens.css` r
 | Blocks | `--px-part-block`, edge `--px-part-block-edge` | `#edb765`, `#5a412a` |
 | Ramps and fixed geometry | `--px-part-ramp`, edge `--px-part-edge` | `#83a398`, `#476d61` |
 | Pulley | `--px-part-frame`, `-wheel`, `-rim`, `-hub`, `-spoke`, `-rope`, `-weight-left`, `-weight-right` | See `tokens.css` |
-| Selection | The part's edge outline is shown | — |
+| Balls, cylinders and pendulum bobs | `--px-part-ball`, band `--px-part-ball-band`, `--px-part-bob` | `#d58a62`, `#6b4129`, `#7898b5` |
+| Spring coils | `--px-part-coil` | `#4f6a7d` |
+| Bumper | Wall `--px-part-frame`, coil `--px-part-coil`, pad `--px-part-weight-left` | See `tokens.css` |
+| Selection | The part's edge outline and its move arrows | — |
+| Move arrows (x, y, z) | `--px-axis-x`, `--px-axis-y`, `--px-axis-z`; a hovered or dragged arrow lightens towards `--px-axis-hover` | `#c4513d`, `#3f8a4f`, `#2f74b5`, `#ffffff` |
+
+Selecting a part shows one arrow per axis it can move along. Dragging an arrow moves the part
+along that axis only, snapped to 0.01 m, and a readout shows the offset. Ramps, pulleys and
+bumpers stand on the floor, so they have no y arrow.
 
 From Phase 2, bodies take series colours in creation order so that a body's plot colour
 matches its 3D colour, and velocity vectors use the body colour while forces use `--px-ink`

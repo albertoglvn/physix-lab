@@ -245,6 +245,23 @@
 .lab-viewport canvas:focus-visible {
   outline-offset: -3px;
 }
+.lab-drag-readout {
+  position: absolute;
+  z-index: 2;
+  padding: 3px 7px;
+  border: 1px solid var(--px-edge);
+  border-radius: var(--px-radius-chip);
+  background: var(--px-glass);
+  box-shadow: var(--px-shadow-flat);
+  color: var(--px-ink);
+  font-family: var(--px-font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lab-drag-readout[hidden] {
+  display: none;
+}
 .lab-viewport-error {
   display: grid;
   height: 100%;

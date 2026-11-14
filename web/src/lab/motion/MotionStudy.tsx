@@ -1,4 +1,5 @@
 import {
+  ArrowRightToLine,
   Box,
   ChartScatter,
   Circle,
@@ -7,6 +8,7 @@ import {
   Cylinder,
   Copy,
   Download,
+  FastForward,
   Focus,
   GitCommitVertical,
   Home,
@@ -39,6 +41,7 @@ import {
   type StatusTone,
 } from "../LabFrame";
 import { LabViewport } from "../LabViewport";
+import { movableAxes } from "../moveGizmo";
 import {
   dragCoefficientOf,
   findRampPlacement,
@@ -53,6 +56,7 @@ import {
   OBJECT_LIMIT,
   objectNames,
   PENDULUM_LINKS,
+  BUMPER_FACINGS,
   parseScene,
   presetNames,
   replaceObject,
@@ -94,6 +98,7 @@ import {
 } from "./MotionData";
 import {
   availableStops,
+  continuedProtocol,
   EVENT_LABELS,
   MAX_TIME_LIMITS,
   protocolFor,
@@ -124,6 +129,7 @@ const icons = {
   pulley: CircleDot,
   pendulum: GitCommitVertical,
   spring: WavesVertical,
+  bumper: ArrowRightToLine,
 };
 const objectKinds = [
   "block",
@@ -133,6 +139,7 @@ const objectKinds = [
   "pulley",
   "pendulum",
   "spring",
+  "bumper",
 ] as const;
 /** The part selected when a scene opens: the first moving part, else the first part. */
 const firstPart = (scene: LabScene) =>
@@ -144,6 +151,8 @@ const TEMPLATE_NOTES: Record<Preset, string> = {
   friction: "Block sliding to rest on the floor",
   projectile: "Horizontal launch from a height",
   pulley: "Atwood machine",
+  springPulley: "Atwood machine with a spring under one weight",
+  bumper: "Block sliding off a ramp into a spring bumper",
   rolling: "Solid ball rolling down a ramp",
   pendulum: "Rigid pendulum released from rest",
   spring: "Mass on a vertical spring",
@@ -754,6 +763,52 @@ function ObjectFields({
         />
       </div>
     );
+  if (object.kind === "bumper")
+    return (
+      <div className="lab-fields">
+        {position}
+        <label className="lab-select lab-select--inline">
+          <span>Pad faces</span>
+          <select
+            className="px-input"
+            value={object.facing}
+            onChange={(event) => {
+              const facing = BUMPER_FACINGS.find(
+                (option) => option === event.target.value,
+              );
+              if (facing) onChange({ ...object, facing });
+            }}
+          >
+            <option value="left">Left (−X)</option>
+            <option value="right">Right (+X)</option>
+          </select>
+        </label>
+        <UnitInput
+          label="Stiffness k"
+          dimension="stiffness"
+          unit="N/m"
+          value={object.stiffness}
+          {...range(limits.stiffness)}
+          onCommit={(stiffness) => onChange({ ...object, stiffness })}
+        />
+        <UnitInput
+          label="Damping c"
+          dimension="damping"
+          unit="N·s/m"
+          value={object.damping}
+          {...range(limits.damping)}
+          onCommit={(damping) => onChange({ ...object, damping })}
+        />
+        <UnitInput
+          label="Spring length"
+          dimension="length"
+          unit="m"
+          value={object.restLength}
+          {...range(limits.restLength)}
+          onCommit={(restLength) => onChange({ ...object, restLength })}
+        />
+      </div>
+    );
   return (
     <div className="lab-fields">
       {position}
@@ -780,6 +835,14 @@ function ObjectFields({
         value={object.wheelMass}
         {...range(limits.wheelMass)}
         onCommit={(wheelMass) => onChange({ ...object, wheelMass })}
+      />
+      <UnitInput
+        label="Spring k"
+        dimension="stiffness"
+        unit="N/m"
+        value={object.springStiffness}
+        {...range(limits.pulleySpring)}
+        onCommit={(springStiffness) => onChange({ ...object, springStiffness })}
       />
     </div>
   );
@@ -840,8 +903,19 @@ export function MotionStudy({
   const object = scene.objects.find((part) => part.id === selected);
   const time = clock && clock.simulation === simulation ? clock.time : 0;
   const canPlace = active && !running && time === 0;
-  const canLift = object?.kind !== "ramp" && object?.kind !== "pulley";
-  const select = useCallback((id: string | null) => setSelected(id), []);
+  // Height mode follows the move arrows: parts that stand on the floor have no Y arrow.
+  const canLift = !object || movableAxes(object).includes("y");
+  // Picking a part in the view shows its properties, except on phones where the
+  // inspector would cover the view.
+  const panelsRef = useRef(panels);
+  useEffect(() => {
+    panelsRef.current = panels;
+  });
+  const select = useCallback((id: string | null) => {
+    setSelected(id);
+    if (id && !panelsRef.current.compact)
+      panelsRef.current.setInspectorOpen(true);
+  }, []);
   const protocol = useMemo(
     () => protocolFor(scene, protocolChoice),
     [scene, protocolChoice],
@@ -858,6 +932,11 @@ export function MotionStudy({
     : undefined;
   const stopped =
     stopTick !== undefined && Math.round(time / TIME_STEP) >= stopTick;
+  // A run stopped by an event can keep going to the time limit from where it paused.
+  const continued =
+    stopped && !running && recorded
+      ? continuedProtocol(protocol, recorded.stop.t)
+      : undefined;
   const stopMessage = recorded
     ? `${recorded.stop.event?.target ?? "The run"} ${PAST_STOPS[recorded.stop.event?.type ?? "time"]} at t = ${recorded.stop.t.toFixed(3)} s.`
     : "";
@@ -1034,6 +1113,13 @@ export function MotionStudy({
     }
     if (running) setClock({ simulation, time: simulation.time });
     setRunning(!running);
+  }
+
+  function continueRun() {
+    if (!continued || !simulation) return;
+    // The live simulation keeps its state; only the stop moves to the time limit.
+    setProtocolChoice(continued);
+    setRunning(true);
   }
 
   function advance() {
@@ -1219,14 +1305,16 @@ export function MotionStudy({
       : "";
   const help =
     object?.kind === "pulley"
-      ? "Two weights on a massless, inextensible rope over a wheel, a uniform disc on a frictionless axle (wheel mass 0 makes it massless). The rope goes slack instead of pushing. The default stop is a weight landing on the base or meeting the wheel. Positive acceleration lowers the right mass. Edits reset the run. Metres, Y up."
+      ? "Two weights on a massless, inextensible rope over a wheel, a uniform disc on a frictionless axle (wheel mass 0 makes it massless). Spring k ties the right weight to the base, at rest length at release; 0 removes it. The rope goes slack instead of pushing. The default stop is a weight landing on the base or meeting the wheel. Positive acceleration lowers the right mass. Edits reset the run. Metres, Y up."
       : object?.kind === "pendulum"
         ? "Rigid, massless rod on a frictionless hinge. The release angle is measured from straight down, positive anticlockwise seen from +Z. Edits reset the run. Metres, Y up."
         : object?.kind === "spring"
           ? "Linear spring and viscous damper; the cube moves along Y only. The release offset is measured from the hanging equilibrium, positive up. Edits reset the run. Metres, Y up."
-          : object
-            ? "Edits set the starting state and reset the run. Metres, Y up."
-            : "Gravity and floor friction apply to every part. The protocol sets when a run stops; the live run pauses there. Edits reset the run. Metres, Y up.";
+          : object?.kind === "bumper"
+            ? "A wall with a massless pad on a linear spring and damper. A block, ball or cylinder that reaches the pad compresses the spring and is pushed back along X; the wall stops it at full compression. Spring length is the pad's distance from the wall. Edits reset the run. Metres, Y up."
+            : object
+              ? "Edits set the starting state and reset the run. Metres, Y up."
+              : "Gravity and floor friction apply to every part. The protocol sets when a run stops; the live run pauses there. Edits reset the run. Metres, Y up.";
 
   const rail: RailItem[] = [
     {
@@ -1380,6 +1468,17 @@ export function MotionStudy({
             )}
             {running ? "Pause" : stopped ? "Replay" : "Run"}
           </button>
+          {continued && (
+            <button
+              type="button"
+              className="lab-button lab-secondary"
+              onClick={continueRun}
+              title={`Keep running to the ${continued.maxTime} s time limit`}
+            >
+              <FastForward size={15} aria-hidden="true" />
+              <span>Continue</span>
+            </button>
+          )}
           <button
             type="button"
             className="lab-button lab-secondary"
@@ -1697,7 +1796,9 @@ export function MotionStudy({
           {canPlace
             ? axis === "height" && canLift
               ? "Drag up or down to change height."
-              : "Drag a part to move it. Drag empty space to orbit."
+              : object
+                ? "Drag an arrow to move along one axis. Drag empty space to orbit."
+                : "Select a part to move it. Drag empty space to orbit."
             : "Reset the run to move parts."}
           <span className="px-visually-hidden">
             Select a part and focus this view. Arrow keys move it across the
