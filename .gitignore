@@ -22,6 +22,7 @@ dist/
 /web/public/models/
 
 # Local configuration and OS files
+.openai/
 .env
 .env.*
 !.env.example
