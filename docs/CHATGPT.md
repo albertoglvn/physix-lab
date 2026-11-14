@@ -19,15 +19,23 @@ owner shares it. Public plugin directory distribution requires OpenAI review.
 
 ## Test it as a judge
 
-You can test the hosted tools in two ways:
+You can test Physix in four ways:
 
-- **With your own agent, now.** Add the open address in
-  [Connect any MCP client](#connect-any-mcp-client) to Codex or any MCP client. You need no
-  account or invitation.
+- **In the browser.** Open the [lab](https://physix-lab.hospitablepeacock.chatgpt.site/).
+  You need no account.
 - **In your own ChatGPT.** Send the email address of your ChatGPT account through the
   hackathon's judging channel. Once that account is invited, follow the three steps above
   and open Physix under **Shared with me**. Invitations work for Plus, Pro, Business and
   Enterprise accounts.
+- **With your own agent.** Add the open address in
+  [Connect any MCP client](#connect-any-mcp-client) to Codex or any MCP client. You need no
+  account or invitation. The address is in `main` and goes live with the next publish of
+  the Site. Until then it returns 404.
+- **From a clone.** After the [Quick start](../README.md#quick-start) setup, run
+  `pnpm --filter @physix/web run lab --preset pulley 60`. It runs a Motion template with the
+  same engine as the hosted tools and prints its measurements as JSON. The local MCP server
+  in [Connect an agent](../README.md#connect-an-agent) serves `predict_stress`,
+  `verify_with_solver` and `optimize`.
 
 ## Connect any MCP client
 
@@ -37,6 +45,9 @@ with your own agent:
 ```text
 https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open
 ```
+
+The address is in `main`, and its Worker tests pass. The live Site still runs the previous
+build, so the address returns 404 until the Site is published again.
 
 Use it from any MCP client that connects to a remote server over HTTP. In Codex, add it to
 `~/.codex/config.toml`:
