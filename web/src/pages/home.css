@@ -210,12 +210,21 @@ a.pastoral-action--glass {
 .home-connect-config {
   display: grid;
   justify-items: start;
-  gap: 12px;
+  gap: 18px;
   margin: 0;
   padding: 20px;
   border: 1px solid var(--px-edge);
   border-radius: var(--px-radius-panel);
   background: var(--px-wash);
+}
+.home-connect-config > div {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+.home-connect-config > div + div {
+  padding-top: 18px;
+  border-top: 1px solid var(--px-edge);
 }
 .home-connect-config h3 {
   margin: 0;
@@ -347,6 +356,18 @@ a.pastoral-action--glass {
   font-weight: 600;
 }
 .home-experiment-caption > span {
+  color: var(--px-ink-muted);
+  font-size: 13px;
+}
+.home-template-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 20px;
+  margin-top: 28px;
+  font-size: 15px;
+}
+.home-template-list > span {
   color: var(--px-ink-muted);
   font-size: 13px;
 }
@@ -497,7 +518,12 @@ a.pastoral-action--glass {
   }
 }
 .route-loading {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
   padding: 32px;
+  color: var(--px-ink-muted);
+  font-size: 14px;
 }
 .home-stress {
   display: grid;

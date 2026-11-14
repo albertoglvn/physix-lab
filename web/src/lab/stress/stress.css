@@ -72,6 +72,10 @@
 .lab-stress .hole-row input[type="number"] {
   appearance: textfield;
 }
+/* Four columns share a narrow dock; keep the digits clear of the unit. */
+.lab-stress .hole-row .numfield input {
+  padding: 0.4rem 0.25rem;
+}
 .lab-stress .hole-row input::-webkit-inner-spin-button {
   appearance: none;
 }

@@ -8,8 +8,18 @@ type Connection =
 
 const returnTo = encodeURIComponent("/connect");
 const personalPlugins = "https://chatgpt.com/plugins?view=personal";
-const example =
-  "Use Physix to compare 12 mm and 18 mm hole radii on the example plate. Keep the load the same. Report the von Mises hotspot and the source for each case.";
+const examples = [
+  {
+    title: "Try a motion experiment",
+    prompt:
+      "Using Physix, simulate a 5 kg block sliding down a 30° ramp with friction 0.25. Show me its velocity and energy graphs and check the acceleration against theory.",
+  },
+  {
+    title: "Try a stress experiment",
+    prompt:
+      "Use Physix to compare 12 mm and 18 mm hole radii on the example plate. Keep the load the same. Report the von Mises hotspot and the source for each case.",
+  },
+];
 
 export function ChatGPTConnect() {
   const [connection, setConnection] = useState<Connection>({
@@ -57,8 +67,9 @@ export function ChatGPTConnect() {
       <div>
         <h2 id="connect-title">Connect Physix to ChatGPT</h2>
         <p>
-          Run a stress experiment from your chat. Compare supported hole sizes
-          and loads on a plate or bracket using scikit-fem reference results.
+          Run an experiment from your chat. ChatGPT simulates a motion scene and
+          checks it against theory, or compares hole sizes and loads on a plate
+          or bracket using scikit-fem reference results.
         </p>
         {connection.state === "loading" && (
           <p role="status">Checking your sign-in…</p>
@@ -107,9 +118,13 @@ export function ChatGPTConnect() {
         )}
       </div>
       <div className="home-connect-config">
-        <h3>Try a stress experiment</h3>
-        <p>{example}</p>
-        <CopyButton text={example} label="Copy example prompt" />
+        {examples.map(({ title, prompt }) => (
+          <div key={title}>
+            <h3>{title}</h3>
+            <p>{prompt}</p>
+            <CopyButton text={prompt} label="Copy example prompt" />
+          </div>
+        ))}
       </div>
     </section>
   );

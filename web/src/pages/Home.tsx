@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Action, PhysixMark } from "../ui/pastoral";
 import { ChatGPTConnect } from "./ChatGPTConnect";
 import { StressSampler } from "../ui/StressSampler";
+import { presetNames, type Preset } from "../lab/scene";
 import apparatus from "../assets/studio/halftone-1920.webp";
 import apparatusCompact from "../assets/studio/halftone-1040.webp";
 import incline from "../assets/studio/incline.webp";
@@ -12,17 +13,17 @@ import "./home.css";
 const chapters = [
   {
     name: "Build",
-    text: "Add a block, ramp, or pulley. Drag it into position and set its starting conditions.",
+    text: "Add a block, ball, ramp, spring, pendulum or pulley. Drag its arrows to place it, then set its starting conditions.",
     caption: "Parts and initial conditions",
   },
   {
     name: "Run",
-    text: "Run the scene or step through it. Change one input, such as friction, and run it again.",
+    text: "Run the scene or step through it. When a block reaches the floor, continue the run to see what it hits next.",
     caption: "Motion and interactions",
   },
   {
     name: "Measure",
-    text: "Read the plot as the experiment runs. Export Scene JSON to share the setup or ask your agent to change it.",
+    text: "Read the plot as the experiment runs and compare it with the theory value. Export Scene JSON to share the setup or ask your agent to change it.",
     caption: "Motion over time",
   },
 ];
@@ -49,6 +50,19 @@ const experiments = [
     subject: "Atwood machine",
     image: pulley,
   },
+];
+
+// Templates beyond the three illustrated cards, in the order a course meets them.
+const moreTemplates: Preset[] = [
+  "springPulley",
+  "bumper",
+  "collision",
+  "pendulum",
+  "spring",
+  "projectile",
+  "rolling",
+  "bounce",
+  "drag",
 ];
 
 function Schematic({ step }: { step: number }) {
@@ -187,9 +201,9 @@ export function Home({ route }: { route: string }) {
           <div className="home-hero-panel">
             <h1 id="home-title">A physics lab for your agent.</h1>
             <p>
-              Connect Physix to your AI agent to test how plates and brackets
-              respond to loads. Open the browser lab to build and run 3D
-              mechanics experiments.
+              Connect Physix to ChatGPT or another AI agent to run mechanics
+              experiments and compare stress in plates and brackets. Open the
+              browser lab to build and run 3D experiments yourself.
             </p>
             <div className="home-hero-actions">
               <Action href={connectHref} target="_top">
@@ -270,6 +284,14 @@ export function Home({ route }: { route: string }) {
               </a>
             ))}
           </div>
+          <nav className="home-template-list" aria-label="More templates">
+            <span>More setups</span>
+            {moreTemplates.map((id) => (
+              <a key={id} href={`#/lab?study=motion&template=${id}`}>
+                {presetNames[id]}
+              </a>
+            ))}
+          </nav>
         </section>
         <StressSampler />
       </main>

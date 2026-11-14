@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ModelManifest } from "../inference/engine";
 import { useEngine, type Health } from "../state";
 import { Badge, Spinner } from "../ui/controls";
-import { ms, pct } from "../ui/units";
+import { asSentence, ms, pct } from "../ui/units";
 
 const METRIC_LABELS: Record<string, string> = {
   hotspot_error: "Peak von Mises error (grid basis)",
@@ -166,7 +166,7 @@ export function ModelCard({ health }: { health: Health }) {
           <p className="small muted">
             Shifted split: {ev.shifted_routing.out_of_domain} of{" "}
             {ev.shifted_routing.cases} cases are flagged out of domain and
-            routed to FEM. {ev.shifted_routing.note}
+            routed to FEM. {asSentence(ev.shifted_routing.note)}
           </p>
         )}
       </section>

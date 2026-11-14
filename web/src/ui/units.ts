@@ -54,3 +54,10 @@ export function parseNumber(text: string): number {
   const v = Number.parseFloat(text.replace(",", "."));
   return Number.isFinite(v) ? v : Number.NaN;
 }
+/** Manifest notes are lowercase fragments; show them as a sentence. */
+export function asSentence(note: string) {
+  const text = note.trim();
+  if (!text) return "";
+  const capital = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+}
