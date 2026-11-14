@@ -33,6 +33,8 @@ Work in a folder outside the repository, such as `../physix-demo/`. Commit nothi
 | `script.md` | The final narration and on-screen text, with timings |
 | `raw/` | Unedited captures and CSV exports, named by segment |
 
+The published cut is 2560 × 1440 at 60 fps, −14 LUFS integrated and −1.5 dBTP, with short dissolves between shots and hard cuts in the template montage.
+
 ## Retention rules
 
 These come from short-form work that held viewers to the end, adapted to a landscape video.

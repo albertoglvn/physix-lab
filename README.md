@@ -32,6 +32,10 @@ claim needs.
   two hours; [WORKLOG.md](docs/WORKLOG.md) records each one.
 - **Planned phases.** Lab v2 followed [LAB_PLAN.md](docs/LAB_PLAN.md), with exit criteria and
   measured status for each phase.
+- **One file for each job.** Use [CONTRACTS.md](docs/CONTRACTS.md) for data formats and units,
+  [DESIGN.md](docs/DESIGN.md) for visuals and layout, and [COPYWRITING.md](docs/COPYWRITING.md)
+  for voice and product claims. Your agent updates the relevant file in the same change as
+  the behaviour it describes.
 - **Checks on every change.** 131 Python tests, 465 web tests and 19 hosted plugin tests
   passed on 14 November 2026, with lint, a production build and a check in the browser.
 - **Evidence for every number.** The stress model's median von Mises error is 2.2% against
@@ -218,7 +222,7 @@ versions, and timing boundaries. Model disagreement is reported separately from 
 | `mcp/sites/` | Hosted ChatGPT Worker that shares the lab's scene builder and motion run |
 | `skills/physix/` | Agent skill: tool choice, supported domain, provenance and verification |
 | `scripts/`, `tests/` | Command wiring and Python tests by subsystem (web tests sit beside the code) |
-| `docs/` | [Contracts](docs/CONTRACTS.md), [design](docs/DESIGN.md), [copywriting](docs/COPYWRITING.md), [lab plan](docs/LAB_PLAN.md), [ChatGPT](docs/CHATGPT.md), [physics reference](docs/PHYSICS.md), [model evaluation](docs/MODEL.md), [v1 plan](docs/PLAN.md), [demo](docs/DEMO.md), [work log](docs/WORKLOG.md), [harness diagram brief](docs/HARNESS_WHITEBOARD.md) |
+| `docs/` | [Contracts](docs/CONTRACTS.md), [design](docs/DESIGN.md), [copywriting](docs/COPYWRITING.md), [lab plan](docs/LAB_PLAN.md), [ChatGPT](docs/CHATGPT.md), [physics reference](docs/PHYSICS.md), [model evaluation](docs/MODEL.md), [v1 plan](docs/PLAN.md), [usability review](docs/UX_REVIEW.md), [demo](docs/DEMO.md), [work log](docs/WORKLOG.md), [workflow board brief](docs/HARNESS_WHITEBOARD.md) |
 
 Generated datasets, checkpoints, exports and browser model bundles stay out of Git.
 

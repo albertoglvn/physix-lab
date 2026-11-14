@@ -34,6 +34,7 @@ of the running lab.
 | Phase 3 · New parts and variables | Sweeps and fits, ball, pendulum, spring, simulated pulley, materials, launcher, forces, drag, rods and ropes, run history, grids, stress sweeps and convergence | `e4078ff` to `dd1ca23` |
 | Hosted ChatGPT plugin | Connect page, share links, `build_scene`, `simulate_scene` and plotted values | `39cf96b` to `cb42cf5` |
 | Phase 3 follow-ups | Move arrows on the selected part, sprung Atwood machine, spring bumper and its ramp template, page review fixes, README opening with the live lab and the Codex workflow | `a17585f`, `e357725`, `58caec2` |
+| Reviewer docs | Workflow board with the file shelf, Ship and Demo stops, README links and document ownership, published demo specs, and removal of three redundant `.gitkeep` files | `docs/reviewer-polish` |
 
 Checks at each slice: `vitest run`, `tsc --noEmit`, `eslint`, `prettier --check` and
 `vite build` in `web/`, `node --test mcp/sites/worker.test.mjs` for the hosted Worker, and

@@ -36,6 +36,9 @@ Each document has one job. Change the owning document in the same change as the 
 | `docs/CHATGPT.md` | Hosted plugin setup and tool behaviour |
 | `docs/WORKLOG.md` | Branches, handoffs, checks and known limitations |
 | `docs/DEMO.md` | The recorded demo: setup, shot list, script and evidence rules |
+| `docs/HARNESS_WHITEBOARD.md` | The steps, wording and figures for the Codex workflow board in the README |
+| `docs/UX_REVIEW.md` | Usability findings and the conditions of the performance review |
+| `docs/PLAN.md` | The completed v1 milestones, kept as a record |
 
 The reference path starts with a validated case, builds a mesh, solves with scikit-fem, and produces stress components. Rasterization maps the reference field and solid mask onto the model grid. The ensemble consumes the same case encoding and produces a field plus disagreement. The service sends uncertain but solver-supported cases through FEM and enqueues successful results for later training. Make the fallback policy and thresholds versioned with the model.
 
