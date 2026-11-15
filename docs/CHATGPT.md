@@ -20,10 +20,16 @@ can reach the same tools through the [open address](#connect-any-mcp-client).
 
 ## Test it as a judge
 
-You can test Physix in three ways:
+You can test Physix in four ways:
 
 - **In the browser.** Open the [lab](https://physix-lab.hospitablepeacock.chatgpt.site/).
   You need no account.
+- **In your own ChatGPT.** Open the Site, select **Connect your agent**, then
+  **Add Physix to ChatGPT**. Five steps with **Next** buttons add the open address as a
+  custom MCP server: open **Plugins**, select **Add** and **Add custom MCP server**, enter
+  the name `Physix`, the server URL and **No authentication**, tick
+  **I understand and want to continue** and select **Create as plugin**. The last step
+  gives an example prompt to paste. Your plan or workspace must allow custom MCP servers.
 - **With your own agent.** Open the Site, select **Connect your agent** and copy the
   address, or take it from [Connect any MCP client](#connect-any-mcp-client). Add it to
   Codex or any MCP client. You need no account or sign-in.
@@ -45,6 +51,7 @@ after the submission makes the same hosted tools reachable from any MCP client i
 | 14 Nov, 17:04 | `01b24a5` noted in the docs that the address goes live with the next publish. |
 | 15 Nov, 00:11 | The Site was published as version 19 from `01b24a5`, and `/mcp/open` went live. |
 | 15 Nov, 00:28 | `3ad4245`, published as version 20: **Connect your agent** on the Site now shows the open address with a copy button, and these docs point judges to it. |
+| 15 Nov | **Add Physix to ChatGPT** on the Site walks through adding the open address to ChatGPT as a custom MCP server, step by step. |
 
 The lab, the engine and the four tools are unchanged. `/mcp` still requires a ChatGPT
 sign-in.

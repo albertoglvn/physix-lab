@@ -11,7 +11,9 @@ plotted and tabulated, and checked against theory where a closed form exists.
   as a remote MCP server. No sign-in is needed. See
   [Connect any MCP client](docs/CHATGPT.md#connect-any-mcp-client).
 - **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md). The plugin is not public
-  yet because it needs OpenAI review first. Until then, use the MCP address above.
+  yet because it needs OpenAI review first. Until then, select **Add Physix to ChatGPT** under
+  **Connect your agent** on the Site and follow its five steps to add the MCP address above
+  as a custom MCP server.
 - **Judges:** [Test Physix with your agent](docs/CHATGPT.md#test-it-as-a-judge). Copy the MCP
   address from **Connect your agent** on the Site and add it to Codex or any MCP client.
 - **After the 5 pm submission:** the ChatGPT plugin needs OpenAI review before it can be

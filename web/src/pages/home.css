@@ -37,7 +37,8 @@
   opacity: 0.87;
   text-decoration: none;
 }
-a.pastoral-action--primary {
+a.pastoral-action--primary,
+button.pastoral-action--primary {
   padding: 0 12px 0 16px;
   border: 1px solid var(--px-primary-edge);
   border-radius: var(--px-radius-control);
@@ -228,6 +229,104 @@ a.pastoral-action--glass {
   overflow-wrap: anywhere;
   font: 500 14px/1.5 var(--px-font-mono);
 }
+button.pastoral-action--primary {
+  cursor: pointer;
+}
+
+/* ChatGPT setup steps, inside the shared sheet */
+
+.home .px-sheet-head h2 {
+  font: 600 15px/1.2 var(--px-font-copy);
+  letter-spacing: -0.01em;
+}
+
+.setup-step {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  min-height: 228px;
+  align-content: start;
+}
+.setup-step p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.setup-step h3 {
+  margin: 0;
+  font: 600 22px/1.2 var(--px-font-wordmark);
+}
+.setup-count {
+  color: var(--px-ink-muted);
+}
+.setup-progress {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.setup-progress li {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--px-rule);
+}
+.setup-progress li[data-done] {
+  background: var(--px-primary);
+}
+.setup-link {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setup-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 16px;
+  width: 100%;
+  margin: 0;
+  align-items: center;
+}
+.setup-fields dt {
+  color: var(--px-ink-muted);
+}
+.setup-fields dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  margin: 0;
+}
+.setup-fields code,
+.setup-prompt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 500 13px/1.5 var(--px-font-mono);
+}
+.setup-prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--px-primary);
+  background: var(--px-wash);
+  font-family: var(--px-font-copy);
+}
+.setup-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--px-rule);
+}
+@media (max-width: 480px) {
+  .setup-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .home-connect-config {
   display: grid;
   justify-items: start;

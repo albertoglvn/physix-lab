@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CopyButton } from "../ui/controls";
 import { Action } from "../ui/pastoral";
+import { ChatGPTSetup } from "./ChatGPTSetup";
 
 type Connection =
   | { state: "loading" | "unavailable" }
@@ -87,8 +88,14 @@ export function ChatGPTConnect() {
         <h3>In ChatGPT</h3>
         <p>
           The Physix plugin for ChatGPT is not public yet because it needs
-          OpenAI review first. Until then, add the address above to your agent.
-          If your ChatGPT account already has access, sign in to open it.
+          OpenAI review first. Until then, add the address above to ChatGPT as a
+          custom MCP server. It takes five steps.
+        </p>
+        <div className="home-connect-actions">
+          <ChatGPTSetup address={openMcpUrl} prompt={examples[0].prompt} />
+        </div>
+        <p>
+          If your ChatGPT account already has the plugin, sign in to open it.
         </p>
         {connection.state === "loading" && (
           <p role="status">Checking your sign-in…</p>

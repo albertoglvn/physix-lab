@@ -25,6 +25,7 @@ describe("connect section", () => {
     expect(html).toContain(
       "The Physix plugin for ChatGPT is not public yet because it needs",
     );
+    expect(html).toContain("Add Physix to ChatGPT");
     expect(html).toContain("Checking your sign-in…");
   });
 });
