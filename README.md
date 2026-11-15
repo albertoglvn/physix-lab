@@ -10,8 +10,13 @@ plotted and tabulated, and checked against theory where a closed form exists.
 - **Connect your agent:** add `https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open`
   as a remote MCP server. No sign-in is needed. See
   [Connect any MCP client](docs/CHATGPT.md#connect-any-mcp-client).
-- **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md)
-- **Judges:** [Test Physix with your agent or your ChatGPT](docs/CHATGPT.md#test-it-as-a-judge)
+- **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md). The plugin is not public
+  yet because it needs OpenAI review first. Until then, use the MCP address above.
+- **Judges:** [Test Physix with your agent](docs/CHATGPT.md#test-it-as-a-judge). Copy the MCP
+  address from **Connect your agent** on the Site and add it to Codex or any MCP client.
+- **After the 5 pm submission:** the ChatGPT plugin needs OpenAI review before it can be
+  public, so the hosted tools were opened to any MCP client instead. See
+  [Changes after the submission](docs/CHATGPT.md#changes-after-the-submission).
 
 [![Watch the Physix demo, 1:55](docs/assets/physix-demo-poster.png)](https://cdn.jsdelivr.net/gh/albertoglvn/physix-lab@1c4e50ff9ed8a247599d604d450a4fa3c6a75315/docs/assets/physix-demo.mp4)
 

@@ -1,8 +1,8 @@
 # Connect Physix to ChatGPT
 
 1. Open [Physix](https://physix-lab.hospitablepeacock.chatgpt.site/) and select
-   **Connect your agent**. If prompted, sign in with the ChatGPT account that has access
-   to the Physix plugin.
+   **Connect your agent**. Under **In ChatGPT**, select **Sign in with ChatGPT** and sign in
+   with the ChatGPT account that has access to the Physix plugin.
 2. After signing in, select **Open ChatGPT plugins**. In **Personal**, open **Physix** under
    **Created by you** or **Shared with me**. Select **Install**, then **Connect** if prompted.
 3. Start a new ChatGPT Work chat, select **@Physix**, and ask:
@@ -12,29 +12,42 @@
 
 The Site handles sign-in. ChatGPT handles installation and connection consent. The
 public browser lab stays available to visitors. The Site provisions a private plugin
-for the owner. People with a supported shared invitation can install it after the
-owner shares it. Public plugin directory distribution requires OpenAI review.
+for the owner. The plugin is not public yet because public plugin directory distribution
+requires OpenAI review. Until then it works only for the owner's account, and anyone else
+can reach the same tools through the [open address](#connect-any-mcp-client).
 [MCP setup in ChatGPT](https://learn.chatgpt.com/docs/extend/mcp) ·
 [Public submission](https://developers.openai.com/plugins/deploy/submission)
 
 ## Test it as a judge
 
-You can test Physix in four ways:
+You can test Physix in three ways:
 
 - **In the browser.** Open the [lab](https://physix-lab.hospitablepeacock.chatgpt.site/).
   You need no account.
-- **In your own ChatGPT.** Send the email address of your ChatGPT account through the
-  hackathon's judging channel. Once that account is invited, follow the three steps above
-  and open Physix under **Shared with me**. Invitations work for Plus, Pro, Business and
-  Enterprise accounts.
-- **With your own agent.** Add the open address in
-  [Connect any MCP client](#connect-any-mcp-client) to Codex or any MCP client. You need no
-  account or invitation.
+- **With your own agent.** Open the Site, select **Connect your agent** and copy the
+  address, or take it from [Connect any MCP client](#connect-any-mcp-client). Add it to
+  Codex or any MCP client. You need no account or sign-in.
 - **From a clone.** After the [Quick start](../README.md#quick-start) setup, run
   `pnpm --filter @physix/web run lab --preset pulley 60`. It runs a Motion template with the
   same engine as the hosted tools and prints its measurements as JSON. The local MCP server
   in [Connect an agent](../README.md#connect-an-agent) serves `predict_stress`,
   `verify_with_solver` and `optimize`.
+
+## Changes after the submission
+
+The project was submitted at 5 pm on 14 November 2026 (UTC−6). The ChatGPT plugin needs
+OpenAI review before it can be public, so judges could not install it. The only change
+after the submission makes the same hosted tools reachable from any MCP client instead:
+
+| When (UTC−6) | Change |
+| --- | --- |
+| 14 Nov, 16:48 | `d4db096` added `/mcp/open` to the Worker, before the submission. The live Site still ran the earlier build. |
+| 14 Nov, 17:04 | `01b24a5` noted in the docs that the address goes live with the next publish. |
+| 15 Nov, 00:11 | The Site was published as version 19 from `01b24a5`, and `/mcp/open` went live. |
+| 15 Nov | **Connect your agent** on the Site now shows the open address with a copy button, and these docs point judges to it. |
+
+The lab, the engine and the four tools are unchanged. `/mcp` still requires a ChatGPT
+sign-in.
 
 ## Connect any MCP client
 

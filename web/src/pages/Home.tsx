@@ -28,8 +28,9 @@ const chapters = [
   },
 ];
 
-const connectHref =
-  import.meta.env.MODE === "sites" ? "/connect/start" : "#/connect";
+// Every "Connect your agent" button scrolls to the connect section, which offers the open
+// MCP address to any agent and ChatGPT sign-in to accounts with plugin access.
+const connectHref = "#/connect";
 
 const experiments = [
   {
@@ -181,9 +182,7 @@ export function Home({ route }: { route: string }) {
           <a href="#/experiments">Experiments</a>
           <a href="#/stress-tools">Stress tools</a>
         </nav>
-        <Action href={connectHref} target="_top">
-          Connect your agent
-        </Action>
+        <Action href={connectHref}>Connect your agent</Action>
       </header>
 
       <main>
@@ -206,9 +205,7 @@ export function Home({ route }: { route: string }) {
               browser lab to build and run 3D experiments yourself.
             </p>
             <div className="home-hero-actions">
-              <Action href={connectHref} target="_top">
-                Connect your agent
-              </Action>
+              <Action href={connectHref}>Connect your agent</Action>
               <Action href="#/lab" variant="text">
                 Open the lab
               </Action>

@@ -207,6 +207,27 @@ a.pastoral-action--glass {
   gap: 8px 16px;
   margin-top: 16px;
 }
+.home-connect h3 {
+  margin: 28px 0 0;
+  font: 600 20px/1.2 var(--px-font-wordmark);
+}
+.home-connect-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: 100%;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--px-edge);
+  border-radius: var(--px-radius-panel);
+  background: var(--px-wash);
+}
+.home-connect-address code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 500 14px/1.5 var(--px-font-mono);
+}
 .home-connect-config {
   display: grid;
   justify-items: start;

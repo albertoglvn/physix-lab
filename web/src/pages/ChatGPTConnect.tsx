@@ -7,6 +7,11 @@ type Connection =
   | { state: "ready"; signedIn: boolean; pluginUrl: string | null };
 
 const returnTo = encodeURIComponent("/connect");
+/** The hosted tools without a ChatGPT sign-in, for Codex and other MCP clients. */
+export const openMcpUrl =
+  "https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open";
+export const codexConfig = `[mcp_servers.physix]
+url = "${openMcpUrl}"`;
 const personalPlugins = "https://chatgpt.com/plugins?view=personal";
 const examples = [
   {
@@ -65,11 +70,25 @@ export function ChatGPTConnect() {
       aria-labelledby="connect-title"
     >
       <div>
-        <h2 id="connect-title">Connect Physix to ChatGPT</h2>
+        <h2 id="connect-title">Connect your agent</h2>
         <p>
-          Run an experiment from your chat. ChatGPT simulates a motion scene and
-          checks it against theory, or compares hole sizes and loads on a plate
-          or bracket using scikit-fem reference results.
+          Add Physix to Codex or any MCP client that connects to a remote
+          server. You need no sign-in. Your agent can build and run motion
+          experiments and check them against theory, or compare hole sizes and
+          loads on a plate or bracket using scikit-fem reference results.
+        </p>
+        <div className="home-connect-address">
+          <code>{openMcpUrl}</code>
+          <CopyButton text={openMcpUrl} label="Copy address" />
+        </div>
+        <div className="home-connect-actions">
+          <CopyButton text={codexConfig} label="Copy Codex config" />
+        </div>
+        <h3>In ChatGPT</h3>
+        <p>
+          The Physix plugin for ChatGPT is not public yet because it needs
+          OpenAI review first. Until then, add the address above to your agent.
+          If your ChatGPT account already has access, sign in to open it.
         </p>
         {connection.state === "loading" && (
           <p role="status">Checking your sign-in…</p>
@@ -103,6 +122,7 @@ export function ChatGPTConnect() {
               <Action
                 href={`/signin-with-chatgpt?return_to=${returnTo}`}
                 target="_top"
+                variant="text"
               >
                 Sign in with ChatGPT
               </Action>
