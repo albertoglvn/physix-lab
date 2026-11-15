@@ -44,7 +44,7 @@ after the submission makes the same hosted tools reachable from any MCP client i
 | 14 Nov, 16:48 | `d4db096` added `/mcp/open` to the Worker, before the submission. The live Site still ran the earlier build. |
 | 14 Nov, 17:04 | `01b24a5` noted in the docs that the address goes live with the next publish. |
 | 15 Nov, 00:11 | The Site was published as version 19 from `01b24a5`, and `/mcp/open` went live. |
-| 15 Nov | **Connect your agent** on the Site now shows the open address with a copy button, and these docs point judges to it. |
+| 15 Nov, 00:28 | `3ad4245`, published as version 20: **Connect your agent** on the Site now shows the open address with a copy button, and these docs point judges to it. |
 
 The lab, the engine and the four tools are unchanged. `/mcp` still requires a ChatGPT
 sign-in.
