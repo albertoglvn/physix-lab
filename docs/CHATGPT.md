@@ -24,8 +24,8 @@ You can test Physix in four ways:
 
 - **In the browser.** Open the [lab](https://physix-lab.hospitablepeacock.chatgpt.site/).
   You need no account.
-- **In your own ChatGPT.** Open the Site, select **Connect your agent**, then
-  **Add Physix to ChatGPT**. Five steps with **Next** buttons add the open address as a
+- **In your own ChatGPT.** Open the Site and select **Connect your agent**, or
+  **Add Physix to ChatGPT** in that section. Five steps with **Next** buttons add the open address as a
   custom MCP server: open **Plugins**, select **Add** and **Add custom MCP server**, enter
   the name `Physix`, the server URL and **No authentication**, tick
   **I understand and want to continue** and select **Create as plugin**. The last step

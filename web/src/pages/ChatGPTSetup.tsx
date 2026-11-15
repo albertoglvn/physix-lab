@@ -91,28 +91,36 @@ export function setupSteps(address: string, prompt: string): Step[] {
   ];
 }
 
+/**
+ * The button and its sheet. The page owns `open`, so the Connect your agent buttons can open
+ * the same steps. Closing always returns to the first step.
+ */
 export function ChatGPTSetup({
   address,
   prompt,
+  open,
+  onOpenChange,
 }: {
   address: string;
   prompt: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const steps = setupSteps(address, prompt);
   const last = step === steps.length - 1;
   const current = steps[step];
+  const setOpen = (next: boolean) => {
+    if (!next) setStep(0);
+    onOpenChange(next);
+  };
 
   return (
     <>
       <button
         type="button"
         className="pastoral-action pastoral-action--primary"
-        onClick={() => {
-          setStep(0);
-          setOpen(true);
-        }}
+        onClick={() => setOpen(true)}
       >
         <span>Add Physix to ChatGPT</span>
         <span className="pastoral-keycap">
@@ -141,14 +149,18 @@ export function ChatGPTSetup({
             type="button"
             className="btn btn-ghost"
             disabled={step === 0}
-            onClick={() => setStep(step - 1)}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
           >
             Back
           </button>
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => (last ? setOpen(false) : setStep(step + 1))}
+            onClick={() =>
+              last
+                ? setOpen(false)
+                : setStep((s) => Math.min(steps.length - 1, s + 1))
+            }
           >
             {last ? "Done" : "Next"}
           </button>

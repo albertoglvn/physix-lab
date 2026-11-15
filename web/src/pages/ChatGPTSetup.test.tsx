@@ -40,10 +40,28 @@ describe("ChatGPT setup steps", () => {
   });
 });
 
-it("starts closed, with one button that opens the steps", () => {
-  const html = renderToStaticMarkup(
-    <ChatGPTSetup address={address} prompt={prompt} />,
-  );
-  expect(html).toContain("<span>Add Physix to ChatGPT</span>");
-  expect(html).not.toContain("Step 1 of 5");
+describe("the setup sheet", () => {
+  const render = (open: boolean) =>
+    renderToStaticMarkup(
+      <ChatGPTSetup
+        address={address}
+        prompt={prompt}
+        open={open}
+        onOpenChange={() => {}}
+      />,
+    );
+
+  it("stays closed until the page opens it, with one button to open it", () => {
+    const html = render(false);
+    expect(html).toContain("<span>Add Physix to ChatGPT</span>");
+    expect(html).not.toContain("Step 1 of 5");
+  });
+
+  it("opens on the first step when the page sets it open", () => {
+    const html = render(true);
+    expect(html).toContain("Step 1 of 5");
+    expect(html).toContain("Open Plugins in ChatGPT");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Back<\/button>/);
+    expect(html).toContain(">Next</button>");
+  });
 });

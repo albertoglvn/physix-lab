@@ -27,7 +27,14 @@ const examples = [
   },
 ];
 
-export function ChatGPTConnect() {
+export function ChatGPTConnect({
+  setupOpen,
+  onSetupOpenChange,
+}: {
+  /** Whether the Add Physix to ChatGPT steps are open. The home page owns this. */
+  setupOpen: boolean;
+  onSetupOpenChange: (open: boolean) => void;
+}) {
   const [connection, setConnection] = useState<Connection>({
     state: "loading",
   });
@@ -92,7 +99,12 @@ export function ChatGPTConnect() {
           custom MCP server. It takes five steps.
         </p>
         <div className="home-connect-actions">
-          <ChatGPTSetup address={openMcpUrl} prompt={examples[0].prompt} />
+          <ChatGPTSetup
+            address={openMcpUrl}
+            prompt={examples[0].prompt}
+            open={setupOpen}
+            onOpenChange={onSetupOpenChange}
+          />
         </div>
         <p>
           If your ChatGPT account already has the plugin, sign in to open it.

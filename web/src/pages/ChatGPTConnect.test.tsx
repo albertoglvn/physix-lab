@@ -4,7 +4,9 @@ import { ChatGPTConnect, codexConfig, openMcpUrl } from "./ChatGPTConnect";
 import { Home } from "./Home";
 
 describe("connect section", () => {
-  const html = renderToStaticMarkup(<ChatGPTConnect />);
+  const html = renderToStaticMarkup(
+    <ChatGPTConnect setupOpen={false} onSetupOpenChange={() => {}} />,
+  );
 
   it("offers the open MCP address first, with no sign-in", () => {
     expect(openMcpUrl).toBe(

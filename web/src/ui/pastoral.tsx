@@ -13,17 +13,21 @@ export function Action({
   children,
   variant = "primary",
   target,
+  onClick,
 }: {
   href: string;
   children: ReactNode;
   variant?: "primary" | "text" | "glass";
   target?: "_top";
+  /** Runs alongside the navigation, which still follows `href`. */
+  onClick?: () => void;
 }) {
   return (
     <a
       className={`pastoral-action pastoral-action--${variant}`}
       href={href}
       target={target}
+      onClick={onClick}
     >
       <span>{children}</span>
       <span className="pastoral-keycap">

@@ -29,7 +29,8 @@ const chapters = [
 ];
 
 // Every "Connect your agent" button scrolls to the connect section, which offers the open
-// MCP address to any agent and ChatGPT sign-in to accounts with plugin access.
+// MCP address to any agent and ChatGPT sign-in to accounts with plugin access, and opens the
+// Add Physix to ChatGPT steps over it.
 const connectHref = "#/connect";
 
 const experiments = [
@@ -155,6 +156,8 @@ function Schematic({ step }: { step: number }) {
 
 export function Home({ route }: { route: string }) {
   const [step, setStep] = useState(0);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const openSetup = () => setSetupOpen(true);
 
   useEffect(() => {
     if (
@@ -182,7 +185,9 @@ export function Home({ route }: { route: string }) {
           <a href="#/experiments">Experiments</a>
           <a href="#/stress-tools">Stress tools</a>
         </nav>
-        <Action href={connectHref}>Connect your agent</Action>
+        <Action href={connectHref} onClick={openSetup}>
+          Connect your agent
+        </Action>
       </header>
 
       <main>
@@ -205,7 +210,9 @@ export function Home({ route }: { route: string }) {
               browser lab to build and run 3D experiments yourself.
             </p>
             <div className="home-hero-actions">
-              <Action href={connectHref}>Connect your agent</Action>
+              <Action href={connectHref} onClick={openSetup}>
+                Connect your agent
+              </Action>
               <Action href="#/lab" variant="text">
                 Open the lab
               </Action>
@@ -213,7 +220,10 @@ export function Home({ route }: { route: string }) {
           </div>
         </section>
 
-        <ChatGPTConnect />
+        <ChatGPTConnect
+          setupOpen={setupOpen}
+          onSetupOpenChange={setSetupOpen}
+        />
 
         <section
           className="home-method home-editorial"
