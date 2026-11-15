@@ -52,6 +52,7 @@ after the submission makes the same hosted tools reachable from any MCP client i
 | 15 Nov, 00:11 | The Site was published as version 19 from `01b24a5`, and `/mcp/open` went live. |
 | 15 Nov, 00:28 | `3ad4245`, published as version 20: **Connect your agent** on the Site now shows the open address with a copy button, and these docs point judges to it. |
 | 15 Nov, 00:58 | `6e18b09`, published as version 21: **Add Physix to ChatGPT** on the Site walks through adding the open address to ChatGPT as a custom MCP server, step by step. |
+| 15 Nov, 01:09 | `b879df3`, published as version 22: both **Connect your agent** buttons on the Site also open the **Add Physix to ChatGPT** steps. |
 
 The lab, the engine and the four tools are unchanged. `/mcp` still requires a ChatGPT
 sign-in.
