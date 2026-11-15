@@ -82,7 +82,7 @@ The hosted plugin offers `describe_domain`, `compare_stress`, `build_scene` and
 `simulate_scene`. ChatGPT reaches them through the Physix plugin. Any other MCP client
 reaches the same tools without a sign-in at
 `https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open`. If that address returns 404,
-the published Site predates it: use the Physix plugin in ChatGPT instead. Call
+its operator has closed it: use the Physix plugin in ChatGPT instead. Call
 `describe_domain` first: it lists the stress domain and, under `motion`, the scene
 conventions, templates, part kinds, fields, units, limits and defaults.
 

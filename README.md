@@ -8,8 +8,7 @@ plotted and tabulated, and checked against theory where a closed form exists.
 
 - **Open the lab:** <https://physix-lab.hospitablepeacock.chatgpt.site/>
 - **Connect your agent:** add `https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open`
-  as a remote MCP server. No sign-in is needed. The address is in `main` and goes live with
-  the next publish of the Site; until then it returns 404. See
+  as a remote MCP server. No sign-in is needed. See
   [Connect any MCP client](docs/CHATGPT.md#connect-any-mcp-client).
 - **Connect ChatGPT:** [Connect Physix to ChatGPT](docs/CHATGPT.md)
 - **Judges:** [Test Physix with your agent or your ChatGPT](docs/CHATGPT.md#test-it-as-a-judge)
@@ -201,9 +200,8 @@ Codex, add this to `~/.codex/config.toml`:
 url = "https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open"
 ```
 
-The open address goes live with the next publish of the Site and returns 404 until then.
-In the meantime, `pnpm --filter @physix/web run lab --preset pulley 60` runs a Motion
-template with the same engine and prints its measurements as JSON.
+Without a network connection, `pnpm --filter @physix/web run lab --preset pulley 60` runs a
+Motion template with the same engine and prints its measurements as JSON.
 
 For the ChatGPT plugin, see [Connect Physix to ChatGPT](docs/CHATGPT.md). The following
 configuration starts the local MCP server, with `predict_stress`, `verify_with_solver` and

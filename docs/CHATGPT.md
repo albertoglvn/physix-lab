@@ -29,8 +29,7 @@ You can test Physix in four ways:
   Enterprise accounts.
 - **With your own agent.** Add the open address in
   [Connect any MCP client](#connect-any-mcp-client) to Codex or any MCP client. You need no
-  account or invitation. The address is in `main` and goes live with the next publish of
-  the Site. Until then it returns 404.
+  account or invitation.
 - **From a clone.** After the [Quick start](../README.md#quick-start) setup, run
   `pnpm --filter @physix/web run lab --preset pulley 60`. It runs a Motion template with the
   same engine as the hosted tools and prints its measurements as JSON. The local MCP server
@@ -46,8 +45,10 @@ with your own agent:
 https://physix-lab.hospitablepeacock.chatgpt.site/mcp/open
 ```
 
-The address is in `main`, and its Worker tests pass. The live Site still runs the previous
-build, so the address returns 404 until the Site is published again.
+The published Site (version 19) serves it from commit `01b24a5`. Checked without a sign-in:
+`initialize` and `tools/list` return the four tools, `simulate_scene` on a 5 kg block on a
+30° ramp with μ = 0.25 returns source `rapier` with acceleration 2.781 m/s² against
+2.781 m/s² in theory, and `/mcp` still returns 401.
 
 Use it from any MCP client that connects to a remote server over HTTP. In Codex, add it to
 `~/.codex/config.toml`:

@@ -37,7 +37,8 @@ of the running lab.
 | Reviewer docs | Workflow board with the file shelf, Ship and Demo stops, README links and document ownership, published demo specs, and removal of three redundant `.gitkeep` files | `docs/reviewer-polish` |
 | README demo | Published the 1080p60 video, linked poster and Codex workspace screenshot. Checked the media, README links and lint. | This change |
 | CI and README | Pinned setup-uv, disabled pnpm caching during Node setup and checked hosted stress against a fresh solve with a relative tolerance of `1e-5`. Linked the demo through jsDelivr, added Projectile and the CI badge. Lint and all three local test suites passed. | `ddd6c8c`, `56eb471`, `d7577dc`, [passing CI run](https://github.com/albertoglvn/physix-lab/actions/runs/43645996691) |
-| Open MCP address | `/mcp/open` serves the four hosted tools to any MCP client without a ChatGPT sign-in, without the chart view, and returns 404 when `PHYSIX_OPEN_MCP` is `off`. `/mcp` still requires a sign-in. Four new Worker tests, lint and all three local test suites passed. The live address needs the Site republished. | This change |
+| Open MCP address | `/mcp/open` serves the four hosted tools to any MCP client without a ChatGPT sign-in, without the chart view, and returns 404 when `PHYSIX_OPEN_MCP` is `off`. `/mcp` still requires a sign-in. Four new Worker tests, lint and all three local test suites passed. | `d4db096` |
+| Open MCP address live | Published `01b24a5` to the Site as version 19. Without a sign-in, `/mcp/open` answered `initialize` and `tools/list` with the four tools, and `simulate_scene` on a 30° ramp returned source `rapier` with acceleration 2.781 m/s² against 2.781 m/s² in theory. `/mcp` returned 401. | This change |
 
 Checks at each slice: `vitest run`, `tsc --noEmit`, `eslint`, `prettier --check` and
 `vite build` in `web/`, `node --test mcp/sites/worker.test.mjs` for the hosted Worker, and
